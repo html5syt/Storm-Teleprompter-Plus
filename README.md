@@ -1,13 +1,99 @@
-# Storm Teleprompter Plus
+# 飓风提词器 Plus
 
-Storm Teleprompter Plus 是一个基于 Flutter 的单体提词器应用。项目已经移除了原始示例计数器，也不再依赖前后端分离架构，启动后即可直接进入提词、编辑、模型管理和设置界面。
+基于 Flutter 框架构建的跨平台智能提词器应用，从原始 React + NestJS 项目完整移植。
 
-## 功能
+## ✨ 特性
 
-- 提词播放：支持手动、自动匀速滚动和语音跟随三种模式。
-- 内容编辑：支持稿件标题、正文编辑和基础富文本标记。
-- 视觉控制：支持字体大小、滚动速度、镜像翻转、阅读线位置等参数。
-- 稿件管理：本地持久化稿件、选择当前稿件、创建和删除稿件。
+- **三种滚动模式**：手动滚动 / 自动滚动 / ASR 语音识别自动滚动
+- **ASR 语音识别**：使用 sherpa-onnx 原生插件，支持多种中文模型，国内镜像加速下载
+- **逐字符对齐引擎**：双指针字符级匹配算法，3 字符跳过容差处理 ASR 识别误差
+- **富文本支持**：HTML 格式解析，保留粗体/斜体/下划线/删除线/字号
+- **镜像翻转**：支持提词器分光镜场景
+- **全屏模式**：沉浸式显示，自动隐藏控制面板
+- **本地存储**：SharedPreferences 本地持久化，无需后端服务
+- **跨平台**：Android / iOS / Windows / macOS / Linux / Web
+
+## 🏗 项目结构
+
+```
+lib/
+├── main.dart                          # 应用入口
+├── models/
+│   ├── article.dart                   # 稿件数据模型
+│   ├── app_settings.dart              # 应用设置模型
+│   └── script_character.dart          # 逐字符脚本模型（含格式信息）
+├── services/
+│   ├── storage_service.dart           # 本地存储服务（SharedPreferences）
+│   ├── alignment_engine.dart          # ASR 对齐引擎（双指针字符匹配）
+│   ├── asr_service.dart               # 语音识别服务（sherpa-onnx）
+│   └── text_parser.dart               # HTML/纯文本解析器
+├── providers/
+│   ├── article_provider.dart          # 稿件状态管理
+│   ├── settings_provider.dart         # 设置状态管理
+│   └── teleprompter_provider.dart     # 提词器核心状态管理
+├── pages/
+│   ├── home_page.dart                 # 首页（稿件列表 + 设置）
+│   ├── teleprompter_page.dart         # 提词器页面
+│   └── editor_page.dart               # 稿件编辑页面
+├── widgets/
+│   ├── teleprompter_text_layer.dart   # 提词器文本渲染层
+│   └── teleprompter_controls.dart     # 提词器控制面板
+├── theme/
+│   ├── app_colors.dart                # 品牌色彩体系
+│   └── app_theme.dart                 # Material 3 主题配置
+└── utils/
+    └── constants.dart                 # 全局常量
+```
+
+## 🚀 快速开始
+
+### 环境要求
+
+- Flutter 3.12+
+- Dart 3.12+
+
+### 安装运行
+
+```bash
+# 获取依赖
+flutter pub get
+
+# 运行（选择目标平台）
+flutter run                    # 默认设备
+flutter run -d chrome          # Web
+flutter run -d windows         # Windows 桌面
+flutter run -d android         # Android
+```
+
+### ASR 语音识别
+
+首次使用 ASR 模式时，需要在设置页面下载语音识别模型：
+
+1. 进入 设置 → ASR 语音识别 → 选择模型
+2. 支持的模型：
+   - **Paraformer 中文**：适合大多数中文场景（推荐）
+   - **流式 Paraformer**：实时性更好
+   - **Whisper Tiny**：适合低性能设备
+3. 下载支持国内镜像加速
+
+## 🎨 设计规范
+
+- **品牌色**：#DB9D16（金色）
+- **深色主题**：背景 #0D0D0D，表面 #141414
+- **Material Design 3** 组件体系
+
+## 📝 技术说明
+
+- **状态管理**：Provider + ChangeNotifier
+- **本地持久化**：SharedPreferences JSON 序列化
+- **ASR 引擎**：sherpa-onnx 原生插件（替代原项目 WASM 方案）
+- **对齐算法**：双指针逐字符匹配，3 字符跳过容差，24 字符窗口重同步
+- **文本解析**：自定义 HTML 状态机解析器，按字符保留格式信息
+- **全屏**：SystemChrome immersiveSticky + 自动隐藏定时器
+
+## 📄 许可
+
+Private Project
 - 模型管理：支持预置模型和自定义模型地址，支持镜像源下载。
 - 语音接口：通过可插拔的 ASR 服务接入本地识别引擎；当前工程内同时提供演示回放实现，便于跨平台调试。
 
