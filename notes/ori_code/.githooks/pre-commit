@@ -1,0 +1,4 @@
+#!/usr/bin/env sh
+[ "$SKIP_GIT_HOOKS" = "1" ] && exit 0
+export PATH="node_modules/.bin:$PATH"
+npm run precommit

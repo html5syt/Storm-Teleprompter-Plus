@@ -1,0 +1,64 @@
+@import '@lark-apaas/client-toolkit/lib/index.css';
+@import "tw-animate-css";
+@import "./tailwind-theme.css";
+@import "./typography.css";
+
+@source "../../node_modules/streamdown/dist/*.js";
+@config "../../tailwind.config.ts";
+
+/* Teleprompter Dark Theme Variables */
+:root {
+  --bg-primary: #000000;
+  --text-standard: #ffffff;
+  --text-dimmed: #404040;
+  --text-highlight: #fbbf24;
+}
+
+/* Teleprompter-specific styles */
+.teleprompter-container {
+  scroll-behavior: smooth;
+}
+
+.mirror-mode {
+  transform: scaleX(-1);
+}
+
+/* Custom scrollbar for teleprompter */
+.teleprompter-container::-webkit-scrollbar {
+  width: 8px;
+}
+
+.teleprompter-container::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.teleprompter-container::-webkit-scrollbar-thumb {
+  background: #333;
+  border-radius: 4px;
+}
+
+.teleprompter-container::-webkit-scrollbar-thumb:hover {
+  background: #444;
+}
+
+/* Word states for optimized rendering */
+.word {
+  transition: color 0.15s ease;
+}
+
+.word-read {
+  color: #404040 !important;
+}
+
+.word-active {
+  color: #fbbf24 !important;
+}
+
+/* Tiptap editor placeholder visibility on dark background */
+.ProseMirror p.is-editor-empty::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: #737373;
+  pointer-events: none;
+  height: 0;
+}

@@ -1,0 +1,206 @@
+:root {
+  --button-outline: rgba(242, 242, 242, 0.1);
+  --badge-outline: rgba(242, 242, 242, 0.08);
+  --opaque-button-border-intensity: -8;
+  --elevate-1: rgba(242, 242, 242, 0.03);
+  --elevate-2: rgba(242, 242, 242, 0.06);
+
+  --background: hsl(0 0% 5%);
+  --foreground: hsl(0 0% 95%);
+  --card: hsl(0 0% 9%);
+  --card-foreground: hsl(0 0% 95%);
+  --popover: hsl(0 0% 9%);
+  --popover-foreground: hsl(0 0% 95%);
+  --primary: hsl(42 81% 47%);
+  --primary-foreground: hsl(0 0% 8%);
+  --secondary: hsl(0 0% 9%);
+  --secondary-foreground: hsl(0 0% 95%);
+  --muted: hsl(0 0% 9%);
+  --muted-foreground: hsl(0 0% 62%);
+  --accent: hsl(0 0% 9%);
+  --accent-foreground: hsl(0 0% 95%);
+  --info: hsl(42 81% 47%);
+  --info-foreground: hsl(0 0% 8%);
+  --destructive: hsl(2 84% 62%);
+  --destructive-foreground: hsl(0 0% 100%);
+  --success: hsl(130 54% 42%);
+  --success-foreground: hsl(115 77% 97%);
+  --warning: hsl(26 90% 49%);
+  --warning-foreground: hsl(33 100% 96%);
+  --border: hsl(0 0% 18%);
+  --input: hsl(0 0% 18%);
+  --ring: hsl(42 81% 47%);
+  --chart-1: hsl(42 81% 47%);
+  --chart-2: hsl(174 77% 46%);
+  --chart-3: hsl(46 100% 52%);
+  --chart-4: hsl(27 92% 49%);
+  --chart-5: hsl(292 54% 76%);
+  --sidebar: hsl(0 0% 8%);
+  --sidebar-foreground: hsl(0 0% 95%);
+  --sidebar-primary: hsl(42 81% 47%);
+  --sidebar-primary-foreground: hsl(0 0% 8%);
+  --sidebar-accent: hsl(0 0% 12%);
+  --sidebar-accent-foreground: hsl(42 81% 47%);
+  --sidebar-border: hsl(0 0% 18%);
+  --sidebar-ring: hsl(42 81% 47%);
+  --primary-border: hsl(from hsl(42 81% 47%) h s calc(l + var(--opaque-button-border-intensity)));
+  --secondary-border: hsl(from hsl(0 0% 9%) h s calc(l + var(--opaque-button-border-intensity)));
+  --destructive-border: hsl(from hsl(2 84% 62%) h s calc(l + var(--opaque-button-border-intensity)));
+  --accent-border: hsl(from hsl(0 0% 9%) h s calc(l + var(--opaque-button-border-intensity)));
+  --muted-border: hsl(from hsl(0 0% 9%) h s calc(l + var(--opaque-button-border-intensity)));
+  --font-sans: 'Inter', 'LarkHackSafariFont', 'LarkEmojiFont', 'LarkChineseQuote', '-apple-system', 'BlinkMacSystemFont', 'Helvetica Neue', 'Tahoma', 'PingFang SC', 'Microsoft Yahei', 'Arial', 'Hiragino Sans GB', 'sans-serif', 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+  --font-serif: 'Geist', 'Geist Fallback', ui-serif, Georgia, Cambria, 'Times New Roman', Times, serif;
+  --font-mono: 'JetBrains Mono', Source Code Pro, monospace;
+  --radius: 0.5rem;
+  --shadow-2xs: 0px 2px 12px 0px hsl(0 0% 0% / 0.2);
+  --shadow-xs: 0px 2px 12px 0px hsl(0 0% 0% / 0.2);
+  --shadow-sm: 0px 2px 12px 0px hsl(0 0% 0% / 0.24), 0px 1px 2px -1px hsl(0 0% 0% / 0.24);
+  --shadow: 0px 2px 12px 0px hsl(0 0% 0% / 0.24), 0px 1px 2px -1px hsl(0 0% 0% / 0.24);
+  --shadow-md: 0px 2px 12px 0px hsl(0 0% 0% / 0.26), 0px 2px 4px -1px hsl(0 0% 0% / 0.26);
+  --shadow-lg: 0px 2px 12px 0px hsl(0 0% 0% / 0.28), 0px 4px 6px -1px hsl(0 0% 0% / 0.28);
+  --shadow-xl: 0px 2px 12px 0px hsl(0 0% 0% / 0.3), 0px 8px 10px -1px hsl(0 0% 0% / 0.3);
+  --shadow-2xl: 0px 2px 12px 0px hsl(0 0% 0% / 0.34);
+  --tracking-normal: 0em;
+  --spacing: 0.25rem;
+  --canvas-bg: hsl(0 0% 5%);
+  --surface-bg: hsl(0 0% 8%);
+  --terminal-bg: hsl(0 0% 9%);
+  --teleprompter-bg: hsl(0 0% 5%);
+  --teleprompter-text: hsl(0 0% 95%);
+  --teleprompter-dimmed: hsl(0 0% 35%);
+  --teleprompter-highlight: hsl(42 81% 47%);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-canvas-bg: var(--canvas-bg);
+  --color-surface-bg: var(--surface-bg);
+  --color-terminal-bg: var(--terminal-bg);
+  --color-teleprompter-bg: var(--teleprompter-bg);
+  --color-teleprompter-text: var(--teleprompter-text);
+  --color-teleprompter-dimmed: var(--teleprompter-dimmed);
+  --color-teleprompter-highlight: var(--teleprompter-highlight);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+  --font-serif: var(--font-serif);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --shadow-2xs: var(--shadow-2xs);
+  --shadow-xs: var(--shadow-xs);
+  --shadow-sm: var(--shadow-sm);
+  --shadow: var(--shadow);
+  --shadow-md: var(--shadow-md);
+  --shadow-lg: var(--shadow-lg);
+  --shadow-xl: var(--shadow-xl);
+  --shadow-2xl: var(--shadow-2xl);
+}
+
+@layer utilities {
+  input[type="search"]::-webkit-search-cancel-button {
+    @apply hidden;
+  }
+
+  [contenteditable][data-placeholder]:empty::before {
+    content: attr(data-placeholder);
+    color: var(--muted-foreground);
+    pointer-events: none;
+  }
+
+  .no-default-hover-elevate {}
+  .no-default-active-elevate {}
+
+  .toggle-elevate::before,
+  .toggle-elevate-2::before {
+    content: "";
+    pointer-events: none;
+    position: absolute;
+    inset: 0px;
+    border-radius: inherit;
+    z-index: -1;
+  }
+
+  .toggle-elevate.toggle-elevated::before {
+    background-color: var(--elevate-2);
+  }
+
+  .border.toggle-elevate::before {
+    inset: -1px;
+  }
+
+  .hover-elevate:not(.no-default-hover-elevate),
+  .active-elevate:not(.no-default-active-elevate),
+  .hover-elevate-2:not(.no-default-hover-elevate),
+  .active-elevate-2:not(.no-default-active-elevate) {
+    position: relative;
+    z-index: 0;
+  }
+
+  .hover-elevate:not(.no-default-hover-elevate)::after,
+  .active-elevate:not(.no-default-active-elevate)::after,
+  .hover-elevate-2:not(.no-default-hover-elevate)::after,
+  .active-elevate-2:not(.no-default-active-elevate)::after {
+    content: "";
+    pointer-events: none;
+    position: absolute;
+    inset: 0px;
+    border-radius: inherit;
+    z-index: 999;
+  }
+
+  .hover-elevate:hover:not(.no-default-hover-elevate)::after,
+  .active-elevate:active:not(.no-default-active-elevate)::after {
+    background-color: var(--elevate-1);
+  }
+
+  .hover-elevate-2:hover:not(.no-default-hover-elevate)::after,
+  .active-elevate-2:active:not(.no-default-active-elevate)::after {
+    background-color: var(--elevate-2);
+  }
+
+  .border.hover-elevate:not(.no-hover-interaction-elevate)::after,
+  .border.active-elevate:not(.no-active-interaction-elevate)::after,
+  .border.hover-elevate-2:not(.no-hover-interaction-elevate)::after,
+  .border.active-elevate-2:not(.no-active-interaction-elevate)::after,
+  .border.hover-elevate:not(.no-hover-interaction-elevate)::after {
+    inset: -1px;
+  }
+}

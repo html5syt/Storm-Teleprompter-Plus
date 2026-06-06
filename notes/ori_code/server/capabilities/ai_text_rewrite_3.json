@@ -1,0 +1,36 @@
+{
+  "id": "ai_text_rewrite_3",
+  "pluginKey": "@official-plugins/ai-text-generate",
+  "pluginVersion": "1.0.12",
+  "name": "AI文本改写",
+  "description": "支持对选中文本进行改写，包括扩写、缩写、调整语气（更口语/更活泼/更正式/更专业/更直白）、总结等功能，用户可自定义改写指令或使用预设快捷选项。",
+  "icon": "",
+  "paramsSchema": {
+    "properties": {
+      "original_text": {
+        "type": "string",
+        "description": "需要改写的原文本"
+      },
+      "rewrite_instruction": {
+        "type": "string",
+        "description": "改写指令，例如：扩写、缩写、调整为更口语的语气、总结成3个要点等"
+      }
+    },
+    "required": [
+      "original_text",
+      "rewrite_instruction"
+    ],
+    "type": "object"
+  },
+  "formValue": {
+    "modelID": "87",
+    "modelParams": {
+      "temperature": 0.5,
+      "maxTokens": 8192
+    },
+    "prompt": "你是一位专业的文本改写专家，擅长根据不同需求对文本进行高质量改写。请严格按照以下要求处理文本：\n\n原文本：{{input.original_text}}\n\n改写要求：{{input.rewrite_instruction}}\n\n输出规则：\n1. 只输出改写后的文本内容，不需要任何额外解释或说明\n2. 确保改写后的内容忠实于原文的核心信息，不添加无关内容\n3. 语言流畅自然，符合改写要求的风格和长度\n4. 如果指令不明确或无法完成，请直接返回原文本"
+  },
+  "createdAt": 1776934269265,
+  "updatedAt": 1776934269265,
+  "createdBy": 7117054227221839900
+}
