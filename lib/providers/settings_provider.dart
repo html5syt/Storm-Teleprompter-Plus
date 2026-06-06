@@ -111,6 +111,99 @@ class SettingsProvider with ChangeNotifier {
     await _saveSettings();
   }
 
+  /// 更新主题色
+  Future<void> setUiPrimaryColor(int hexColor) async {
+    _settings = _settings.copyWith(uiPrimaryColor: hexColor);
+    notifyListeners();
+    await _saveSettings();
+  }
+
+  /// 更新提词器背景色
+  Future<void> setTeleprompterBgColor(int hexColor) async {
+    _settings = _settings.copyWith(teleprompterBgColor: hexColor);
+    notifyListeners();
+    await _saveSettings();
+  }
+
+  /// 更新水平边距
+  Future<void> setPaddingX(double value) async {
+    _settings = _settings.copyWith(paddingX: value);
+    notifyListeners();
+    await _saveSettings();
+  }
+
+  /// 更新阅读线偏移
+  Future<void> setReadingLineOffset(double value) async {
+    _settings = _settings.copyWith(readingLineOffset: value);
+    notifyListeners();
+    await _saveSettings();
+  }
+
+  /// 更新进度条提示字号比例
+  Future<void> setProgressInfoSizeRatio(double value) async {
+    _settings = _settings.copyWith(progressInfoSizeRatio: value);
+    notifyListeners();
+    await _saveSettings();
+  }
+
+  /// 更新 ASR 镜像 URL
+  Future<void> setAsrMirrorUrl(String url) async {
+    _settings = _settings.copyWith(asrMirrorUrl: url);
+    notifyListeners();
+    await _saveSettings();
+  }
+
+  /// 更新正文字体
+  Future<void> setFontFamily(String fontFamily) async {
+    _settings = _settings.copyWith(fontFamily: fontFamily);
+    notifyListeners();
+    await _saveSettings();
+  }
+
+  /// 切换已读字符变灰
+  Future<void> toggleGrayReadChars() async {
+    _settings = _settings.copyWith(grayReadChars: !_settings.grayReadChars);
+    notifyListeners();
+    await _saveSettings();
+  }
+
+  /// 更新字体颜色
+  Future<void> setTextColor(int hexColor) async {
+    _settings = _settings.copyWith(textColor: hexColor);
+    notifyListeners();
+    await _saveSettings();
+  }
+
+  /// 更新字间距
+  Future<void> setLetterSpacing(double value) async {
+    _settings = _settings.copyWith(letterSpacing: value);
+    notifyListeners();
+    await _saveSettings();
+  }
+
+  /// 切换当前字高亮
+  Future<void> toggleHighlightCurrentChar() async {
+    _settings = _settings.copyWith(
+      highlightCurrentChar: !_settings.highlightCurrentChar,
+    );
+    notifyListeners();
+    await _saveSettings();
+  }
+
+  /// 切换默认加粗
+  Future<void> toggleDefaultBold() async {
+    _settings = _settings.copyWith(defaultBold: !_settings.defaultBold);
+    notifyListeners();
+    await _saveSettings();
+  }
+
+  /// 完全重置所有设置为默认值
+  Future<void> resetAllSettings() async {
+    _settings = const AppSettings();
+    notifyListeners();
+    await _saveSettings();
+  }
+
   /// 批量更新设置
   Future<void> updateSettings(AppSettings newSettings) async {
     _settings = newSettings;

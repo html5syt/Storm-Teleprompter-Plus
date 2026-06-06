@@ -32,12 +32,15 @@ lib/
 │   ├── settings_provider.dart         # 设置状态管理
 │   └── teleprompter_provider.dart     # 提词器核心状态管理
 ├── pages/
-│   ├── home_page.dart                 # 首页（稿件列表 + 设置）
-│   ├── teleprompter_page.dart         # 提词器页面
-│   └── editor_page.dart               # 稿件编辑页面
+│   ├── home_page.dart                 # 首页 UI 布局
+│   ├── home_logic.dart                # 首页业务逻辑（mixin）
+│   ├── settings_page.dart             # 设置页面
+│   ├── teleprompter_page.dart         # 提词器页面 UI 布局
+│   ├── teleprompter_logic.dart        # 提词器业务逻辑（mixin）
+│   ├── editor_page.dart               # 稿件编辑页面 UI 布局
+│   └── editor_logic.dart              # 编辑器业务逻辑（mixin）
 ├── widgets/
-│   ├── teleprompter_text_layer.dart   # 提词器文本渲染层
-│   └── teleprompter_controls.dart     # 提词器控制面板
+│   └── teleprompter_text_layer.dart   # 提词器文本渲染层（含 LineSnapScrollPhysics）
 ├── theme/
 │   ├── app_colors.dart                # 品牌色彩体系
 │   └── app_theme.dart                 # Material 3 主题配置

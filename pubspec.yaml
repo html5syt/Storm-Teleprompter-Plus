@@ -34,6 +34,9 @@ dependencies:
   # 录音
   record: ^7.0.0
 
+  # Windows/macOS/Linux 窗口管理（全屏、标题栏等）
+  window_manager: ^0.4.3
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

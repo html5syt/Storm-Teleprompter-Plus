@@ -9,6 +9,7 @@ class ScriptCharacter {
   final bool underline;
   final bool strikeThrough;
   final double? fontSizeRatio; // 相对基字号的倍数
+  final int? backgroundColor; // 背景色 ARGB hex
 
   const ScriptCharacter({
     required this.char,
@@ -18,6 +19,7 @@ class ScriptCharacter {
     this.underline = false,
     this.strikeThrough = false,
     this.fontSizeRatio,
+    this.backgroundColor,
   });
 }
 

@@ -1,10 +1,13 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import '../models/app_settings.dart';
 import '../models/script_character.dart';
+import '../providers/settings_provider.dart';
 import '../services/alignment_engine.dart';
 import '../services/asr_service.dart';
 import '../services/text_parser.dart';
+import '../utils/constants.dart';
 
 /// 提词器运行状态
 enum TeleprompterState {
@@ -24,6 +27,8 @@ enum TeleprompterState {
 /// 提词器状态管理
 ///
 /// 管理提词器的滚动、ASR 对齐、文本渲染等核心逻辑。
+/// 自动滚动使用 RAF (requestAnimationFrame) 时间累加器模式,
+/// 与原始 Web 项目保持一致，确保滚动速度精准。
 class TeleprompterProvider with ChangeNotifier {
   // ─── 核心状态 ──────────────────────────────────────────
   TeleprompterState _state = TeleprompterState.idle;
@@ -31,9 +36,15 @@ class TeleprompterProvider with ChangeNotifier {
   List<ScriptLine> _lines = [];
   String _articleId = '';
 
-  // ─── 自动滚动 ──────────────────────────────────────────
-  Timer? _autoScrollTimer;
+  // ─── 自动滚动（RAF 时间累加器） ────────────────────────
   int _totalChars = 0;
+  double _accumulator = 0.0; // 时间累加器（毫秒）
+  double _lastFrameTime = 0.0; // 上一帧时间戳（毫秒）
+  Ticker? _ticker;
+
+  // ─── 播放时间跟踪 ──────────────────────────────────────
+  DateTime? _playStartTime;
+  Duration _elapsedBeforePause = Duration.zero;
 
   // ─── ASR ────────────────────────────────────────────────
   final TeleprompterAlignment _alignment = TeleprompterAlignment();
@@ -57,6 +68,35 @@ class TeleprompterProvider with ChangeNotifier {
   /// 是否正在播放（任何模式）
   bool get isPlaying => _state == TeleprompterState.playing;
 
+  /// 当前已用时间
+  Duration get elapsed {
+    if (_playStartTime != null) {
+      return _elapsedBeforePause + DateTime.now().difference(_playStartTime!);
+    }
+    return _elapsedBeforePause;
+  }
+
+  /// 当前阅读进度 (0.0 ~ 1.0)
+  double get progress {
+    // 手动模式下用滚动位置计算进度
+    if (_state == TeleprompterState.paused ||
+        _state == TeleprompterState.idle) {
+      return _manualProgress;
+    }
+    return _totalChars > 0 ? (_currentIndex + 1) / _totalChars : 0.0;
+  }
+
+  // ─── 手动滚动进度跟踪 ─────────────────────────────────
+  double _manualProgress = 0.0;
+
+  double get manualProgress => _manualProgress;
+
+  /// 设置手动滚动进度（仅 manual 模式使用）
+  void setManualProgress(double value) {
+    _manualProgress = value.clamp(0.0, 1.0);
+    notifyListeners();
+  }
+
   /// 加载稿件内容
   void loadScript(String articleId, String content) {
     _articleId = articleId;
@@ -77,6 +117,8 @@ class TeleprompterProvider with ChangeNotifier {
 
     _currentIndex = -1;
     _state = _lines.isEmpty ? TeleprompterState.idle : TeleprompterState.paused;
+    _playStartTime = null;
+    _elapsedBeforePause = Duration.zero;
     notifyListeners();
   }
 
@@ -88,6 +130,7 @@ class TeleprompterProvider with ChangeNotifier {
     }
 
     _state = TeleprompterState.playing;
+    _playStartTime = DateTime.now();
     _startAutoScrollIfNeeded(settings);
     _startAsrIfNeeded(settings);
     _scheduleHideControls(settings);
@@ -97,6 +140,10 @@ class TeleprompterProvider with ChangeNotifier {
   /// 暂停播放
   void pause(AppSettings settings) {
     _state = TeleprompterState.paused;
+    if (_playStartTime != null) {
+      _elapsedBeforePause += DateTime.now().difference(_playStartTime!);
+      _playStartTime = null;
+    }
     _stopAutoScroll();
     _stopAsr();
     _cancelHideControls();
@@ -128,6 +175,34 @@ class TeleprompterProvider with ChangeNotifier {
     _alignment.reset();
     _state = _lines.isEmpty ? TeleprompterState.idle : TeleprompterState.paused;
     _controlsVisible = true;
+    _playStartTime = null;
+    _elapsedBeforePause = Duration.zero;
+    notifyListeners();
+  }
+
+  /// 快退 10 行
+  void rewind(AppSettings settings) {
+    final target = (_currentIndex - 10).clamp(-1, _totalChars - 1);
+    _currentIndex = target;
+    _alignment.setCurrentIndex(target);
+    if (_state == TeleprompterState.playing &&
+        settings.scrollMode == ScrollMode.auto) {
+      _stopAutoScroll();
+      _startAutoScrollIfNeeded(settings);
+    }
+    notifyListeners();
+  }
+
+  /// 快进 10 行
+  void forward(AppSettings settings) {
+    final target = (_currentIndex + 10).clamp(-1, _totalChars - 1);
+    _currentIndex = target;
+    _alignment.setCurrentIndex(target);
+    if (_state == TeleprompterState.playing &&
+        settings.scrollMode == ScrollMode.auto) {
+      _stopAutoScroll();
+      _startAutoScrollIfNeeded(settings);
+    }
     notifyListeners();
   }
 
@@ -137,47 +212,96 @@ class TeleprompterProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  /// 显示控制面板（全屏模式下触摸屏幕时）
+  /// 显示控制面板（仅在播放状态时调度自动隐藏）
   void showControls(AppSettings settings) {
     _controlsVisible = true;
     notifyListeners();
-    _scheduleHideControls(settings);
+    // 仅在播放状态时调度自动隐藏，暂停/空闲时不隐藏
+    if (_state == TeleprompterState.playing) {
+      _scheduleHideControls(settings);
+    }
   }
 
-  // ─── 自动滚动逻辑 ──────────────────────────────────────
+  // ─── 自动滚动逻辑（RAF 时间累加器） ───────────────────
 
   void _startAutoScrollIfNeeded(AppSettings settings) {
     if (settings.scrollMode != ScrollMode.auto) return;
     _stopAutoScroll();
 
-    // 使用 Timer 实现匀速滚动
-    // 每字符间隔 = 60000ms / WPM
-    final msPerChar = (60000 / settings.wpm).round();
+    _accumulator = 0.0;
+    _lastFrameTime = 0.0;
 
-    _autoScrollTimer = Timer.periodic(
-      Duration(milliseconds: msPerChar.clamp(16, 2000)),
-      (timer) {
-        if (_state != TeleprompterState.playing) return;
+    _ticker = Ticker((elapsed) {
+      if (_state != TeleprompterState.playing) return;
 
-        final nextIndex = _currentIndex + 1;
-        if (nextIndex >= _totalChars) {
-          // 读完自动暂停并重置
-          _currentIndex = 0;
+      final currentTime = elapsed.inMilliseconds.toDouble();
+
+      if (_lastFrameTime == 0.0) {
+        _lastFrameTime = currentTime;
+        return;
+      }
+
+      final deltaTime = currentTime - _lastFrameTime;
+      _lastFrameTime = currentTime;
+
+      // 每字符间隔 = 60000ms / WPM
+      final msPerChar = 60000.0 / settings.wpm;
+      _accumulator += deltaTime;
+
+      if (_accumulator >= msPerChar) {
+        final charsToAdvance = (_accumulator / msPerChar).floor();
+        _accumulator %= msPerChar;
+
+        final newIndex = (_currentIndex + charsToAdvance).clamp(
+          0,
+          _totalChars - 1,
+        );
+
+        if (newIndex >= _totalChars - 1) {
+          _currentIndex = _totalChars - 1;
           _state = TeleprompterState.completed;
           _stopAutoScroll();
           notifyListeners();
           return;
         }
 
-        _currentIndex = nextIndex;
+        _currentIndex = newIndex;
         notifyListeners();
-      },
-    );
+      }
+    });
+
+    _ticker!.start();
   }
 
   void _stopAutoScroll() {
-    _autoScrollTimer?.cancel();
-    _autoScrollTimer = null;
+    _ticker?.stop();
+    _ticker?.dispose();
+    _ticker = null;
+    _accumulator = 0.0;
+    _lastFrameTime = 0.0;
+  }
+
+  /// 滚轮动态调速（自动模式下，鼠标滚轮上下滚动改变 WPM）
+  ///
+  /// [delta] 为正数表示向下滚动（加速），负数表示向上滚动（减速）
+  void adjustSpeedByWheel(double delta, SettingsProvider settingsProvider) {
+    if (_state != TeleprompterState.playing) return;
+    if (settingsProvider.settings.scrollMode != ScrollMode.auto) return;
+
+    // 每次滚轮事件调整 WPM：小步 ±5，大步 ±15
+    final step = delta.abs() > 0.5 ? 15 : 5;
+    final direction = delta > 0 ? 1 : -1;
+    final newWpm = (settingsProvider.settings.wpm + step * direction).clamp(
+      AppConstants.minWpm,
+      AppConstants.maxWpm,
+    );
+
+    if (newWpm != settingsProvider.settings.wpm) {
+      settingsProvider.setWpm(newWpm);
+      // 重启 ticker 使新 WPM 立即生效
+      _stopAutoScroll();
+      _startAutoScrollIfNeeded(settingsProvider.settings);
+    }
   }
 
   // ─── ASR 逻辑 ──────────────────────────────────────────
@@ -192,6 +316,7 @@ class TeleprompterProvider with ChangeNotifier {
 
     _asrService.start(
       onPartialResult: (text) {
+        if (!hasListeners) return;
         final result = _alignment.consumeTranscript(text, false);
         if (result.index >= 0 && result.index > _currentIndex) {
           _currentIndex = result.index;
@@ -199,6 +324,7 @@ class TeleprompterProvider with ChangeNotifier {
         }
       },
       onFinalResult: (text) {
+        if (!hasListeners) return;
         final result = _alignment.consumeTranscript(text, true);
         if (result.index >= 0) {
           _currentIndex = result.index;
@@ -206,6 +332,7 @@ class TeleprompterProvider with ChangeNotifier {
         }
       },
       onRmsUpdate: (rms) {
+        if (!hasListeners) return;
         _rms = rms;
         notifyListeners();
       },
@@ -221,11 +348,12 @@ class TeleprompterProvider with ChangeNotifier {
 
   void _scheduleHideControls(AppSettings settings) {
     _cancelHideControls();
-    if (!settings.fullScreenMode || !settings.autoHideUI) return;
+    if (!settings.autoHideUI) return;
 
     _hideControlsTimer = Timer(
       Duration(seconds: settings.autoHideDelaySeconds),
       () {
+        if (!hasListeners) return; // 安全：没有监听者时跳过
         _controlsVisible = false;
         notifyListeners();
       },
@@ -260,6 +388,18 @@ class TeleprompterProvider with ChangeNotifier {
       }
     }
     return null;
+  }
+
+  /// 停止所有活动（不触发通知，用于页面销毁时安全清理）
+  void stopAll() {
+    _stopAutoScroll();
+    _stopAsr();
+    _cancelHideControls();
+    _state = TeleprompterState.paused;
+    _controlsVisible = true;
+    _playStartTime = null;
+    _elapsedBeforePause = Duration.zero;
+    // 不调用 notifyListeners()，避免 defunct 元素异常
   }
 
   @override

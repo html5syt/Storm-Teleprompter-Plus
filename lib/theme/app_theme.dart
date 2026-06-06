@@ -8,10 +8,13 @@ import 'app_colors.dart';
 class AppTheme {
   AppTheme._();
 
-  /// 构建应用主题数据
-  static ThemeData get darkTheme {
+  /// 默认暗色主题（使用默认金色）
+  static ThemeData get darkTheme => fromColor(AppColors.primary);
+
+  /// 从自定义主题色构建主题
+  static ThemeData fromColor(Color primary) {
     final colorScheme = ColorScheme.dark(
-      primary: AppColors.primary,
+      primary: primary,
       onPrimary: AppColors.background,
       secondary: AppColors.primaryLight,
       onSecondary: AppColors.background,
@@ -54,7 +57,7 @@ class AppTheme {
       // 按钮主题
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
-          backgroundColor: AppColors.primary,
+          backgroundColor: primary,
           foregroundColor: AppColors.background,
           elevation: 0,
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
@@ -78,7 +81,7 @@ class AppTheme {
 
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
-          foregroundColor: AppColors.primary,
+          foregroundColor: primary,
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         ),
       ),
@@ -97,7 +100,7 @@ class AppTheme {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+          borderSide: BorderSide(color: primary, width: 1.5),
         ),
         hintStyle: const TextStyle(color: AppColors.textMuted),
         labelStyle: const TextStyle(color: AppColors.textSecondary),
@@ -162,21 +165,21 @@ class AppTheme {
 
       // 滑块主题
       sliderTheme: SliderThemeData(
-        activeTrackColor: AppColors.primary,
+        activeTrackColor: primary,
         inactiveTrackColor: AppColors.border,
-        thumbColor: AppColors.primary,
-        overlayColor: AppColors.primary.withOpacity(0.2),
+        thumbColor: primary,
+        overlayColor: primary.withValues(alpha: 0.2),
       ),
 
       // 开关主题
       switchTheme: SwitchThemeData(
         thumbColor: WidgetStateProperty.resolveWith((states) {
-          if (states.contains(WidgetState.selected)) return AppColors.primary;
+          if (states.contains(WidgetState.selected)) return primary;
           return AppColors.textMuted;
         }),
         trackColor: WidgetStateProperty.resolveWith((states) {
           if (states.contains(WidgetState.selected)) {
-            return AppColors.primary.withOpacity(0.4);
+            return primary.withValues(alpha: 0.4);
           }
           return AppColors.border;
         }),
@@ -185,7 +188,7 @@ class AppTheme {
       // Chip 主题
       chipTheme: ChipThemeData(
         backgroundColor: AppColors.surface,
-        selectedColor: AppColors.primary.withOpacity(0.2),
+        selectedColor: primary.withValues(alpha: 0.2),
         labelStyle: const TextStyle(color: AppColors.textPrimary),
         side: const BorderSide(color: AppColors.border),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),

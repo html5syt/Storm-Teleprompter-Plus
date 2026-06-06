@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'theme/app_colors.dart';
 import 'theme/app_theme.dart';
 import 'providers/article_provider.dart';
 import 'providers/settings_provider.dart';
@@ -29,13 +30,20 @@ class StormTeleprompterApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => SettingsProvider()),
         ChangeNotifierProvider(create: (_) => TeleprompterProvider()),
       ],
-      child: MaterialApp(
-        title: '飓风提词器 Plus',
-        debugShowCheckedModeBanner: false,
-        theme: AppTheme.darkTheme,
-        darkTheme: AppTheme.darkTheme,
-        themeMode: ThemeMode.dark,
-        home: const HomePage(),
+      child: Consumer<SettingsProvider>(
+        builder: (context, settingsProvider, _) {
+          final primary = AppColors.primaryFromSettings(
+            settingsProvider.settings.uiPrimaryColor,
+          );
+          return MaterialApp(
+            title: '飓风提词器 Plus',
+            debugShowCheckedModeBanner: false,
+            theme: AppTheme.fromColor(primary),
+            darkTheme: AppTheme.fromColor(primary),
+            themeMode: ThemeMode.dark,
+            home: const HomePage(),
+          );
+        },
       ),
     );
   }

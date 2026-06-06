@@ -15,6 +15,7 @@ class TextParser {
   /// - 下划线: `<u>`
   /// - 删除线: `<s>`, `<strike>`, `<del>`
   /// - 字体大小: `style="font-size: XXpx"`
+  /// - 背景色: `style="background-color: #XXXXXX"` 或 `style="background: #XXXXXX"`
   /// - 段落: `<p>`, `<div>`, `<h1>`~`<h6>` 作为分行依据
   static List<ScriptLine> parse(String htmlContent) {
     if (htmlContent.trim().isEmpty) return [];
@@ -30,6 +31,7 @@ class TextParser {
     bool underline = false;
     bool strikeThrough = false;
     double? fontSizeRatio;
+    int? backgroundColor;
 
     // 简化的 HTML 解析状态机
     int i = 0;
@@ -49,6 +51,7 @@ class TextParser {
             underline,
             strikeThrough,
             fontSizeRatio,
+            backgroundColor,
           );
           rawIndex += buffer.length;
           buffer.clear();
@@ -119,6 +122,7 @@ class TextParser {
               break;
             case 'span':
               fontSizeRatio = null;
+              backgroundColor = null;
               break;
           }
         } else {
@@ -141,6 +145,7 @@ class TextParser {
               break;
             case 'span':
               fontSizeRatio = _extractFontSize(tagContent);
+              backgroundColor = _extractBackgroundColor(tagContent);
               break;
           }
         }
@@ -160,6 +165,7 @@ class TextParser {
             underline,
             strikeThrough,
             fontSizeRatio,
+            backgroundColor,
           );
           rawIndex += buffer.length;
           buffer.clear();
@@ -186,6 +192,7 @@ class TextParser {
         underline,
         strikeThrough,
         fontSizeRatio,
+        backgroundColor,
       );
     }
 
@@ -208,6 +215,7 @@ class TextParser {
     bool underline,
     bool strikeThrough,
     double? fontSizeRatio,
+    int? backgroundColor,
   ) {
     if (lines.isEmpty) {
       lines.add(ScriptLine(characters: [], lineIndex: lineIndex));
@@ -224,6 +232,7 @@ class TextParser {
           underline: underline,
           strikeThrough: strikeThrough,
           fontSizeRatio: fontSizeRatio,
+          backgroundColor: backgroundColor,
         ),
       );
     }
@@ -254,6 +263,23 @@ class TextParser {
       final px = double.tryParse(match.group(1) ?? '');
       if (px != null) return px / 16; // 转换为相对倍数
     }
+    return null;
+  }
+
+  /// 从标签属性中提取背景色
+  static int? _extractBackgroundColor(String tagContent) {
+    // background-color: #XXXXXX
+    final match = RegExp(
+      r'background(?:-color)?:\s*#([0-9a-fA-F]{6}|[0-9a-fA-F]{8})',
+    ).firstMatch(tagContent);
+    if (match != null) {
+      final hex = match.group(1)!;
+      if (hex.length == 6) {
+        return int.parse('FF$hex', radix: 16);
+      }
+      return int.parse(hex, radix: 16);
+    }
+    // rgba(r, g, b, a) — 暂不支持
     return null;
   }
 
