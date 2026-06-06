@@ -34,18 +34,22 @@ class _TeleprompterViewState extends State<TeleprompterView> {
   @override
   void initState() {
     super.initState();
-    controller.addListener(_syncTransport);
-    _boot();
+    controller.addListener(_onControllerChanged);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _boot();
+    });
   }
 
   Future<void> _boot() async {
     await controller.initialize();
-    _syncTransport();
+    if (mounted) {
+      _syncTransport();
+    }
   }
 
   @override
   void dispose() {
-    controller.removeListener(_syncTransport);
+    controller.removeListener(_onControllerChanged);
     _autoTimer?.cancel();
     _asrSubscription?.cancel();
     _audioSubscription?.cancel();
@@ -54,10 +58,13 @@ class _TeleprompterViewState extends State<TeleprompterView> {
     super.dispose();
   }
 
+  void _onControllerChanged() {
+    if (!mounted) return;
+    _syncTransport();
+  }
+
   Future<void> _syncTransport() async {
-    if (!mounted || !controller.loaded) {
-      return;
-    }
+    if (!mounted || !controller.loaded) return;
 
     if (controller.mode == TeleprompterMode.voice && controller.isPlaying) {
       if (!_voiceStarted) {
@@ -74,16 +81,12 @@ class _TeleprompterViewState extends State<TeleprompterView> {
     }
 
     _scrollToCurrentLine();
-    if (mounted) {
-      setState(() {});
-    }
+    if (mounted) setState(() {});
   }
 
   Future<void> _startVoiceFollow() async {
     final active = controller.activeScript;
-    if (active == null) {
-      return;
-    }
+    if (active == null) return;
 
     if (!await _audioRecorder.hasPermission()) {
       controller.setPlaying(false);
@@ -110,7 +113,6 @@ class _TeleprompterViewState extends State<TeleprompterView> {
     );
 
     _audioSubscription = stream.listen((data) {
-      // pcm16bits is 2 bytes per sample (little-endian or native).
       final byteData = ByteData.sublistView(Uint8List.fromList(data));
       final floatList = Float32List(data.length ~/ 2);
       for (int i = 0; i < floatList.length; i++) {
@@ -129,7 +131,6 @@ class _TeleprompterViewState extends State<TeleprompterView> {
     if (await _audioRecorder.isRecording()) {
       await _audioRecorder.stop();
     }
-
     await _asrService.stop();
     await _asrSubscription?.cancel();
     _asrSubscription = null;
@@ -137,9 +138,7 @@ class _TeleprompterViewState extends State<TeleprompterView> {
   }
 
   void _startAutoScroll() {
-    if (_autoStarted) {
-      return;
-    }
+    if (_autoStarted) return;
     _lastTick = DateTime.now();
     _autoTimer = Timer.periodic(const Duration(milliseconds: 16), (timer) {
       if (!mounted ||
@@ -153,9 +152,7 @@ class _TeleprompterViewState extends State<TeleprompterView> {
       _lastTick = now;
       final charsPerSecond = controller.settings.speedWpm / 60.0;
       final advance = (elapsedMs * charsPerSecond / 1000.0).floor();
-      if (advance <= 0) {
-        return;
-      }
+      if (advance <= 0) return;
       controller.setCurrentIndex(controller.currentCharIndex + advance);
       _scrollToCurrentLine();
     });
@@ -170,137 +167,41 @@ class _TeleprompterViewState extends State<TeleprompterView> {
   }
 
   void _scrollToCurrentLine() {
-    if (!_scrollController.hasClients) {
-      return;
-    }
-    final lines = controller.parsedActiveScript.lines;
-    if (lines.isEmpty) {
-      return;
-    }
-
-    final viewportHeight = _scrollController.position.viewportDimension;
-    final rowExtent =
-        controller.settings.fontSize * controller.settings.lineHeight + 18;
-    final targetOffset =
-        (controller.currentLineIndex * rowExtent) -
-        viewportHeight * controller.settings.readingLineRatio;
-    final clamped = targetOffset.clamp(
-      0.0,
-      _scrollController.position.maxScrollExtent,
-    );
-    _scrollController.jumpTo(clamped.toDouble());
-  }
-
-  @override
-  void didUpdateWidget(covariant TeleprompterView oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.controller != widget.controller) {
-      _initListeners();
-    }
-  }
-
-  String _parseDuration(num durationOrMap) {
-    if (durationOrMap is num) {
-      return (durationOrMap / 1000).toStringAsFixed(2);
-    } else if (durationOrMap is Map) {
-      // Sometimes whispered returns mapping or str
-      return durationOrMap.toString();
-    }
-    return '0.00';
-  }
-
-  void _scrollToCenter() {
-    if (!mounted) {
-      return;
-    }
+    if (!_scrollController.hasClients) return;
     try {
-      if (_scrollController.hasClients &&
-          _scrollController.position.hasViewportDimension) {
-        _scrollController.jumpTo(
-          (_scrollController.position.maxScrollExtent +
-                  _scrollController.position.viewportDimension) /
-              2,
-        );
-      }
-    } catch (_) {}
+      final pos = _scrollController.position;
+      if (pos.maxScrollExtent <= 0) return;
+      final lines = controller.parsedActiveScript.lines;
+      if (lines.isEmpty) return;
+
+      final viewportHeight = pos.viewportDimension;
+      final rowExtent =
+          controller.settings.fontSize * controller.settings.lineHeight + 18;
+      final targetOffset =
+          (controller.currentLineIndex * rowExtent) -
+          viewportHeight * controller.settings.readingLineRatio;
+      final clamped = targetOffset.clamp(0.0, pos.maxScrollExtent);
+      _scrollController.jumpTo(clamped.toDouble());
+    } catch (_) {
+      // Ignore scroll errors during layout transitions.
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (widget.controller.currentScript == null) {
-      return const Center(child: Text('没有选中的稿件'));
-    }
-
-    final TeleprompterState state = widget.controller.state;
     final theme = Theme.of(context);
-    final TextStyle textStyle = theme.textTheme.displayMedium!.copyWith(
-      fontSize: state.fontSize,
-      color: state.fontColor,
-      height: 1.5,
-    );
+    final activeScript = controller.activeScript;
+    final parsed = controller.parsedActiveScript;
+    final lines = parsed.lines;
 
-    Widget content = Center(
-      child: ValueListenableBuilder<double>(
-        valueListenable: _voiceVolumeNotifier,
-        builder: (context, volume, child) {
-          final wordsInfo = _getTimedWords(
-            widget.controller.currentScript!.content,
-          );
-
-          return Padding(
-            padding: EdgeInsets.symmetric(horizontal: state.margin),
-            child: ShaderMask(
-              shaderCallback: (Rect bounds) {
-                return LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: <Color>[
-                    state.backgroundColor,
-                    Colors.transparent,
-                    Colors.transparent,
-                    state.backgroundColor,
-                  ],
-                  stops: const <double>[0.0, 0.4, 0.6, 1.0],
-                ).createShader(bounds);
-              },
-              blendMode: BlendMode.dstOut,
-              child: ListView.builder(
-                controller: _scrollController,
-                padding: EdgeInsets.fromLTRB(
-                  controller.settings.paddingX,
-                  180,
-                  controller.settings.paddingX,
-                  220,
-                ),
-                itemCount: wordsInfo.length,
-                itemBuilder: (context, index) {
-                  final wordInfo = wordsInfo[index];
-                  return Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 6),
-                    child: Text(wordInfo.text, style: textStyle),
-                  );
-                },
-              ),
-            ),
-          );
-        },
-      ),
-    );
-
-    if (state.isMirrored) {
-      content = Transform.scale(
-        scaleX: -1,
-        alignment: Alignment.center,
-        child: content,
-      );
-    }
-
-    return Card(
+    Widget content = Card(
       elevation: 4,
+      margin: EdgeInsets.zero,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(20),
         child: Stack(
           children: [
+            // Dark background gradient.
             Container(
               decoration: const BoxDecoration(
                 gradient: LinearGradient(
@@ -310,6 +211,7 @@ class _TeleprompterViewState extends State<TeleprompterView> {
                 ),
               ),
             ),
+            // Reading line indicator.
             Positioned.fill(
               child: IgnorePointer(
                 child: Align(
@@ -335,8 +237,10 @@ class _TeleprompterViewState extends State<TeleprompterView> {
                 ),
               ),
             ),
+            // Main content.
             Column(
               children: [
+                // Title + play/pause.
                 Padding(
                   padding: const EdgeInsets.fromLTRB(18, 18, 18, 10),
                   child: Row(
@@ -362,6 +266,7 @@ class _TeleprompterViewState extends State<TeleprompterView> {
                     ],
                   ),
                 ),
+                // Mode selection chips.
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 18),
                   child: Wrap(
@@ -398,25 +303,93 @@ class _TeleprompterViewState extends State<TeleprompterView> {
                   ),
                 ),
                 const SizedBox(height: 10),
+                // Scrollable teleprompter text with gradient fade.
                 Expanded(
-                  child: ListView.builder(
-                    controller: _scrollController,
-                    padding: EdgeInsets.fromLTRB(
-                      controller.settings.paddingX,
-                      180,
-                      controller.settings.paddingX,
-                      220,
-                    ),
-                    itemCount: wordsInfo.length,
-                    itemBuilder: (context, index) {
-                      final wordInfo = wordsInfo[index];
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 6),
-                        child: Text(wordInfo.text, style: textStyle),
-                      );
+                  child: ShaderMask(
+                    shaderCallback: (Rect bounds) {
+                      return const LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: <Color>[
+                          Colors.transparent,
+                          Colors.black,
+                          Colors.black,
+                          Colors.transparent,
+                        ],
+                        stops: <double>[0.0, 0.12, 0.88, 1.0],
+                      ).createShader(bounds);
                     },
+                    blendMode: BlendMode.dstIn,
+                    child: lines.isEmpty
+                        ? Center(
+                            child: Text(
+                              '请选择或新建一份稿件',
+                              style: theme.textTheme.titleMedium?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          )
+                        : ListView.builder(
+                            controller: _scrollController,
+                            padding: EdgeInsets.fromLTRB(
+                              controller.settings.paddingX,
+                              180,
+                              controller.settings.paddingX,
+                              220,
+                            ),
+                            itemCount: lines.length,
+                            itemBuilder: (context, index) {
+                              final line = lines[index];
+                              final isCurrent =
+                                  index == controller.currentLineIndex;
+                              final isBehind =
+                                  index < controller.currentLineIndex;
+                              return AnimatedContainer(
+                                duration: const Duration(milliseconds: 180),
+                                curve: Curves.easeOut,
+                                margin: const EdgeInsets.symmetric(vertical: 6),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 18,
+                                  vertical: 10,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: isCurrent
+                                      ? theme.colorScheme.primary.withValues(
+                                          alpha: 0.12,
+                                        )
+                                      : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(
+                                    color: isCurrent
+                                        ? theme.colorScheme.primary.withValues(
+                                            alpha: 0.35,
+                                          )
+                                        : Colors.white.withValues(alpha: 0.05),
+                                  ),
+                                ),
+                                child: Text(
+                                  line.text,
+                                  style: theme.textTheme.bodyLarge?.copyWith(
+                                    fontSize: controller.settings.fontSize,
+                                    height: controller.settings.lineHeight,
+                                    color: isCurrent
+                                        ? theme.colorScheme.primaryContainer
+                                        : isBehind
+                                        ? theme.colorScheme.onSurface
+                                              .withValues(alpha: 0.58)
+                                        : theme.colorScheme.onSurface,
+                                    fontWeight: isCurrent
+                                        ? FontWeight.w700
+                                        : FontWeight.w400,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                              );
+                            },
+                          ),
                   ),
                 ),
+                // Bottom status bar.
                 Padding(
                   padding: const EdgeInsets.fromLTRB(18, 0, 18, 18),
                   child: Row(
@@ -444,5 +417,16 @@ class _TeleprompterViewState extends State<TeleprompterView> {
         ),
       ),
     );
+
+    // Mirror mode: flip the entire content horizontally.
+    if (controller.settings.mirrorMode) {
+      content = Transform(
+        alignment: Alignment.center,
+        transform: Matrix4.diagonal3Values(-1.0, 1.0, 1.0),
+        child: content,
+      );
+    }
+
+    return content;
   }
 }
