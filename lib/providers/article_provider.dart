@@ -86,6 +86,31 @@ class ArticleProvider with ChangeNotifier {
     }
   }
 
+  /// 更新稿件的提词器设置
+  Future<Article?> updateArticleTeleprompterSettings(
+    String id,
+    Map<String, dynamic> teleprompterSettings,
+  ) async {
+    try {
+      final updated = await _storage!.updateArticleTeleprompterSettings(
+        id,
+        teleprompterSettings,
+      );
+      if (updated != null) {
+        final index = _articles.indexWhere((a) => a.id == id);
+        if (index != -1) {
+          _articles[index] = updated;
+          notifyListeners();
+        }
+      }
+      return updated;
+    } catch (e) {
+      _error = '更新稿件提词器设置失败: $e';
+      notifyListeners();
+      return null;
+    }
+  }
+
   /// 删除稿件
   Future<bool> deleteArticle(String id) async {
     try {

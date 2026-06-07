@@ -39,7 +39,7 @@ class AsrModels {
           'https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-paraformer-zh-2023-09-14.tar.bz2',
       mirrorUrl:
           'https://hf-mirror.com/k2-fsa/sherpa-onnx/resolve/main/sherpa-onnx-paraformer-zh-2023-09-14.tar.bz2',
-      approximateSizeMB: 94,
+      approximateSizeMB: 234,
     ),
     AsrModelInfo(
       id: 'streaming-paraformer',
@@ -49,7 +49,7 @@ class AsrModels {
           'https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-streaming-paraformer-bilingual-zh-en.tar.bz2',
       mirrorUrl:
           'https://hf-mirror.com/k2-fsa/sherpa-onnx/resolve/main/sherpa-onnx-streaming-paraformer-bilingual-zh-en.tar.bz2',
-      approximateSizeMB: 82,
+      approximateSizeMB: 1047,
     ),
     AsrModelInfo(
       id: 'zipformer2-ced',
@@ -58,7 +58,7 @@ class AsrModels {
       downloadUrl:
           'https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-streaming-zipformer-zh-14M-2023-02-23.tar.bz2',
       mirrorUrl: null,
-      approximateSizeMB: 80,
+      approximateSizeMB: 74,
     ),
   ];
 }
@@ -123,6 +123,9 @@ class AsrService with ChangeNotifier {
 
   // ─── 下载状态跟踪 ──────────────────────────────────────
   final Map<String, DownloadProgress> _downloadProgress = {};
+  StreamSubscription? _currentDownloadSubscription;
+  String? _currentDownloadModelId;
+  bool _currentDownloadCancelled = false;
 
   /// 获取指定模型的下载进度
   DownloadProgress getDownloadProgress(String modelId) {
@@ -132,6 +135,23 @@ class AsrService with ChangeNotifier {
   /// 所有模型的下载进度（只读视图）
   Map<String, DownloadProgress> get allDownloadProgress =>
       Map.unmodifiable(_downloadProgress);
+
+  /// 取消当前正在进行的下载
+  void cancelDownload() {
+    if (_currentDownloadSubscription != null &&
+        _currentDownloadModelId != null) {
+      _currentDownloadCancelled = true;
+      _currentDownloadSubscription!.cancel();
+      _currentDownloadSubscription = null;
+      final modelId = _currentDownloadModelId!;
+      _currentDownloadModelId = null;
+      _downloadProgress[modelId] = const DownloadProgress(
+        isDownloading: false,
+        message: '下载已取消',
+      );
+      notifyListeners();
+    }
+  }
 
   AsrService._();
 
@@ -194,6 +214,8 @@ class AsrService with ChangeNotifier {
     // 如果已经在下载，不重复启动
     if (_downloadProgress[modelId]?.isDownloading == true) return;
 
+    _currentDownloadCancelled = false;
+    _currentDownloadModelId = modelId;
     _downloadProgress[modelId] = DownloadProgress(
       isDownloading: true,
       message: '准备下载...',
@@ -216,6 +238,7 @@ class AsrService with ChangeNotifier {
         progress: 1.0,
         message: '下载完成',
       );
+      _currentDownloadModelId = null;
       notifyListeners();
     }
 
@@ -227,6 +250,7 @@ class AsrService with ChangeNotifier {
         error: error,
         message: '下载失败: $error',
       );
+      _currentDownloadModelId = null;
       notifyListeners();
     }
 
@@ -247,6 +271,11 @@ class AsrService with ChangeNotifier {
     // 依次尝试每个 URL
     var lastError = '';
     for (int attempt = 0; attempt < urls.length; attempt++) {
+      if (_currentDownloadCancelled) {
+        _currentDownloadModelId = null;
+        return;
+      }
+
       final url = urls[attempt];
       final sourceLabel =
           attempt == 0 && useMirror && modelInfo.mirrorUrl != null
@@ -274,31 +303,42 @@ class AsrService with ChangeNotifier {
         int downloaded = 0;
         final sink = tempFile.openWrite();
 
-        await response.stream
-            .listen(
-              (chunk) {
-                sink.add(chunk);
-                downloaded += chunk.length;
-                if (contentLength > 0) {
-                  final progress = downloaded / contentLength;
-                  final mb = (downloaded / (1024 * 1024)).toStringAsFixed(1);
-                  final totalMb = (contentLength / (1024 * 1024))
-                      .toStringAsFixed(1);
-                  updateProgress(
-                    progress * 0.8,
-                    '[$sourceLabel] 下载中: ${mb}MB / ${totalMb}MB (${(progress * 100).toStringAsFixed(0)}%)',
-                  );
-                }
-              },
-              onDone: () async {
-                await sink.close();
-              },
-              onError: (e) async {
-                await sink.close();
-                throw e;
-              },
-            )
-            .asFuture<void>();
+        _currentDownloadSubscription = response.stream.listen(
+          (chunk) {
+            sink.add(chunk);
+            downloaded += chunk.length;
+            if (contentLength > 0) {
+              final progress = downloaded / contentLength;
+              final mb = (downloaded / (1024 * 1024)).toStringAsFixed(1);
+              final totalMb = (contentLength / (1024 * 1024))
+                  .toStringAsFixed(1);
+              updateProgress(
+                progress * 0.8,
+                '[$sourceLabel] 下载中: ${mb}MB / ${totalMb}MB (${(progress * 100).toStringAsFixed(0)}%)',
+              );
+            }
+          },
+          onDone: () async {
+            await sink.close();
+          },
+          onError: (e) async {
+            await sink.close();
+            throw e;
+          },
+          cancelOnError: false,
+        );
+
+        await _currentDownloadSubscription!.asFuture<void>();
+
+        if (_currentDownloadCancelled) {
+          await sink.close();
+          if (await tempFile.exists()) {
+            await tempFile.delete();
+          }
+          _currentDownloadModelId = null;
+          _currentDownloadSubscription = null;
+          return;
+        }
 
         updateProgress(0.8, '下载完成，正在解压...');
 

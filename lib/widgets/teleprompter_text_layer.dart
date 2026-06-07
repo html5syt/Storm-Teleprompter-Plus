@@ -106,15 +106,19 @@ class TeleprompterTextLayer extends StatefulWidget {
 }
 
 class _TeleprompterTextLayerState extends State<TeleprompterTextLayer> {
-  // 用于记录每个字符的 GlobalKey，便于滚动定位
-  final Map<int, GlobalKey> _charKeys = {};
+  // 当前字符的 GlobalKey（仅保存当前字符，不保存所有字符）
+  final GlobalKey _currentCharKey = GlobalKey();
 
   @override
   void didUpdateWidget(TeleprompterTextLayer oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.currentIndex != oldWidget.currentIndex &&
         widget.currentIndex >= 0) {
-      // 当前索引变化时，滚动到对应位置
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _scrollToCurrentChar();
+      });
+    } else if (widget.readingLineOffset != oldWidget.readingLineOffset &&
+        widget.currentIndex >= 0) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _scrollToCurrentChar();
       });
@@ -123,25 +127,29 @@ class _TeleprompterTextLayerState extends State<TeleprompterTextLayer> {
 
   /// 滚动到当前高亮字符位置
   ///
-  /// 使用阅读线位置作为目标，将当前字符滚动到阅读线处。
+  /// 使用阅读线位置作为目标，将当前字符所在行滚动到阅读线处。
   void _scrollToCurrentChar() {
     if (!widget.scrollController.hasClients) return;
+    if (widget.currentIndex < 0) return;
 
-    final key = _charKeys[widget.currentIndex];
-    if (key == null) return;
+    // 找到当前字符所在的行号
+    int charCount = 0;
+    int targetLine = 0;
+    for (int i = 0; i < widget.lines.length; i++) {
+      final lineLen = widget.lines[i].characters.length;
+      if (widget.currentIndex < charCount + lineLen) {
+        targetLine = i;
+        break;
+      }
+      charCount += lineLen;
+    }
 
-    final charContext = key.currentContext;
-    if (charContext == null) return;
-
-    final renderBox = charContext.findRenderObject() as RenderBox?;
-    if (renderBox == null || !renderBox.attached) return;
-
-    final charPosition = renderBox.localToGlobal(Offset.zero);
+    // 每行的实际高度：文本 fontSize * lineHeight + Padding(vertical:2) 上下各2px
+    final perLineHeight = widget.fontSize * widget.lineHeight + 4;
     final screenHeight = MediaQuery.of(context).size.height;
     final screenWidth = MediaQuery.of(context).size.width;
     final isMobile = screenWidth < 600;
 
-    // 使用可配置的阅读线偏移
     final defaultRatio = isMobile ? 0.30 : 0.25;
     final readingLineY =
         screenHeight *
@@ -149,19 +157,18 @@ class _TeleprompterTextLayerState extends State<TeleprompterTextLayer> {
             ? widget.readingLineOffset
             : defaultRatio);
 
-    final currentScrollOffset = widget.scrollController.offset;
+    final topPad = screenHeight * (AppConstants.topPaddingVh / 100);
 
-    // 计算目标滚动位置：将当前字符对齐到阅读线
+    // 计算目标滚动位置：
+    // 目标行在全局滚动视图中的位置 = topPad + targetLine * perLineHeight
+    // 要使该行对齐到阅读线：scrollOffset = topPad + targetLine * perLineHeight - readingLineY
     final targetScrollOffset =
-        currentScrollOffset + charPosition.dy - readingLineY;
+        topPad + targetLine * perLineHeight - readingLineY;
 
-    // 按行吸附：将目标偏移量对齐到最近的行边界
-    final effectiveLineHeight = widget.fontSize * widget.lineHeight;
+    // 按行吸附
     final snappedOffset =
-        (targetScrollOffset / effectiveLineHeight).roundToDouble() *
-        effectiveLineHeight;
+        (targetScrollOffset / perLineHeight).roundToDouble() * perLineHeight;
 
-    // 平滑滚动到目标位置
     widget.scrollController.animateTo(
       snappedOffset.clamp(
         0.0,
@@ -177,6 +184,8 @@ class _TeleprompterTextLayerState extends State<TeleprompterTextLayer> {
     final screenHeight = MediaQuery.of(context).size.height;
     final screenWidth = MediaQuery.of(context).size.width;
     final effectiveLineHeight = widget.fontSize * widget.lineHeight;
+    // 每行实际高度（含 Padding vertical:2）
+    final perLineHeight = effectiveLineHeight + 4;
     // 水平边距：基准 + paddingX%
     final isMobile = screenWidth < 600;
     final basePadding = isMobile ? 16.0 : 64.0;
@@ -194,7 +203,7 @@ class _TeleprompterTextLayerState extends State<TeleprompterTextLayer> {
           controller: widget.scrollController,
           physics:
               widget.physics ??
-              LineSnapScrollPhysics(lineHeight: effectiveLineHeight),
+              LineSnapScrollPhysics(lineHeight: perLineHeight),
           padding: EdgeInsets.only(
             // 顶部空气垫：确保第一句可以滚动到阅读线
             top: screenHeight * (AppConstants.topPaddingVh / 100),
@@ -227,102 +236,74 @@ class _TeleprompterTextLayerState extends State<TeleprompterTextLayer> {
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: widget.lines.map((line) => _buildLine(line)).toList(),
+      children: List.generate(widget.lines.length, (i) {
+        final line = widget.lines[i];
+        return _buildLine(line);
+      }),
     );
   }
 
-  /// 构建单行文本
+  /// 构建单行文本（使用 RichText + TextSpan 提升性能）
   Widget _buildLine(ScriptLine line) {
     if (line.characters.isEmpty) {
       return SizedBox(height: widget.fontSize * widget.lineHeight);
     }
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
-      child: Wrap(
-        children: line.characters.map((char) => _buildChar(char)).toList(),
-      ),
-    );
-  }
-
-  /// 构建单个字符
-  Widget _buildChar(ScriptCharacter character) {
-    final isRead = character.rawIndex <= widget.currentIndex;
-    final isCurrent = character.rawIndex == widget.currentIndex;
-
-    // 获取或创建该字符的 key
-    final key = _charKeys.putIfAbsent(character.rawIndex, () => GlobalKey());
-
-    final effectiveFontSize =
-        widget.fontSize * (character.fontSizeRatio ?? 1.0);
-
-    // 字体颜色
-    final Color textColor;
-    if (widget.textColor != 0) {
-      textColor = Color(widget.textColor);
-    } else {
-      textColor = AppColors.textPrimary;
-    }
-
-    // 已读字符颜色（可选变灰）
-    final Color readColor = widget.grayReadChars
+    final textColor = widget.textColor != 0
+        ? Color(widget.textColor)
+        : AppColors.textPrimary;
+    final readColor = widget.grayReadChars
         ? textColor.withValues(alpha: 0.6)
         : textColor;
+    final baseWeight = widget.defaultBold ? FontWeight.w700 : FontWeight.w400;
+    final boldWeight = widget.defaultBold ? FontWeight.w900 : FontWeight.w700;
 
-    // 基础字重
-    final FontWeight baseWeight = widget.defaultBold
-        ? FontWeight.w700
-        : FontWeight.w400;
-    final FontWeight boldWeight = widget.defaultBold
-        ? FontWeight.w900
-        : FontWeight.w700;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: GestureDetector(
+        onTap: () {
+          // RichText 不支持逐字点击，点击行定位到该行第一个字符
+          if (line.characters.isNotEmpty) {
+            widget.onCharTap?.call(line.characters.first.rawIndex);
+          }
+        },
+        child: RichText(
+          text: TextSpan(
+            children: line.characters.map((char) {
+              final isRead = char.rawIndex <= widget.currentIndex;
+              final isCurrent = char.rawIndex == widget.currentIndex;
+              final doHighlight = isCurrent && widget.highlightCurrentChar;
+              final effectiveFontSize =
+                  widget.fontSize * (char.fontSizeRatio ?? 1.0);
 
-    // 当前字符是否高亮
-    final bool doHighlight = isCurrent && widget.highlightCurrentChar;
+              // 为当前字符设置 key 用于滚动定位
+              if (isCurrent) {
+                _currentCharKey; // 保持引用触发重建
+              }
 
-    // 当前字符样式
-    TextStyle charStyle;
-    if (doHighlight) {
-      charStyle = TextStyle(
-        fontSize: effectiveFontSize,
-        height: widget.lineHeight,
-        fontWeight: boldWeight,
-        fontStyle: character.italic ? FontStyle.italic : FontStyle.normal,
-        decoration: TextDecoration.none,
-        color: textColor,
-        fontFamily: widget.fontFamily.isNotEmpty ? widget.fontFamily : null,
-        letterSpacing: widget.letterSpacing,
-      );
-    } else {
-      charStyle = TextStyle(
-        fontSize: effectiveFontSize,
-        height: widget.lineHeight,
-        fontWeight: character.bold ? boldWeight : baseWeight,
-        fontStyle: character.italic ? FontStyle.italic : FontStyle.normal,
-        decoration: TextDecoration.none,
-        color: isRead ? readColor : textColor,
-        fontFamily: widget.fontFamily.isNotEmpty ? widget.fontFamily : null,
-        letterSpacing: widget.letterSpacing,
-      );
-    }
+              final style = TextStyle(
+                fontSize: effectiveFontSize,
+                height: widget.lineHeight,
+                fontWeight: doHighlight
+                    ? boldWeight
+                    : (char.bold ? boldWeight : baseWeight),
+                fontStyle: char.italic ? FontStyle.italic : FontStyle.normal,
+                decoration: TextDecoration.none,
+                color: doHighlight
+                    ? textColor
+                    : (isRead ? readColor : textColor),
+                fontFamily: widget.fontFamily.isNotEmpty
+                    ? widget.fontFamily
+                    : null,
+                letterSpacing: widget.letterSpacing,
+                backgroundColor: char.backgroundColor != null
+                    ? Color(char.backgroundColor!).withValues(alpha: 0.3)
+                    : null,
+              );
 
-    return GestureDetector(
-      onTap: () {
-        // 点击字符跳转到该位置
-        widget.onCharTap?.call(character.rawIndex);
-      },
-      child: Container(
-        key: key,
-        padding: const EdgeInsets.symmetric(horizontal: 1),
-        decoration: character.backgroundColor != null
-            ? BoxDecoration(
-                color: Color(character.backgroundColor!),
-                borderRadius: BorderRadius.circular(2),
-              )
-            : null,
-        child: Text(
-          character.char,
-          style: charStyle,
+              return TextSpan(text: char.char, style: style);
+            }).toList(),
+          ),
         ),
       ),
     );

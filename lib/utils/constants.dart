@@ -17,8 +17,8 @@ class AppConstants {
   static const double readingLineRatioDesktop = 0.25;
 
   /// 空气垫高度（用于首尾行滚动到阅读线）
-  static const double topPaddingVh = 65.0;
-  static const double bottomPaddingVh = 220.0;
+  static const double topPaddingVh = 30.0;
+  static const double bottomPaddingVh = 80.0;
 
   /// ASR 模型下载镜像
   static const String defaultModelMirror =

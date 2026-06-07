@@ -6,9 +6,11 @@ import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
 import '../models/article.dart';
 import '../models/app_settings.dart';
+import '../providers/article_provider.dart';
 import '../providers/teleprompter_provider.dart';
 import '../providers/settings_provider.dart';
 import '../theme/app_colors.dart';
+import '../utils/constants.dart';
 import '../widgets/teleprompter_text_layer.dart';
 import '../widgets/teleprompter_settings_panel.dart';
 
@@ -42,7 +44,7 @@ class _TeleprompterPageState extends State<TeleprompterPage>
   Widget build(BuildContext context) {
     return Consumer2<TeleprompterProvider, SettingsProvider>(
       builder: (context, teleprompter, settingsProvider, _) {
-        final settings = settingsProvider.settings;
+        final settings = settingsProvider.mergedSettings;
 
         return Scaffold(
           backgroundColor: AppColors.teleprompterBgFromSettings(
@@ -58,6 +60,8 @@ class _TeleprompterPageState extends State<TeleprompterPage>
                 shift: true,
               ): toggleFullScreen,
               LogicalKeySet(LogicalKeyboardKey.escape): () => exitFullScreen(),
+              // Enter 全屏切换
+              const SingleActivator(LogicalKeyboardKey.enter): toggleFullScreen,
               // Space 播放/暂停
               const SingleActivator(LogicalKeyboardKey.space): () =>
                   teleprompter.togglePlayPause(settings),
@@ -745,6 +749,9 @@ class _TeleprompterPageState extends State<TeleprompterPage>
 
   // ─── 阅读区域框（主体样式） ────────────────────────────
 
+  /// 阅读线固定金色（与原版 fdc800 一致）
+  static const Color _readingLineGold = Color(0xFFFDC800);
+
   Widget _buildReadingLine(BuildContext context, AppSettings settings) {
     final screenHeight = MediaQuery.of(context).size.height;
     final screenWidth = MediaQuery.of(context).size.width;
@@ -756,14 +763,14 @@ class _TeleprompterPageState extends State<TeleprompterPage>
         (settings.readingLineOffset > 0
             ? settings.readingLineOffset
             : defaultRatio);
-    // 阅读区域高度 = 2.9 行（与源版本一致）
-    final areaHeight = settings.fontSize * settings.lineHeight * 2.9;
+    // 每行实际高度 = fontSize * lineHeight（文本） + 4（Padding vertical:2 上下各2px）
+    final perLineHeight = settings.fontSize * settings.lineHeight + 4;
+    // 阅读区域高度 = 3 行（与原版一致，修正 padding 的影响）
+    final areaHeight = perLineHeight * 3 - 2; // 略减2px避免与上下行边界重叠
     // 水平边距计算（与文本层一致）
     final basePadding = isMobile ? 16.0 : 64.0;
     final extraPadding = screenWidth * settings.paddingX / 100;
     final horizontalPadding = basePadding + extraPadding;
-    // 主题色
-    final primaryColor = _primaryFromSettings(settings);
 
     return Positioned(
       top: readingLineY - areaHeight / 2,
@@ -773,41 +780,39 @@ class _TeleprompterPageState extends State<TeleprompterPage>
         child: SizedBox(
           height: areaHeight,
           child: Stack(
-            clipBehavior: Clip.none, // 防止标签溢出裁剪
+            clipBehavior: Clip.none,
             children: [
-              // 边框容器（更显眼）
+              // 金色边框（与原版 #fdc800 一致）
               Positioned.fill(
                 child: Container(
                   decoration: BoxDecoration(
                     border: Border.all(
-                      color: primaryColor.withValues(alpha: 0.8),
+                      color: _readingLineGold.withValues(alpha: 0.9),
                       width: 3,
                     ),
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.circular(4),
                   ),
                 ),
               ),
-              // "阅读区域" 标签（使用 Padding 避免裁剪）
+              // "Reading Area" 标签
               Positioned(
-                top: -12,
+                top: -10,
                 left: 16,
                 child: Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 6,
-                    vertical: 0,
+                    vertical: 1,
                   ),
                   color: AppColors.teleprompterBgFromSettings(
                     settings.teleprompterBgColor,
                   ),
                   child: Text(
-                    '阅读区域',
+                    'READING AREA',
                     style: TextStyle(
-                      fontSize: 11,
-                      color: _primaryFromSettings(
-                        settings,
-                      ).withValues(alpha: 0.7),
-                      fontWeight: FontWeight.w500,
-                      letterSpacing: 0.5,
+                      fontSize: 10,
+                      color: _readingLineGold.withValues(alpha: 0.8),
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 1.2,
                     ),
                   ),
                 ),

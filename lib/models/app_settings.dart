@@ -81,12 +81,12 @@ class AppSettings {
   final double letterSpacing;
 
   const AppSettings({
-    this.fontSize = 48,
+    this.fontSize = 64,
     this.lineHeight = 1.5,
     this.scrollMode = ScrollMode.manual,
     this.wpm = 150,
     this.mirrorMode = false,
-    this.fullScreenMode = false,
+    this.fullScreenMode = true,
     this.autoHideUI = true,
     this.autoHideDelaySeconds = 3,
     this.asrModelId = '',
@@ -94,13 +94,13 @@ class AppSettings {
     this.uiPrimaryColor = 0xFFDB9D16,
     this.teleprompterBgColor = 0xFF0A0A0A,
     this.paddingX = 5.0,
-    this.readingLineOffset = 0.5,
+    this.readingLineOffset = 0.25,
     this.highlightCurrentChar = false,
-    this.defaultBold = false,
+    this.defaultBold = true,
     this.progressInfoSizeRatio = 0.6,
     this.asrMirrorUrl = '',
     this.fontFamily = 'Noto Sans SC',
-    this.grayReadChars = false,
+    this.grayReadChars = true,
     this.textColor = 0,
     this.letterSpacing = 0.0,
   });
@@ -108,7 +108,7 @@ class AppSettings {
   /// 从 JSON 反序列化
   factory AppSettings.fromJson(Map<String, dynamic> json) {
     return AppSettings(
-      fontSize: (json['fontSize'] as num?)?.toDouble() ?? 48,
+      fontSize: (json['fontSize'] as num?)?.toDouble() ?? 64,
       lineHeight: (json['lineHeight'] as num?)?.toDouble() ?? 1.5,
       scrollMode: ScrollMode.values.firstWhere(
         (e) => e.name == json['scrollMode'],
@@ -116,7 +116,7 @@ class AppSettings {
       ),
       wpm: json['wpm'] as int? ?? 150,
       mirrorMode: json['mirrorMode'] as bool? ?? false,
-      fullScreenMode: json['fullScreenMode'] as bool? ?? false,
+      fullScreenMode: json['fullScreenMode'] as bool? ?? true,
       autoHideUI: json['autoHideUI'] as bool? ?? true,
       autoHideDelaySeconds: json['autoHideDelaySeconds'] as int? ?? 3,
       asrModelId: json['asrModelId'] as String? ?? '',
@@ -124,14 +124,15 @@ class AppSettings {
       uiPrimaryColor: json['uiPrimaryColor'] as int? ?? 0xFFDB9D16,
       teleprompterBgColor: json['teleprompterBgColor'] as int? ?? 0xFF0A0A0A,
       paddingX: (json['paddingX'] as num?)?.toDouble() ?? 5.0,
-      readingLineOffset: (json['readingLineOffset'] as num?)?.toDouble() ?? 0.5,
+      readingLineOffset:
+          (json['readingLineOffset'] as num?)?.toDouble() ?? 0.25,
       highlightCurrentChar: json['highlightCurrentChar'] as bool? ?? false,
-      defaultBold: json['defaultBold'] as bool? ?? false,
+      defaultBold: json['defaultBold'] as bool? ?? true,
       progressInfoSizeRatio:
           (json['progressInfoSizeRatio'] as num?)?.toDouble() ?? 0.6,
       asrMirrorUrl: json['asrMirrorUrl'] as String? ?? '',
       fontFamily: json['fontFamily'] as String? ?? 'Noto Sans SC',
-      grayReadChars: json['grayReadChars'] as bool? ?? false,
+      grayReadChars: json['grayReadChars'] as bool? ?? true,
       textColor: json['textColor'] as int? ?? 0,
       letterSpacing: (json['letterSpacing'] as num?)?.toDouble() ?? 0.0,
     );
@@ -215,5 +216,70 @@ class AppSettings {
       highlightCurrentChar: highlightCurrentChar ?? this.highlightCurrentChar,
       defaultBold: defaultBold ?? this.defaultBold,
     );
+  }
+
+  /// 用稿件覆盖设置合并生成新的 AppSettings
+  /// 仅覆盖提词器相关字段，全局设置（ASR、主题色等）保持当前值
+  AppSettings mergeOverrides(Map<String, dynamic> overrides) {
+    if (overrides.isEmpty) return this;
+    return AppSettings(
+      fontSize: (overrides['fontSize'] as num?)?.toDouble() ?? fontSize,
+      lineHeight: (overrides['lineHeight'] as num?)?.toDouble() ?? lineHeight,
+      scrollMode: overrides.containsKey('scrollMode')
+          ? ScrollMode.values.firstWhere(
+              (e) => e.name == overrides['scrollMode'],
+              orElse: () => scrollMode,
+            )
+          : scrollMode,
+      wpm: overrides['wpm'] as int? ?? wpm,
+      mirrorMode: overrides['mirrorMode'] as bool? ?? mirrorMode,
+      fullScreenMode: overrides['fullScreenMode'] as bool? ?? fullScreenMode,
+      autoHideUI: overrides['autoHideUI'] as bool? ?? autoHideUI,
+      autoHideDelaySeconds:
+          overrides['autoHideDelaySeconds'] as int? ?? autoHideDelaySeconds,
+      paddingX: (overrides['paddingX'] as num?)?.toDouble() ?? paddingX,
+      readingLineOffset:
+          (overrides['readingLineOffset'] as num?)?.toDouble() ??
+          readingLineOffset,
+      highlightCurrentChar:
+          overrides['highlightCurrentChar'] as bool? ?? highlightCurrentChar,
+      defaultBold: overrides['defaultBold'] as bool? ?? defaultBold,
+      progressInfoSizeRatio:
+          (overrides['progressInfoSizeRatio'] as num?)?.toDouble() ??
+          progressInfoSizeRatio,
+      fontFamily: overrides['fontFamily'] as String? ?? fontFamily,
+      grayReadChars: overrides['grayReadChars'] as bool? ?? grayReadChars,
+      textColor: overrides['textColor'] as int? ?? textColor,
+      letterSpacing:
+          (overrides['letterSpacing'] as num?)?.toDouble() ?? letterSpacing,
+      teleprompterBgColor:
+          overrides['teleprompterBgColor'] as int? ?? teleprompterBgColor,
+      // 以下全局设置始终使用当前值，不被稿件覆盖
+      asrModelId: asrModelId,
+      asrModelName: asrModelName,
+      uiPrimaryColor: uiPrimaryColor,
+      asrMirrorUrl: asrMirrorUrl,
+    );
+  }
+
+  /// 导出提词器相关设置为 Map（用于保存到稿件）
+  Map<String, dynamic> toTeleprompterMap() {
+    return {
+      'fontSize': fontSize,
+      'lineHeight': lineHeight,
+      'scrollMode': scrollMode.name,
+      'wpm': wpm,
+      'mirrorMode': mirrorMode,
+      'paddingX': paddingX,
+      'readingLineOffset': readingLineOffset,
+      'highlightCurrentChar': highlightCurrentChar,
+      'defaultBold': defaultBold,
+      'progressInfoSizeRatio': progressInfoSizeRatio,
+      'fontFamily': fontFamily,
+      'grayReadChars': grayReadChars,
+      'textColor': textColor,
+      'letterSpacing': letterSpacing,
+      'teleprompterBgColor': teleprompterBgColor,
+    };
   }
 }

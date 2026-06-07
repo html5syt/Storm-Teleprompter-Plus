@@ -72,71 +72,78 @@ class TeleprompterSettingsPanel extends StatelessWidget {
                       const SizedBox(height: 8),
                       _buildSlider(
                         context,
-                        '字体大小',
-                        settings.fontSize,
-                        24,
-                        120,
-                        96,
-                        'px',
-                        (v) => provider.setFontSize(v.roundToDouble()),
+                        icon: Icons.format_size,
+                        title: '字体大小',
+                        value: settings.fontSize,
+                        min: 24,
+                        max: 120,
+                        divisions: 96,
+                        suffix: 'px',
+                        onChanged: (v) =>
+                            provider.setFontSize(v.roundToDouble()),
                         onReset: () => provider.setFontSize(48),
                       ),
                       _buildSlider(
                         context,
-                        '行高',
-                        settings.lineHeight,
-                        1.0,
-                        2.5,
-                        15,
-                        'x',
-                        (v) => provider.setLineHeight(
+                        icon: Icons.format_line_spacing,
+                        title: '行高',
+                        value: settings.lineHeight,
+                        min: 1.0,
+                        max: 2.5,
+                        divisions: 15,
+                        suffix: 'x',
+                        onChanged: (v) => provider.setLineHeight(
                           double.parse(v.toStringAsFixed(1)),
                         ),
                         onReset: () => provider.setLineHeight(1.5),
                       ),
                       _buildSlider(
                         context,
-                        '自动滚动速度',
-                        settings.wpm.toDouble(),
-                        30,
-                        450,
-                        84,
-                        ' 字/分',
-                        (v) => provider.setWpm(v.round()),
+                        icon: Icons.speed,
+                        title: '自动滚动速度',
+                        value: settings.wpm.toDouble(),
+                        min: 30,
+                        max: 450,
+                        divisions: 84,
+                        suffix: ' 字/分',
+                        onChanged: (v) => provider.setWpm(v.round()),
                         onReset: () => provider.setWpm(150),
                       ),
                       _buildSlider(
                         context,
-                        '水平边距',
-                        settings.paddingX,
-                        0,
-                        40,
-                        40,
-                        '%',
-                        (v) => provider.setPaddingX(v),
+                        icon: Icons.horizontal_distribute,
+                        title: '水平边距',
+                        value: settings.paddingX,
+                        min: 0,
+                        max: 40,
+                        divisions: 40,
+                        suffix: '%',
+                        onChanged: (v) => provider.setPaddingX(v),
                         onReset: () => provider.setPaddingX(5),
                       ),
                       _buildSlider(
                         context,
-                        '阅读线偏移',
-                        settings.readingLineOffset,
-                        0.05,
-                        0.9,
-                        85,
-                        '',
-                        (v) => provider.setReadingLineOffset(v),
+                        icon: Icons.horizontal_rule,
+                        title: '阅读线偏移',
+                        value: settings.readingLineOffset,
+                        min: 0.05,
+                        max: 0.9,
+                        divisions: 85,
+                        suffix: '',
+                        onChanged: (v) => provider.setReadingLineOffset(v),
                         displayFormatter: (v) => '${(v * 100).round()}%',
                         onReset: () => provider.setReadingLineOffset(0.5),
                       ),
                       _buildSlider(
                         context,
-                        '进度条字号比例',
-                        settings.progressInfoSizeRatio,
-                        0.3,
-                        1.0,
-                        70,
-                        '',
-                        (v) => provider.setProgressInfoSizeRatio(v),
+                        icon: Icons.text_fields,
+                        title: '进度条字号比例',
+                        value: settings.progressInfoSizeRatio,
+                        min: 0.3,
+                        max: 1.0,
+                        divisions: 70,
+                        suffix: '',
+                        onChanged: (v) => provider.setProgressInfoSizeRatio(v),
                         displayFormatter: (v) => '${(v * 100).round()}%',
                         onReset: () => provider.setProgressInfoSizeRatio(0.6),
                       ),
@@ -175,13 +182,15 @@ class TeleprompterSettingsPanel extends StatelessWidget {
                       if (settings.autoHideUI)
                         _buildSlider(
                           context,
-                          '隐藏延迟',
-                          settings.autoHideDelaySeconds.toDouble(),
-                          1,
-                          10,
-                          9,
-                          ' 秒',
-                          (v) => provider.setAutoHideDelay(v.round()),
+                          icon: Icons.timer,
+                          title: '隐藏延迟',
+                          value: settings.autoHideDelaySeconds.toDouble(),
+                          min: 1,
+                          max: 10,
+                          divisions: 9,
+                          suffix: ' 秒',
+                          onChanged: (v) =>
+                              provider.setAutoHideDelay(v.round()),
                           onReset: () => provider.setAutoHideDelay(3),
                         ),
                       SwitchListTile(
@@ -205,13 +214,14 @@ class TeleprompterSettingsPanel extends StatelessWidget {
                       _buildFontFamilyField(context, provider, settings),
                       _buildSlider(
                         context,
-                        '字间距',
-                        settings.letterSpacing,
-                        -2,
-                        10,
-                        12,
-                        'px',
-                        (v) => provider.setLetterSpacing(v),
+                        icon: Icons.space_bar,
+                        title: '字间距',
+                        value: settings.letterSpacing,
+                        min: -2,
+                        max: 10,
+                        divisions: 12,
+                        suffix: 'px',
+                        onChanged: (v) => provider.setLetterSpacing(v),
                         displayFormatter: (v) => '${v.toStringAsFixed(1)}px',
                         onReset: () => provider.setLetterSpacing(0),
                       ),
@@ -222,6 +232,13 @@ class TeleprompterSettingsPanel extends StatelessWidget {
                             ? 0xFFF2F2F2
                             : settings.textColor,
                         (c) => provider.setTextColor(c),
+                        allowTransparent: false,
+                      ),
+                      _buildColorTile(
+                        context,
+                        '提词器背景色',
+                        settings.teleprompterBgColor,
+                        (c) => provider.setTeleprompterBgColor(c),
                         allowTransparent: false,
                       ),
                       SwitchListTile(
@@ -303,14 +320,15 @@ class TeleprompterSettingsPanel extends StatelessWidget {
   }
 
   Widget _buildSlider(
-    BuildContext context,
-    String title,
-    double value,
-    double min,
-    double max,
-    int divisions,
-    String suffix,
-    ValueChanged<double> onChanged, {
+    BuildContext context, {
+    IconData? icon,
+    required String title,
+    required double value,
+    required double min,
+    required double max,
+    required int divisions,
+    required String suffix,
+    required ValueChanged<double> onChanged,
     String Function(double)? displayFormatter,
     VoidCallback? onReset,
   }) {
@@ -322,8 +340,12 @@ class TeleprompterSettingsPanel extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 2),
       child: Row(
         children: [
+          if (icon != null) ...[
+            Icon(icon, size: 18, color: AppColors.textSecondary),
+            const SizedBox(width: 8),
+          ],
           SizedBox(
-            width: 80,
+            width: icon != null ? 72 : 80,
             child: Text(
               title,
               style: const TextStyle(
@@ -482,6 +504,18 @@ class TeleprompterSettingsPanel extends StatelessWidget {
     bool allowTransparent = true,
   }) {
     Color selectedColor = Color(currentColor);
+    final hexController = TextEditingController(
+      text: '#${currentColor.toRadixString(16).padLeft(8, '0').toUpperCase()}',
+    );
+
+    void updateHexField(Color color) {
+      hexController.value = TextEditingValue(
+        text:
+            '#${color.toARGB32().toRadixString(16).padLeft(8, '0').toUpperCase()}',
+        selection: TextSelection.collapsed(offset: 9),
+      );
+    }
+
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
@@ -507,7 +541,12 @@ class TeleprompterSettingsPanel extends StatelessWidget {
                   children: _presetColors.map((c) {
                     final isSelected = c == selectedColor.toARGB32();
                     return GestureDetector(
-                      onTap: () => setState(() => selectedColor = Color(c)),
+                      onTap: () {
+                        setState(() {
+                          selectedColor = Color(c);
+                          updateHexField(selectedColor);
+                        });
+                      },
                       child: Container(
                         width: 36,
                         height: 36,
@@ -522,10 +561,12 @@ class TeleprompterSettingsPanel extends StatelessWidget {
                           ),
                         ),
                         child: isSelected
-                            ? const Icon(
+                            ? Icon(
                                 Icons.check,
                                 size: 18,
-                                color: Colors.white,
+                                color: Color(c).computeLuminance() > 0.5
+                                    ? Colors.black
+                                    : Colors.white,
                               )
                             : null,
                       ),
@@ -540,7 +581,7 @@ class TeleprompterSettingsPanel extends StatelessWidget {
                 const SizedBox(height: 8),
                 TextField(
                   decoration: const InputDecoration(
-                    hintText: '#FFDB9D16',
+                    hintText: '#FFDB9D16 或 0xFFDB9D16',
                     border: OutlineInputBorder(),
                     contentPadding: EdgeInsets.symmetric(
                       horizontal: 12,
@@ -549,8 +590,12 @@ class TeleprompterSettingsPanel extends StatelessWidget {
                     isDense: true,
                   ),
                   style: const TextStyle(fontSize: 14),
-                  onSubmitted: (value) {
-                    final hex = value.replaceFirst('#', '');
+                  controller: hexController,
+                  onChanged: (value) {
+                    final hex = value
+                        .replaceFirst('#', '')
+                        .replaceFirst('0x', '')
+                        .trim();
                     if (hex.length == 6 || hex.length == 8) {
                       final parsed = int.tryParse(
                         hex.length == 6 ? 'FF$hex' : hex,
@@ -592,21 +637,27 @@ class TeleprompterSettingsPanel extends StatelessWidget {
   }
 
   static const List<int> _presetColors = [
-    0xFFDB9D16,
-    0xFFE53935,
-    0xFFD81B60,
-    0xFF8E24AA,
-    0xFF5E35B1,
-    0xFF3949AB,
-    0xFF1E88E5,
-    0xFF00ACC1,
-    0xFF00897B,
-    0xFF43A047,
-    0xFF7CB342,
-    0xFFFDD835,
-    0xFFFB8C00,
-    0xFF6D4C41,
-    0xFF546E7A,
-    0xFF424242,
+    // 标准色
+    0xFFFFFFFF, // 白色
+    0xFFBDBDBD, // 浅灰
+    0xFF757575, // 灰色
+    0xFF212121, // 近黑
+    0xFF000000, // 黑色
+    // 彩色
+    0xFFDB9D16, // 金色（默认主题）
+    0xFFE53935, // 红色
+    0xFFD81B60, // 粉色
+    0xFF8E24AA, // 紫色
+    0xFF5E35B1, // 深紫
+    0xFF3949AB, // 靛蓝
+    0xFF1E88E5, // 蓝色
+    0xFF00ACC1, // 青色
+    0xFF00897B, // 青绿
+    0xFF43A047, // 绿色
+    0xFF7CB342, // 草绿
+    0xFFFDD835, // 黄色
+    0xFFFB8C00, // 橙色
+    0xFF6D4C41, // 棕色
+    0xFF546E7A, // 蓝灰
   ];
 }

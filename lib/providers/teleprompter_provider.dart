@@ -78,12 +78,11 @@ class TeleprompterProvider with ChangeNotifier {
 
   /// 当前阅读进度 (0.0 ~ 1.0)
   double get progress {
-    // 手动模式下用滚动位置计算进度
-    if (_state == TeleprompterState.paused ||
-        _state == TeleprompterState.idle) {
-      return _manualProgress;
+    // 有 currentIndex 时始终使用字符索引计算，保证各模式间进度一致
+    if (_currentIndex >= 0 && _totalChars > 0) {
+      return (_currentIndex + 1) / _totalChars;
     }
-    return _totalChars > 0 ? (_currentIndex + 1) / _totalChars : 0.0;
+    return _manualProgress;
   }
 
   // ─── 手动滚动进度跟踪 ─────────────────────────────────
@@ -153,6 +152,11 @@ class TeleprompterProvider with ChangeNotifier {
 
   /// 切换播放/暂停
   void togglePlayPause(AppSettings settings) {
+    if (_state == TeleprompterState.completed) {
+      reset();
+      play(settings);
+      return;
+    }
     if (isPlaying) {
       pause(settings);
     } else {
@@ -258,9 +262,12 @@ class TeleprompterProvider with ChangeNotifier {
         );
 
         if (newIndex >= _totalChars - 1) {
-          _currentIndex = _totalChars - 1;
-          _state = TeleprompterState.completed;
+          // 播完后回到开头并停止（与原版行为一致）
+          _currentIndex = -1;
+          _state = TeleprompterState.paused;
           _stopAutoScroll();
+          _playStartTime = null;
+          _elapsedBeforePause = Duration.zero;
           notifyListeners();
           return;
         }
@@ -286,21 +293,22 @@ class TeleprompterProvider with ChangeNotifier {
   /// [delta] 为正数表示向下滚动（加速），负数表示向上滚动（减速）
   void adjustSpeedByWheel(double delta, SettingsProvider settingsProvider) {
     if (_state != TeleprompterState.playing) return;
-    if (settingsProvider.settings.scrollMode != ScrollMode.auto) return;
+    final merged = settingsProvider.mergedSettings;
+    if (merged.scrollMode != ScrollMode.auto) return;
 
     // 每次滚轮事件调整 WPM：小步 ±5，大步 ±15
     final step = delta.abs() > 0.5 ? 15 : 5;
     final direction = delta > 0 ? 1 : -1;
-    final newWpm = (settingsProvider.settings.wpm + step * direction).clamp(
+    final newWpm = (merged.wpm + step * direction).clamp(
       AppConstants.minWpm,
       AppConstants.maxWpm,
     );
 
-    if (newWpm != settingsProvider.settings.wpm) {
+    if (newWpm != merged.wpm) {
       settingsProvider.setWpm(newWpm);
       // 重启 ticker 使新 WPM 立即生效
       _stopAutoScroll();
-      _startAutoScrollIfNeeded(settingsProvider.settings);
+      _startAutoScrollIfNeeded(settingsProvider.mergedSettings);
     }
   }
 

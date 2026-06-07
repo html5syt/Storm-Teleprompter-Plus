@@ -31,6 +31,9 @@ mixin EditorLogic on State<EditorPage> {
   void _onChanged() {
     if (!isDirty) {
       setState(() => isDirty = true);
+    } else {
+      // 实时更新字数统计
+      setState(() {});
     }
   }
 
@@ -109,6 +112,34 @@ mixin EditorLogic on State<EditorPage> {
     contentController.value = TextEditingValue(
       text: newText,
       selection: TextSelection.collapsed(offset: newCursorPos),
+    );
+  }
+
+  /// 清除所有空行
+  void removeEmptyLines() {
+    final text = contentController.text;
+    // 替换连续的换行符为单个换行符，并去除首尾空白行
+    final cleaned = text
+        .replaceAll(RegExp(r'\n\s*\n+'), '\n')
+        .replaceAll(RegExp(r'^\s*\n'), '')
+        .replaceAll(RegExp(r'\n\s*$'), '')
+        .trim();
+    contentController.value = TextEditingValue(
+      text: cleaned,
+      selection: TextSelection.collapsed(offset: cleaned.length),
+    );
+  }
+
+  /// 段首缩进（每段前加两个全角空格）
+  void indentParagraphs() {
+    final text = contentController.text;
+    final lines = text.split('\n');
+    final indented = lines
+        .map((line) => line.trim().isNotEmpty ? '\u3000\u3000$line' : line)
+        .join('\n');
+    contentController.value = TextEditingValue(
+      text: indented,
+      selection: TextSelection.collapsed(offset: indented.length),
     );
   }
 

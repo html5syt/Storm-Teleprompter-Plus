@@ -153,6 +153,13 @@ class _EditorPageState extends State<EditorPage> with EditorLogic {
         ),
         _buildFormatButton(Icons.wrap_text, '段落', () => insertTag('p')),
         _buildBgColorButton(),
+        const SizedBox(width: 8),
+        _buildFormatButton(Icons.vertical_align_top, '清除空行', removeEmptyLines),
+        _buildFormatButton(
+          Icons.format_indent_increase,
+          '段首缩进',
+          indentParagraphs,
+        ),
       ],
     );
   }

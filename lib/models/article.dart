@@ -9,6 +9,7 @@ class Article {
   final DateTime createdAt;
   final DateTime updatedAt;
   final int sortOrder;
+  final Map<String, dynamic>? teleprompterSettings; // 每稿独立的提词器设置
 
   Article({
     required this.id,
@@ -17,6 +18,7 @@ class Article {
     required this.createdAt,
     required this.updatedAt,
     this.sortOrder = 0,
+    this.teleprompterSettings,
   });
 
   /// 从 JSON 反序列化
@@ -28,6 +30,9 @@ class Article {
       createdAt: DateTime.parse(json['createdAt'] as String),
       updatedAt: DateTime.parse(json['updatedAt'] as String),
       sortOrder: json['sortOrder'] as int? ?? 0,
+      teleprompterSettings: json['teleprompterSettings'] != null
+          ? Map<String, dynamic>.from(json['teleprompterSettings'] as Map)
+          : null,
     );
   }
 
@@ -40,6 +45,8 @@ class Article {
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt.toIso8601String(),
       'sortOrder': sortOrder,
+      if (teleprompterSettings != null)
+        'teleprompterSettings': teleprompterSettings,
     };
   }
 
@@ -51,6 +58,7 @@ class Article {
     DateTime? createdAt,
     DateTime? updatedAt,
     int? sortOrder,
+    Map<String, dynamic>? teleprompterSettings,
   }) {
     return Article(
       id: id ?? this.id,
@@ -59,6 +67,7 @@ class Article {
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       sortOrder: sortOrder ?? this.sortOrder,
+      teleprompterSettings: teleprompterSettings ?? this.teleprompterSettings,
     );
   }
 

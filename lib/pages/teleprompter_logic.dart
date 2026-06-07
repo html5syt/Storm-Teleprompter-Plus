@@ -21,6 +21,10 @@ mixin TeleprompterPageLogic<T extends StatefulWidget>
     _settingsProvider = context.read<SettingsProvider>();
     _setupScrollListener();
 
+    // 加载稿件特有的提词器设置覆盖
+    final article = (widget as TeleprompterPage).article;
+    _settingsProvider!.loadArticleOverrides(article.teleprompterSettings);
+
     // 监听窗口最大化/还原事件，确保标题栏正确显示
     if (_isDesktop) {
       _initWindowListener();
@@ -28,7 +32,7 @@ mixin TeleprompterPageLogic<T extends StatefulWidget>
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      final settings = _settingsProvider!.settings;
+      final settings = _settingsProvider!.mergedSettings;
       // 自动进入全屏
       if (settings.fullScreenMode) {
         enterFullScreen();
@@ -57,10 +61,30 @@ mixin TeleprompterPageLogic<T extends StatefulWidget>
     if (isFullScreen && mounted) {
       exitFullScreen();
     }
+    // 保存稿件覆盖设置到稿件
+    _saveArticleOverrides();
+    // 清除稿件覆盖
+    _settingsProvider?.clearArticleOverrides();
     scrollController.dispose();
     // 退出时停止提词器（不触发 notifyListeners，避免 defunct 异常）
     _teleprompterProvider?.stopAll();
     super.dispose();
+  }
+
+  /// 将稿件覆盖设置保存回稿件
+  void _saveArticleOverrides() {
+    final overrides = _settingsProvider?.articleOverrides;
+    if (overrides != null && overrides.isNotEmpty) {
+      try {
+        final article = (widget as TeleprompterPage).article;
+        context.read<ArticleProvider>().updateArticleTeleprompterSettings(
+          article.id,
+          Map<String, dynamic>.from(overrides),
+        );
+      } catch (e) {
+        debugPrint('[TeleprompterLogic] 保存稿件设置失败: $e');
+      }
+    }
   }
 
   // ─── 全屏控制 ──────────────────────────────────────────
@@ -135,7 +159,7 @@ mixin TeleprompterPageLogic<T extends StatefulWidget>
 
     final teleprompter = context.read<TeleprompterProvider>();
     final settingsProvider = context.read<SettingsProvider>();
-    final settings = settingsProvider.settings;
+    final settings = settingsProvider.mergedSettings;
 
     if (settings.scrollMode == ScrollMode.auto && teleprompter.isPlaying) {
       // 自动模式：滚轮只调速，不滚动页面
@@ -157,7 +181,20 @@ mixin TeleprompterPageLogic<T extends StatefulWidget>
     if (!scrollController.hasClients) return;
     final maxScroll = scrollController.position.maxScrollExtent;
     if (maxScroll <= 0) return;
-    final progress = scrollController.offset / maxScroll;
+    // 扣除空气垫计算实际内容进度
+    final screenHeight = MediaQuery.of(context).size.height;
+    final topPad = screenHeight * (AppConstants.topPaddingVh / 100);
+    final bottomPad = screenHeight * (AppConstants.bottomPaddingVh / 100);
+    final contentExtent = maxScroll - topPad - bottomPad;
+    if (contentExtent <= 0) {
+      context.read<TeleprompterProvider>().setManualProgress(0.0);
+      return;
+    }
+    final contentOffset = (scrollController.offset - topPad).clamp(
+      0.0,
+      contentExtent,
+    );
+    final progress = (contentOffset / contentExtent).clamp(0.0, 1.0);
     context.read<TeleprompterProvider>().setManualProgress(progress);
   }
 
@@ -173,11 +210,17 @@ mixin TeleprompterPageLogic<T extends StatefulWidget>
     }
   }
 
-  /// 快速滚动到尾部
+  /// 快速滚动到稿件尾部（实际内容末尾，不含底部空气垫）
   void _scrollToEnd() {
     if (!scrollController.hasClients) return;
+    if (!mounted) return;
+    final screenHeight = MediaQuery.of(context).size.height;
+    final bottomPad = screenHeight * (AppConstants.bottomPaddingVh / 100);
+    // 滚动到底部空气垫之前 = 实际内容的末尾
+    final target = (scrollController.position.maxScrollExtent - bottomPad)
+        .clamp(0.0, scrollController.position.maxScrollExtent);
     scrollController.animateTo(
-      scrollController.position.maxScrollExtent,
+      target,
       duration: const Duration(milliseconds: 500),
       curve: Curves.easeOut,
     );

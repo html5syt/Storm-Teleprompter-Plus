@@ -422,6 +422,13 @@ class SettingsPage extends StatelessWidget {
 
   /// 预设颜色列表
   static const List<int> _presetColors = [
+    // 标准色
+    0xFFFFFFFF, // 白色
+    0xFFBDBDBD, // 浅灰
+    0xFF757575, // 灰色
+    0xFF212121, // 近黑
+    0xFF000000, // 黑色
+    // 彩色
     0xFFDB9D16, // 金色（默认）
     0xFFE53935, // 红色
     0xFFD81B60, // 粉色
@@ -437,7 +444,6 @@ class SettingsPage extends StatelessWidget {
     0xFFFB8C00, // 橙色
     0xFF6D4C41, // 棕色
     0xFF546E7A, // 蓝灰
-    0xFF424242, // 灰色
   ];
 
   /// 预设 GitHub 镜像源
@@ -567,10 +573,12 @@ class SettingsPage extends StatelessWidget {
                               : null,
                         ),
                         child: isSelected
-                            ? const Icon(
+                            ? Icon(
                                 Icons.check,
                                 size: 18,
-                                color: Colors.white,
+                                color: Color(color).computeLuminance() > 0.5
+                                    ? Colors.black
+                                    : Colors.white,
                               )
                             : null,
                       ),
@@ -689,7 +697,17 @@ class SettingsPage extends StatelessWidget {
                                 isThreeLine:
                                     isDownloading ||
                                     downloadState.error != null,
-                                trailing: isSelected
+                                trailing: isDownloading
+                                    ? IconButton(
+                                        icon: const Icon(Icons.close, size: 20),
+                                        tooltip: '取消下载',
+                                        onPressed: () => asr.cancelDownload(),
+                                        style: IconButton.styleFrom(
+                                          foregroundColor: AppColors.error,
+                                          padding: EdgeInsets.zero,
+                                        ),
+                                      )
+                                    : isSelected
                                     ? Icon(Icons.check, color: primary)
                                     : null,
                                 onTap: () async {

@@ -88,6 +88,24 @@ class StorageService {
     return updated;
   }
 
+  /// 更新稿件的提词器设置
+  Future<Article?> updateArticleTeleprompterSettings(
+    String id,
+    Map<String, dynamic> teleprompterSettings,
+  ) async {
+    final articles = await loadArticles();
+    final index = articles.indexWhere((a) => a.id == id);
+    if (index == -1) return null;
+
+    final updated = articles[index].copyWith(
+      teleprompterSettings: teleprompterSettings,
+      updatedAt: DateTime.now(),
+    );
+    articles[index] = updated;
+    await saveArticles(articles);
+    return updated;
+  }
+
   /// 删除稿件
   Future<bool> deleteArticle(String id) async {
     final articles = await loadArticles();
