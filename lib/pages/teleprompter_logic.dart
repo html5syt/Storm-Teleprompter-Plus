@@ -73,6 +73,9 @@ mixin TeleprompterPageLogic<T extends StatefulWidget>
 
   /// 将稿件覆盖设置保存回稿件
   void _saveArticleOverrides() {
+    final connection = context.read<ConnectionProvider>();
+    if (connection.isRemote) return;
+
     final overrides = _settingsProvider?.articleOverrides;
     if (overrides != null && overrides.isNotEmpty) {
       try {
@@ -199,30 +202,32 @@ mixin TeleprompterPageLogic<T extends StatefulWidget>
   }
 
   /// 重置到开头并滚动到顶部
+  ///
+  /// 双重保险：teleprompter.reset() 通知 widget 层触发滚动，
+  /// 同时 scrollController 直接 animateTo(0) 作为兜底。
   void _resetAndScrollToTop(TeleprompterProvider teleprompter) {
     teleprompter.reset();
     if (scrollController.hasClients) {
       scrollController.animateTo(
         0,
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeOut,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOutCubic,
       );
     }
   }
 
-  /// 快速滚动到稿件尾部（实际内容末尾，不含底部空气垫）
+  /// 快速滚动到稿件尾部
+  ///
+  /// 双重保险：resetToEnd() 触发 widget 层滚动 + 直接 animateTo 兜底。
   void _scrollToEnd() {
+    final teleprompter = context.read<TeleprompterProvider>();
+    teleprompter.resetToEnd();
     if (!scrollController.hasClients) return;
-    if (!mounted) return;
-    final screenHeight = MediaQuery.of(context).size.height;
-    final bottomPad = screenHeight * (AppConstants.bottomPaddingVh / 100);
-    // 滚动到底部空气垫之前 = 实际内容的末尾
-    final target = (scrollController.position.maxScrollExtent - bottomPad)
-        .clamp(0.0, scrollController.position.maxScrollExtent);
+    // 滚到 maxScrollExtent（底部空气垫末尾 = 真正的文档末尾之后）
     scrollController.animateTo(
-      target,
+      scrollController.position.maxScrollExtent,
       duration: const Duration(milliseconds: 500),
-      curve: Curves.easeOut,
+      curve: Curves.easeOutCubic,
     );
   }
 
@@ -235,6 +240,12 @@ mixin TeleprompterPageLogic<T extends StatefulWidget>
       return '${d.inHours}:$minutes:$seconds';
     }
     return '$minutes:$seconds';
+  }
+
+  /// 当前时间格式化 (HH:mm)
+  String _formatCurrentTime() {
+    final now = DateTime.now();
+    return '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
   }
 }
 

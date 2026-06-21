@@ -29,4 +29,5 @@ class AppConstants {
   /// SharedPreferences 键名
   static const String prefKeySettings = 'app_settings';
   static const String prefKeyArticles = 'articles_data';
+  static const String prefKeyFolders = 'folders_data';
 }

@@ -68,8 +68,11 @@ class AppSettings {
   /// ASR 模型下载镜像 URL（为空则用原始地址）
   final String asrMirrorUrl;
 
-  /// 正文字体（空字符串使用系统默认）
-  final String fontFamily;
+  /// 应用 UI 字体（空字符串使用系统默认）
+  final String appFontFamily;
+
+  /// 提词器正文字体（空字符串使用系统默认）
+  final String teleprompterFontFamily;
 
   /// 是否将已读字符变灰
   final bool grayReadChars;
@@ -79,6 +82,27 @@ class AppSettings {
 
   /// 字间距（像素）
   final double letterSpacing;
+
+  /// 当前字加下划线
+  final bool underlineCurrentChar;
+
+  /// 阅读区域框边框粗细（像素）
+  final double readingAreaBorderWidth;
+
+  /// 进度条显示 - 已用时间
+  final bool progressShowTime;
+
+  /// 进度条显示 - 进度百分比
+  final bool progressShowPercentage;
+
+  /// 进度条显示 - 滚动速度（自动模式）
+  final bool progressShowSpeed;
+
+  /// 进度条显示 - 当前时间
+  final bool progressShowCurrentTime;
+
+  /// 是否公开到局域网
+  final bool isLanPublished;
 
   const AppSettings({
     this.fontSize = 64,
@@ -94,15 +118,23 @@ class AppSettings {
     this.uiPrimaryColor = 0xFFDB9D16,
     this.teleprompterBgColor = 0xFF0A0A0A,
     this.paddingX = 5.0,
-    this.readingLineOffset = 0.25,
+    this.readingLineOffset = 0.5,
     this.highlightCurrentChar = false,
     this.defaultBold = true,
     this.progressInfoSizeRatio = 0.6,
     this.asrMirrorUrl = '',
-    this.fontFamily = 'Noto Sans SC',
+    this.appFontFamily = 'Noto Sans SC',
+    this.teleprompterFontFamily = 'Noto Sans SC',
     this.grayReadChars = true,
     this.textColor = 0,
     this.letterSpacing = 0.0,
+    this.underlineCurrentChar = false,
+    this.readingAreaBorderWidth = 3.0,
+    this.progressShowTime = true,
+    this.progressShowPercentage = true,
+    this.progressShowSpeed = true,
+    this.progressShowCurrentTime = true,
+    this.isLanPublished = false,
   });
 
   /// 从 JSON 反序列化
@@ -124,17 +156,26 @@ class AppSettings {
       uiPrimaryColor: json['uiPrimaryColor'] as int? ?? 0xFFDB9D16,
       teleprompterBgColor: json['teleprompterBgColor'] as int? ?? 0xFF0A0A0A,
       paddingX: (json['paddingX'] as num?)?.toDouble() ?? 5.0,
-      readingLineOffset:
-          (json['readingLineOffset'] as num?)?.toDouble() ?? 0.25,
+      readingLineOffset: (json['readingLineOffset'] as num?)?.toDouble() ?? 0.5,
       highlightCurrentChar: json['highlightCurrentChar'] as bool? ?? false,
       defaultBold: json['defaultBold'] as bool? ?? true,
       progressInfoSizeRatio:
           (json['progressInfoSizeRatio'] as num?)?.toDouble() ?? 0.6,
       asrMirrorUrl: json['asrMirrorUrl'] as String? ?? '',
-      fontFamily: json['fontFamily'] as String? ?? 'Noto Sans SC',
+      appFontFamily: json['appFontFamily'] as String? ?? 'Noto Sans SC',
+      teleprompterFontFamily:
+          json['teleprompterFontFamily'] as String? ?? 'Noto Sans SC',
       grayReadChars: json['grayReadChars'] as bool? ?? true,
       textColor: json['textColor'] as int? ?? 0,
       letterSpacing: (json['letterSpacing'] as num?)?.toDouble() ?? 0.0,
+      underlineCurrentChar: json['underlineCurrentChar'] as bool? ?? false,
+      readingAreaBorderWidth:
+          (json['readingAreaBorderWidth'] as num?)?.toDouble() ?? 3.0,
+      progressShowTime: json['progressShowTime'] as bool? ?? true,
+      progressShowPercentage: json['progressShowPercentage'] as bool? ?? true,
+      progressShowSpeed: json['progressShowSpeed'] as bool? ?? true,
+      progressShowCurrentTime: json['progressShowCurrentTime'] as bool? ?? true,
+      isLanPublished: json['isLanPublished'] as bool? ?? false,
     );
   }
 
@@ -159,10 +200,18 @@ class AppSettings {
       'defaultBold': defaultBold,
       'progressInfoSizeRatio': progressInfoSizeRatio,
       'asrMirrorUrl': asrMirrorUrl,
-      'fontFamily': fontFamily,
+      'appFontFamily': appFontFamily,
+      'teleprompterFontFamily': teleprompterFontFamily,
       'grayReadChars': grayReadChars,
       'textColor': textColor,
       'letterSpacing': letterSpacing,
+      'underlineCurrentChar': underlineCurrentChar,
+      'readingAreaBorderWidth': readingAreaBorderWidth,
+      'progressShowTime': progressShowTime,
+      'progressShowPercentage': progressShowPercentage,
+      'progressShowSpeed': progressShowSpeed,
+      'progressShowCurrentTime': progressShowCurrentTime,
+      'isLanPublished': isLanPublished,
     };
   }
 
@@ -184,12 +233,20 @@ class AppSettings {
     double? readingLineOffset,
     double? progressInfoSizeRatio,
     String? asrMirrorUrl,
-    String? fontFamily,
+    String? appFontFamily,
+    String? teleprompterFontFamily,
     bool? grayReadChars,
     int? textColor,
     double? letterSpacing,
     bool? highlightCurrentChar,
     bool? defaultBold,
+    bool? underlineCurrentChar,
+    double? readingAreaBorderWidth,
+    bool? progressShowTime,
+    bool? progressShowPercentage,
+    bool? progressShowSpeed,
+    bool? progressShowCurrentTime,
+    bool? isLanPublished,
   }) {
     return AppSettings(
       fontSize: fontSize ?? this.fontSize,
@@ -209,12 +266,24 @@ class AppSettings {
       progressInfoSizeRatio:
           progressInfoSizeRatio ?? this.progressInfoSizeRatio,
       asrMirrorUrl: asrMirrorUrl ?? this.asrMirrorUrl,
-      fontFamily: fontFamily ?? this.fontFamily,
+      appFontFamily: appFontFamily ?? this.appFontFamily,
+      teleprompterFontFamily:
+          teleprompterFontFamily ?? this.teleprompterFontFamily,
       grayReadChars: grayReadChars ?? this.grayReadChars,
       textColor: textColor ?? this.textColor,
       letterSpacing: letterSpacing ?? this.letterSpacing,
       highlightCurrentChar: highlightCurrentChar ?? this.highlightCurrentChar,
       defaultBold: defaultBold ?? this.defaultBold,
+      underlineCurrentChar: underlineCurrentChar ?? this.underlineCurrentChar,
+      readingAreaBorderWidth:
+          readingAreaBorderWidth ?? this.readingAreaBorderWidth,
+      progressShowTime: progressShowTime ?? this.progressShowTime,
+      progressShowPercentage:
+          progressShowPercentage ?? this.progressShowPercentage,
+      progressShowSpeed: progressShowSpeed ?? this.progressShowSpeed,
+      progressShowCurrentTime:
+          progressShowCurrentTime ?? this.progressShowCurrentTime,
+      isLanPublished: isLanPublished ?? this.isLanPublished,
     );
   }
 
@@ -247,18 +316,37 @@ class AppSettings {
       progressInfoSizeRatio:
           (overrides['progressInfoSizeRatio'] as num?)?.toDouble() ??
           progressInfoSizeRatio,
-      fontFamily: overrides['fontFamily'] as String? ?? fontFamily,
+      teleprompterFontFamily:
+          overrides['teleprompterFontFamily'] as String? ??
+          teleprompterFontFamily,
       grayReadChars: overrides['grayReadChars'] as bool? ?? grayReadChars,
       textColor: overrides['textColor'] as int? ?? textColor,
       letterSpacing:
           (overrides['letterSpacing'] as num?)?.toDouble() ?? letterSpacing,
+      underlineCurrentChar:
+          overrides['underlineCurrentChar'] as bool? ?? underlineCurrentChar,
+      readingAreaBorderWidth:
+          (overrides['readingAreaBorderWidth'] as num?)?.toDouble() ??
+          readingAreaBorderWidth,
       teleprompterBgColor:
           overrides['teleprompterBgColor'] as int? ?? teleprompterBgColor,
       // 以下全局设置始终使用当前值，不被稿件覆盖
       asrModelId: asrModelId,
       asrModelName: asrModelName,
       uiPrimaryColor: uiPrimaryColor,
+      appFontFamily: appFontFamily,
       asrMirrorUrl: asrMirrorUrl,
+      progressShowTime:
+          overrides['progressShowTime'] as bool? ?? progressShowTime,
+      progressShowPercentage:
+          overrides['progressShowPercentage'] as bool? ??
+          progressShowPercentage,
+      progressShowSpeed:
+          overrides['progressShowSpeed'] as bool? ?? progressShowSpeed,
+      progressShowCurrentTime:
+          overrides['progressShowCurrentTime'] as bool? ??
+          progressShowCurrentTime,
+      isLanPublished: isLanPublished,
     );
   }
 
@@ -275,11 +363,17 @@ class AppSettings {
       'highlightCurrentChar': highlightCurrentChar,
       'defaultBold': defaultBold,
       'progressInfoSizeRatio': progressInfoSizeRatio,
-      'fontFamily': fontFamily,
+      'teleprompterFontFamily': teleprompterFontFamily,
       'grayReadChars': grayReadChars,
       'textColor': textColor,
       'letterSpacing': letterSpacing,
       'teleprompterBgColor': teleprompterBgColor,
+      'underlineCurrentChar': underlineCurrentChar,
+      'readingAreaBorderWidth': readingAreaBorderWidth,
+      'progressShowTime': progressShowTime,
+      'progressShowPercentage': progressShowPercentage,
+      'progressShowSpeed': progressShowSpeed,
+      'progressShowCurrentTime': progressShowCurrentTime,
     };
   }
 }

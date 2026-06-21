@@ -7,6 +7,7 @@ import 'package:window_manager/window_manager.dart';
 import '../models/article.dart';
 import '../models/app_settings.dart';
 import '../providers/article_provider.dart';
+import '../providers/connection_provider.dart';
 import '../providers/teleprompter_provider.dart';
 import '../providers/settings_provider.dart';
 import '../theme/app_colors.dart';
@@ -52,28 +53,33 @@ class _TeleprompterPageState extends State<TeleprompterPage>
           ),
           body: CallbackShortcuts(
             bindings: {
-              // F11 / Ctrl+Shift+F / Esc 全屏切换
+              // F11 / Ctrl+Shift+F 全屏切换
               const SingleActivator(LogicalKeyboardKey.f11): toggleFullScreen,
               const SingleActivator(
                 LogicalKeyboardKey.keyF,
                 control: true,
                 shift: true,
               ): toggleFullScreen,
-              LogicalKeySet(LogicalKeyboardKey.escape): () => exitFullScreen(),
-              // Enter 全屏切换
+              // Esc 退出提词器
+              LogicalKeySet(LogicalKeyboardKey.escape): () =>
+                  _exitTeleprompter(context),
+              // Enter 切换全屏
               const SingleActivator(LogicalKeyboardKey.enter): toggleFullScreen,
-              // Space 播放/暂停
+              // Space 开始/暂停
               const SingleActivator(LogicalKeyboardKey.space): () =>
                   teleprompter.togglePlayPause(settings),
-              // R 键重置
-              const SingleActivator(LogicalKeyboardKey.keyR): () =>
-                  _resetAndScrollToTop(teleprompter),
-              // ↑ 上一行
+              // ↑ 上移一行（未开始时）
               const SingleActivator(LogicalKeyboardKey.arrowUp): () =>
-                  _handleArrowKey(context, settings, -1),
-              // ↓ 下一行
+                  _handleVerticalMove(context, settings, -1),
+              // ↓ 下移一行（未开始时）
               const SingleActivator(LogicalKeyboardKey.arrowDown): () =>
-                  _handleArrowKey(context, settings, 1),
+                  _handleVerticalMove(context, settings, 1),
+              // ← 后退一个字
+              const SingleActivator(LogicalKeyboardKey.arrowLeft): () =>
+                  _handleHorizontalMove(context, settings, -1),
+              // → 前进一个字
+              const SingleActivator(LogicalKeyboardKey.arrowRight): () =>
+                  _handleHorizontalMove(context, settings, 1),
             },
             child: Focus(
               autofocus: true,
@@ -99,7 +105,8 @@ class _TeleprompterPageState extends State<TeleprompterPage>
 
                       // ── 3. 顶部进度条（全幅 + 右侧信息） ──
                       if (teleprompter.isPlaying ||
-                          teleprompter.state == TeleprompterState.paused)
+                          (settings.scrollMode == ScrollMode.auto &&
+                              teleprompter.state == TeleprompterState.paused))
                         _buildTopProgressBar(context, teleprompter, settings),
 
                       // ── 4. 顶部导航栏（浮动、可隐藏） ──
@@ -164,43 +171,62 @@ class _TeleprompterPageState extends State<TeleprompterPage>
     final clampedFontSize = infoFontSize.clamp(11.0, 48.0);
     final barHeight = _progressBarHeight(settings);
 
-    // 构建信息文本
+    // 构建信息文本（根据各项开关动态显示）
     final infoChildren = <Widget>[
       // 已用时间
-      Text(
-        formatDuration(elapsed),
-        style: TextStyle(
-          color: AppColors.textSecondary,
-          fontSize: clampedFontSize,
-          fontWeight: FontWeight.w700,
-          fontFeatures: const [FontFeature.tabularFigures()],
-          shadows: const [Shadow(color: Colors.black54, blurRadius: 4)],
+      if (settings.progressShowTime) ...[
+        Text(
+          formatDuration(elapsed),
+          style: TextStyle(
+            color: AppColors.textSecondary,
+            fontSize: clampedFontSize,
+            fontWeight: FontWeight.w700,
+            fontFeatures: const [FontFeature.tabularFigures()],
+            shadows: const [Shadow(color: Colors.black54, blurRadius: 4)],
+          ),
         ),
-      ),
-      // 速度（仅自动模式显示）
-      if (settings.scrollMode == ScrollMode.auto) ...[
         const SizedBox(width: 8),
+      ],
+      // 速度（阅读模式且允许显示）
+      if (settings.scrollMode != ScrollMode.asr &&
+          settings.progressShowSpeed) ...[
         Text(
           '${settings.wpm}字/分',
           style: TextStyle(
             color: AppColors.textSecondary,
             fontSize: clampedFontSize,
             fontWeight: FontWeight.w700,
-            shadows: [Shadow(color: Colors.black54, blurRadius: 4)],
+            shadows: const [Shadow(color: Colors.black54, blurRadius: 4)],
+          ),
+        ),
+        const SizedBox(width: 8),
+      ],
+      // 百分比
+      if (settings.progressShowPercentage) ...[
+        Text(
+          '${(progress * 100).round()}%',
+          style: TextStyle(
+            color: AppColors.textMuted,
+            fontSize: clampedFontSize,
+            fontWeight: FontWeight.w700,
+            shadows: const [Shadow(color: Colors.black54, blurRadius: 4)],
+          ),
+        ),
+        const SizedBox(width: 8),
+      ],
+      // 当前时间
+      if (settings.progressShowCurrentTime) ...[
+        Text(
+          _formatCurrentTime(),
+          style: TextStyle(
+            color: AppColors.textMuted,
+            fontSize: clampedFontSize,
+            fontWeight: FontWeight.w700,
+            fontFeatures: const [FontFeature.tabularFigures()],
+            shadows: const [Shadow(color: Colors.black54, blurRadius: 4)],
           ),
         ),
       ],
-      const SizedBox(width: 8),
-      // 百分比
-      Text(
-        '${(progress * 100).round()}%',
-        style: TextStyle(
-          color: AppColors.textMuted,
-          fontSize: clampedFontSize,
-          fontWeight: FontWeight.w700,
-          shadows: const [Shadow(color: Colors.black54, blurRadius: 4)],
-        ),
-      ),
     ];
 
     return Positioned(
@@ -408,7 +434,7 @@ class _TeleprompterPageState extends State<TeleprompterPage>
               _buildCompactPlaybackControls(teleprompter, settings),
 
               // ── 速度/信息 ──
-              if (settings.scrollMode == ScrollMode.auto) ...[
+              if (settings.scrollMode != ScrollMode.asr) ...[
                 const SizedBox(width: 12),
                 _buildSpeedDisplay(settings, settingsProvider),
               ],
@@ -441,20 +467,23 @@ class _TeleprompterPageState extends State<TeleprompterPage>
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // 快退
-        IconButton(
-          icon: const Icon(
-            Icons.fast_rewind,
-            color: AppColors.textSecondary,
-            size: 26,
+        // 后退一个字（长按：重置到开头）
+        GestureDetector(
+          onTap: () => teleprompter.rewind(settings),
+          onLongPress: () {
+            teleprompter.resetToStart();
+          },
+          child: Container(
+            padding: const EdgeInsets.all(8),
+            child: const Icon(
+              Icons.skip_previous,
+              color: AppColors.textSecondary,
+              size: 26,
+            ),
           ),
-          onPressed: () => teleprompter.rewind(settings),
-          tooltip: '快退',
-          padding: EdgeInsets.zero,
-          constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
         ),
         const SizedBox(width: 8),
-        // 播放/暂停
+        // 开始/暂停
         GestureDetector(
           onTap: () => teleprompter.togglePlayPause(settings),
           child: Container(
@@ -483,17 +512,18 @@ class _TeleprompterPageState extends State<TeleprompterPage>
           ),
         ),
         const SizedBox(width: 8),
-        // 快进
-        IconButton(
-          icon: const Icon(
-            Icons.fast_forward,
-            color: AppColors.textSecondary,
-            size: 26,
+        // 前进一个字（长按：重置到结尾）
+        GestureDetector(
+          onTap: () => teleprompter.forward(settings),
+          onLongPress: () => teleprompter.resetToEnd(),
+          child: Container(
+            padding: const EdgeInsets.all(8),
+            child: const Icon(
+              Icons.skip_next,
+              color: AppColors.textSecondary,
+              size: 26,
+            ),
           ),
-          onPressed: () => teleprompter.forward(settings),
-          tooltip: '快进',
-          padding: EdgeInsets.zero,
-          constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
         ),
       ],
     );
@@ -585,16 +615,9 @@ class _TeleprompterPageState extends State<TeleprompterPage>
       child: Row(
         children: [
           _buildModeChip(
-            icon: Icons.pan_tool,
-            label: '手动',
-            mode: ScrollMode.manual,
-            settings: settings,
-            settingsProvider: settingsProvider,
-          ),
-          _buildModeChip(
-            icon: Icons.play_circle,
+            icon: Icons.menu_book,
             label: '自动',
-            mode: ScrollMode.auto,
+            mode: ScrollMode.auto, // 合并手动/自动为"自动"模式
             settings: settings,
             settingsProvider: settingsProvider,
           ),
@@ -617,7 +640,11 @@ class _TeleprompterPageState extends State<TeleprompterPage>
     required AppSettings settings,
     required SettingsProvider settingsProvider,
   }) {
-    final isSelected = settings.scrollMode == mode;
+    // "阅读"模式包含 manual 和 auto
+    final isSelected = mode == ScrollMode.auto
+        ? (settings.scrollMode == ScrollMode.auto ||
+              settings.scrollMode == ScrollMode.manual)
+        : settings.scrollMode == mode;
     return GestureDetector(
       onTap: () {
         if (!isSelected) {
@@ -665,47 +692,81 @@ class _TeleprompterPageState extends State<TeleprompterPage>
     );
   }
 
-  /// 处理键盘上下键换行
-  void _handleArrowKey(
+  /// 处理上下键：上下移动n行（未开始时）
+  ///
+  /// 思维导图描述：
+  /// - 未开始：相对于当前字位置，将当前字位置上下移动n行
+  /// - 自动滚动模式已开始：调速（由滚轮处理，键盘不触发）
+  void _handleVerticalMove(
     BuildContext context,
     AppSettings settings,
     int direction,
   ) {
     if (direction == 0) return;
     final teleprompter = context.read<TeleprompterProvider>();
-    // 手动模式下始终允许；其他模式下仅未开始时可以
-    if (settings.scrollMode != ScrollMode.manual &&
-        (teleprompter.isPlaying ||
-            teleprompter.state == TeleprompterState.paused)) {
+
+    // 自动滚动播放中：上键减速/下键加速
+    if (settings.scrollMode == ScrollMode.auto && teleprompter.isPlaying) {
+      final step = direction > 0 ? 10 : -10;
+      final newWpm = (settings.wpm + step).clamp(
+        AppConstants.minWpm,
+        AppConstants.maxWpm,
+      );
+      context.read<SettingsProvider>().setWpm(newWpm);
       return;
     }
-    final current = teleprompter.currentIndex;
-    if (current < 0) return;
 
-    // 计算一行对应多少字符（由 fontSize * lineHeight 决定行高，取近似值）
+    // 未开始/暂停：上下移动当前字位置n行
+    final current = teleprompter.currentIndex;
     final lines = teleprompter.lines;
     if (lines.isEmpty) return;
 
-    // 找到 currentIndex 所在的行和行内偏移
-    int charCount = 0;
-    for (int li = 0; li < lines.length; li++) {
-      final lineLen = lines[li].characters.length;
-      if (current < charCount + lineLen) {
-        // 在行内找到
-        final inLineOffset = current - charCount;
-        final targetLine = (li + direction).clamp(0, lines.length - 1);
-        final targetLineLen = lines[targetLine].characters.length;
-        final newOffset = (inLineOffset).clamp(0, targetLineLen - 1);
-        int newIndex = 0;
-        for (int i = 0; i < targetLine; i++) {
-          newIndex += lines[i].characters.length;
-        }
-        newIndex += newOffset;
-        teleprompter.setCurrentIndex(newIndex);
+    final currentPosition = current >= 0
+        ? teleprompter.getCharPosition(current)
+        : null;
+    final currentLine = currentPosition?.$1 ?? 0;
+    final inLineOffset = currentPosition?.$2 ?? 0;
+    final step = direction > 0 ? 1 : -1;
+    var targetLine = currentPosition == null
+        ? 0
+        : (currentLine + direction).clamp(0, lines.length - 1).toInt();
+
+    while (targetLine >= 0 && targetLine < lines.length) {
+      final targetChars = lines[targetLine].characters;
+      if (targetChars.isNotEmpty) {
+        final newOffset = inLineOffset.clamp(0, targetChars.length - 1).toInt();
+        teleprompter.setCurrentIndex(targetChars[newOffset].rawIndex);
         return;
       }
-      charCount += lineLen;
+      targetLine += step;
     }
+  }
+
+  /// 处理左右键：移动当前字到前后n个字
+  ///
+  /// 思维导图描述：左右滑动/键盘左右键 → 移动当前字选择到前后n个字
+  void _handleHorizontalMove(
+    BuildContext context,
+    AppSettings settings,
+    int direction,
+  ) {
+    if (direction == 0) return;
+    final teleprompter = context.read<TeleprompterProvider>();
+    if (direction > 0) {
+      teleprompter.forward(settings);
+    } else if (teleprompter.currentIndex < 0) {
+      teleprompter.resetToStart();
+    } else {
+      teleprompter.rewind(settings);
+    }
+  }
+
+  /// 退出提词器（Esc 键）
+  void _exitTeleprompter(BuildContext context) {
+    if (isFullScreen) {
+      exitFullScreen();
+    }
+    Navigator.pop(context);
   }
 
   // ─── 文本层 ──────────────────────────────────────────
@@ -737,12 +798,17 @@ class _TeleprompterPageState extends State<TeleprompterPage>
         onCharTap: (rawIndex) {
           teleprompter.setCurrentIndex(rawIndex);
         },
-        fontFamily: settings.fontFamily,
+        onReadingLineChanged: (rawIndex) {
+          if (blockScroll) return;
+          teleprompter.setCurrentIndex(rawIndex);
+        },
+        teleprompterFontFamily: settings.teleprompterFontFamily,
         grayReadChars: settings.grayReadChars,
         textColor: settings.textColor,
         letterSpacing: settings.letterSpacing,
         highlightCurrentChar: settings.highlightCurrentChar,
         defaultBold: settings.defaultBold,
+        underlineCurrentChar: settings.underlineCurrentChar,
       ),
     );
   }
@@ -788,7 +854,7 @@ class _TeleprompterPageState extends State<TeleprompterPage>
                   decoration: BoxDecoration(
                     border: Border.all(
                       color: _readingLineGold.withValues(alpha: 0.9),
-                      width: 3,
+                      width: settings.readingAreaBorderWidth,
                     ),
                     borderRadius: BorderRadius.circular(4),
                   ),

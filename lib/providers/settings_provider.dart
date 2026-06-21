@@ -1,12 +1,17 @@
 import 'package:flutter/material.dart';
+import '../backend/ws_protocol.dart';
 import '../models/app_settings.dart';
-import '../services/storage_service.dart';
+import 'connection_provider.dart';
 
-/// 应用设置状态管理
+/// 应用设置状态管理（前端）
+///
+/// 通过 WebSocket 与后端通信，管理应用设置的读取、保存。
+/// 同时支持稿件级别的设置覆盖（提词器设置与应用设置分离）。
 class SettingsProvider with ChangeNotifier {
   AppSettings _settings = const AppSettings();
   bool _isLoading = false;
-  StorageService? _storage;
+
+  ConnectionProvider? _connection;
 
   // ─── 稿件覆盖设置 ──────────────────────────────────────
   Map<String, dynamic> _articleOverrides = {};
@@ -23,9 +28,19 @@ class SettingsProvider with ChangeNotifier {
   Map<String, dynamic> get articleOverrides =>
       Map.unmodifiable(_articleOverrides);
 
+  /// 绑定连接
+  void bindConnection(ConnectionProvider connection) {
+    _connection = connection;
+  }
+
   /// 加载稿件覆盖设置
   void loadArticleOverrides(Map<String, dynamic>? overrides) {
     _articleOverrides = overrides ?? {};
+    notifyListeners();
+  }
+
+  void applyRemoteTeleprompterSettings(Map<String, dynamic> settings) {
+    _articleOverrides = Map<String, dynamic>.from(settings);
     notifyListeners();
   }
 
@@ -45,7 +60,6 @@ class SettingsProvider with ChangeNotifier {
       notifyListeners();
     } else {
       // 全局模式：更新全局设置并保存
-      // 通过逐个应用 copyWith 来更新
       var updated = _settings;
       if (overrideData.containsKey('fontSize')) {
         updated = updated.copyWith(
@@ -94,7 +108,13 @@ class SettingsProvider with ChangeNotifier {
       }
       if (overrideData.containsKey('fontFamily')) {
         updated = updated.copyWith(
-          fontFamily: overrideData['fontFamily'] as String,
+          teleprompterFontFamily: overrideData['fontFamily'] as String,
+        );
+      }
+      if (overrideData.containsKey('teleprompterFontFamily')) {
+        updated = updated.copyWith(
+          teleprompterFontFamily:
+              overrideData['teleprompterFontFamily'] as String,
         );
       }
       if (overrideData.containsKey('grayReadChars')) {
@@ -115,25 +135,56 @@ class SettingsProvider with ChangeNotifier {
           teleprompterBgColor: overrideData['teleprompterBgColor'] as int,
         );
       }
+      if (overrideData.containsKey('underlineCurrentChar')) {
+        updated = updated.copyWith(
+          underlineCurrentChar: overrideData['underlineCurrentChar'] as bool,
+        );
+      }
+      if (overrideData.containsKey('readingAreaBorderWidth')) {
+        updated = updated.copyWith(
+          readingAreaBorderWidth:
+              (overrideData['readingAreaBorderWidth'] as num).toDouble(),
+        );
+      }
       _settings = updated;
       notifyListeners();
       await _saveSettings();
     }
+    _syncTeleprompterSettingsToBackend();
+  }
+
+  void _syncTeleprompterSettingsToBackend() {
+    final connection = _connection;
+    if (connection == null || !connection.isConnected || !connection.isLocal) {
+      return;
+    }
+    connection.send(
+      WsMessage(
+        type: WsMessageType.teleprompterSettingsUpdate,
+        data: {'settings': mergedSettings.toTeleprompterMap()},
+      ),
+    );
   }
 
   /// 初始化并加载设置
   Future<void> init() async {
-    _storage = await StorageService.getInstance();
     await loadSettings();
   }
 
-  /// 加载设置
+  /// 从后端加载设置
   Future<void> loadSettings() async {
     _isLoading = true;
     notifyListeners();
 
     try {
-      _settings = await _storage!.loadSettings();
+      if (_connection != null && _connection!.isConnected) {
+        final response = await _connection!.request(WsMessageType.settingsGet);
+        if (response.type == WsMessageType.settingsGetResponse) {
+          _settings = AppSettings.fromJson(
+            response.data['settings'] as Map<String, dynamic>,
+          );
+        }
+      }
     } catch (e) {
       debugPrint('[SettingsProvider] 加载设置失败: $e');
     } finally {
@@ -142,10 +193,15 @@ class SettingsProvider with ChangeNotifier {
     }
   }
 
-  /// 保存设置
+  /// 保存设置到后端
   Future<void> _saveSettings() async {
     try {
-      await _storage!.saveSettings(_settings);
+      if (_connection != null && _connection!.isConnected) {
+        _connection!.request(
+          WsMessageType.settingsSave,
+          data: {'settings': _settings.toJson()},
+        );
+      }
     } catch (e) {
       debugPrint('[SettingsProvider] 保存设置失败: $e');
     }
@@ -171,6 +227,7 @@ class SettingsProvider with ChangeNotifier {
       notifyListeners();
       await _saveSettings();
     }
+    _syncTeleprompterSettingsToBackend();
   }
 
   /// 更新 WPM
@@ -252,9 +309,16 @@ class SettingsProvider with ChangeNotifier {
     await _saveSettings();
   }
 
-  /// 更新正文字体
-  Future<void> setFontFamily(String fontFamily) async {
-    await _setAndSave(overrideData: {'fontFamily': fontFamily});
+  /// 更新应用 UI 字体
+  Future<void> setAppFontFamily(String fontFamily) async {
+    _settings = _settings.copyWith(appFontFamily: fontFamily);
+    notifyListeners();
+    await _saveSettings();
+  }
+
+  /// 更新提词器正文字体
+  Future<void> setTeleprompterFontFamily(String fontFamily) async {
+    await _setAndSave(overrideData: {'teleprompterFontFamily': fontFamily});
   }
 
   /// 切换已读字符变灰
@@ -290,11 +354,78 @@ class SettingsProvider with ChangeNotifier {
     );
   }
 
+  /// 切换当前字下划线
+  Future<void> toggleUnderlineCurrentChar() async {
+    await _setAndSave(
+      overrideData: {
+        'underlineCurrentChar': !mergedSettings.underlineCurrentChar,
+      },
+    );
+  }
+
+  /// 更新阅读区域框边框粗细
+  Future<void> setReadingAreaBorderWidth(double value) async {
+    await _setAndSave(overrideData: {'readingAreaBorderWidth': value});
+  }
+
+  /// 切换进度条显示 - 已用时间
+  Future<void> toggleProgressShowTime() async {
+    _settings = _settings.copyWith(
+      progressShowTime: !_settings.progressShowTime,
+    );
+    notifyListeners();
+    await _saveSettings();
+    _syncTeleprompterSettingsToBackend();
+  }
+
+  /// 切换进度条显示 - 进度百分比
+  Future<void> toggleProgressShowPercentage() async {
+    _settings = _settings.copyWith(
+      progressShowPercentage: !_settings.progressShowPercentage,
+    );
+    notifyListeners();
+    await _saveSettings();
+    _syncTeleprompterSettingsToBackend();
+  }
+
+  /// 切换进度条显示 - 滚动速度
+  Future<void> toggleProgressShowSpeed() async {
+    _settings = _settings.copyWith(
+      progressShowSpeed: !_settings.progressShowSpeed,
+    );
+    notifyListeners();
+    await _saveSettings();
+    _syncTeleprompterSettingsToBackend();
+  }
+
+  /// 切换进度条显示 - 当前时间
+  Future<void> toggleProgressShowCurrentTime() async {
+    _settings = _settings.copyWith(
+      progressShowCurrentTime: !_settings.progressShowCurrentTime,
+    );
+    notifyListeners();
+    await _saveSettings();
+    _syncTeleprompterSettingsToBackend();
+  }
+
+  /// 设置局域网发布状态
+  Future<void> setLanPublished(bool value) async {
+    _settings = _settings.copyWith(isLanPublished: value);
+    notifyListeners();
+    await _saveSettings();
+  }
+
   /// 完全重置所有设置为默认值
   Future<void> resetAllSettings() async {
     _settings = const AppSettings();
     notifyListeners();
-    await _saveSettings();
+    try {
+      if (_connection != null && _connection!.isConnected) {
+        _connection!.request(WsMessageType.settingsReset);
+      }
+    } catch (e) {
+      debugPrint('[SettingsProvider] 重置设置失败: $e');
+    }
   }
 
   /// 批量更新设置

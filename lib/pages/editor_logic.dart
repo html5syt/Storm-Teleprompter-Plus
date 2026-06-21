@@ -1,224 +1,349 @@
 part of 'editor_page.dart';
 
-/// 编辑器逻辑 mixin
-///
-/// 包含文本编辑、格式插入、保存等业务逻辑。
 mixin EditorLogic on State<EditorPage> {
-  late TextEditingController titleController;
-  late TextEditingController contentController;
+  late final TextEditingController titleController;
+  late final TextEditingController contentController;
+  late final quill.QuillController quillController;
+  late ArticleProvider _articleProvider;
+
+  Article? _savedArticle;
+  Timer? _autosaveTimer;
+  bool _syncingEditorContent = false;
+  bool _saveQueued = false;
+
   bool isDirty = false;
   bool isSaving = false;
+
+  Article? get currentArticle => _savedArticle;
+
+  int get plainTextLength {
+    final text = quillController.document.toPlainText().trim();
+    return text.isEmpty ? 0 : text.length;
+  }
+
+  String get saveStatusText {
+    if (isSaving) return '保存中';
+    if (isDirty) return '等待自动保存';
+    return _savedArticle == null ? '尚未保存' : '已保存';
+  }
 
   @override
   void initState() {
     super.initState();
+    _savedArticle = widget.article;
     titleController = TextEditingController(text: widget.article?.title ?? '');
     contentController = TextEditingController(
       text: widget.article?.content ?? '',
     );
+    quillController = quill.QuillController(
+      document: quill.Document.fromDelta(
+        _contentToDelta(widget.article?.content ?? ''),
+      ),
+      selection: const TextSelection.collapsed(offset: 0),
+    );
 
-    titleController.addListener(_onChanged);
-    contentController.addListener(_onChanged);
+    titleController.addListener(_markChanged);
+    quillController.addListener(_onQuillContentChanged);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _articleProvider = context.read<ArticleProvider>();
   }
 
   @override
   void dispose() {
+    flushAutosave();
+    _autosaveTimer?.cancel();
     titleController.dispose();
     contentController.dispose();
+    quillController.dispose();
     super.dispose();
   }
 
-  void _onChanged() {
-    if (!isDirty) {
-      setState(() => isDirty = true);
-    } else {
-      // 实时更新字数统计
-      setState(() {});
+  void _onQuillContentChanged() {
+    if (_syncingEditorContent) return;
+
+    final html = _deltaToStorageHtml(quillController.document.toDelta());
+    if (html == contentController.text) {
+      if (mounted) setState(() {});
+      return;
+    }
+
+    _syncingEditorContent = true;
+    contentController.value = TextEditingValue(
+      text: html,
+      selection: TextSelection.collapsed(offset: html.length),
+    );
+    _syncingEditorContent = false;
+    _markChanged();
+  }
+
+  void _markChanged() {
+    if (!mounted) return;
+    setState(() => isDirty = true);
+    _scheduleAutosave();
+  }
+
+  void _scheduleAutosave() {
+    _autosaveTimer?.cancel();
+    _autosaveTimer = Timer(
+      const Duration(milliseconds: 700),
+      () => unawaited(save()),
+    );
+  }
+
+  void flushAutosave() {
+    _autosaveTimer?.cancel();
+    if (isDirty) unawaited(save());
+  }
+
+  Future<Article?> save({bool force = false}) async {
+    if (!force && !isDirty) return _savedArticle;
+    if (isSaving) {
+      _saveQueued = true;
+      return _savedArticle;
+    }
+
+    if (mounted) setState(() => isSaving = true);
+
+    try {
+      do {
+        _saveQueued = false;
+        final plainText = quillController.document.toPlainText().trim();
+        final content = contentController.text.trim();
+        if (plainText.isEmpty && titleController.text.trim().isEmpty) {
+          return _savedArticle;
+        }
+
+        final title = _effectiveTitle(plainText);
+        final article = _savedArticle;
+        Article? savedArticle;
+        if (article == null) {
+          savedArticle = await _articleProvider.createArticle(
+            title: title,
+            content: content,
+            folderId: widget.initialFolderId,
+          );
+        } else {
+          savedArticle = await _articleProvider.updateArticle(
+            article.id,
+            title: title,
+            content: content,
+          );
+        }
+
+        if (savedArticle == null) {
+          if (mounted) setState(() => isDirty = true);
+          return _savedArticle;
+        }
+        _savedArticle = savedArticle;
+      } while (_saveQueued);
+
+      if (mounted) setState(() => isDirty = false);
+      return _savedArticle;
+    } catch (e) {
+      debugPrint('[Editor] autosave failed: $e');
+      return _savedArticle;
+    } finally {
+      if (mounted) setState(() => isSaving = false);
     }
   }
 
-  // ─── 文本编辑 ──────────────────────────────────────────
-
-  /// 插入 HTML 格式标签
-  void insertTag(String tag) {
-    final text = contentController.text;
-    final selection = contentController.selection;
-    final selectedText = selection.textInside(text);
-
-    String newText;
-    int newCursorPos;
-
-    if (selectedText.isNotEmpty) {
-      newText = text.replaceRange(
-        selection.start,
-        selection.end,
-        '<$tag>$selectedText</$tag>',
-      );
-      newCursorPos =
-          selection.start +
-          tag.length +
-          2 +
-          selectedText.length +
-          tag.length +
-          3;
-    } else {
-      newText = text.replaceRange(
-        selection.start,
-        selection.end,
-        '<$tag></$tag>',
-      );
-      newCursorPos = selection.start + tag.length + 2;
-    }
-
-    contentController.value = TextEditingValue(
-      text: newText,
-      selection: TextSelection.collapsed(offset: newCursorPos),
-    );
+  String _effectiveTitle(String plainText) {
+    final explicit = titleController.text.trim();
+    if (explicit.isNotEmpty) return explicit;
+    final fallback = plainText.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (fallback.isEmpty) return '无标题';
+    return fallback.length > 30 ? fallback.substring(0, 30) : fallback;
   }
 
-  /// 插入带属性的 HTML 标签
-  void insertStyledTag(String tag, String attributes) {
-    final text = contentController.text;
-    final selection = contentController.selection;
-    final selectedText = selection.textInside(text);
+  Future<void> quickStartTeleprompter() async {
+    final article = await save(force: true);
+    if (!mounted) return;
 
-    String newText;
-    int newCursorPos;
-
-    if (selectedText.isNotEmpty) {
-      newText = text.replaceRange(
-        selection.start,
-        selection.end,
-        '<$tag $attributes>$selectedText</$tag>',
-      );
-      newCursorPos =
-          selection.start +
-          tag.length +
-          1 +
-          attributes.length +
-          1 +
-          selectedText.length +
-          tag.length +
-          3;
-    } else {
-      newText = text.replaceRange(
-        selection.start,
-        selection.end,
-        '<$tag $attributes></$tag>',
-      );
-      newCursorPos = selection.start + tag.length + 1 + attributes.length + 1;
-    }
-
-    contentController.value = TextEditingValue(
-      text: newText,
-      selection: TextSelection.collapsed(offset: newCursorPos),
-    );
-  }
-
-  /// 清除所有空行
-  void removeEmptyLines() {
-    final text = contentController.text;
-    // 替换连续的换行符为单个换行符，并去除首尾空白行
-    final cleaned = text
-        .replaceAll(RegExp(r'\n\s*\n+'), '\n')
-        .replaceAll(RegExp(r'^\s*\n'), '')
-        .replaceAll(RegExp(r'\n\s*$'), '')
-        .trim();
-    contentController.value = TextEditingValue(
-      text: cleaned,
-      selection: TextSelection.collapsed(offset: cleaned.length),
-    );
-  }
-
-  /// 段首缩进（每段前加两个全角空格）
-  void indentParagraphs() {
-    final text = contentController.text;
-    final lines = text.split('\n');
-    final indented = lines
-        .map((line) => line.trim().isNotEmpty ? '\u3000\u3000$line' : line)
-        .join('\n');
-    contentController.value = TextEditingValue(
-      text: indented,
-      selection: TextSelection.collapsed(offset: indented.length),
-    );
-  }
-
-  // ─── 保存 ──────────────────────────────────────────────
-
-  /// 保存稿件
-  Future<void> save() async {
-    final title = titleController.text.trim();
-    final content = contentController.text.trim();
-
-    if (content.isEmpty) {
-      if (!mounted) return;
+    if (article == null || article.content.trim().isEmpty) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('请输入稿件正文')));
       return;
     }
 
-    setState(() => isSaving = true);
+    final teleprompterProvider = context.read<TeleprompterProvider>();
+    final settingsProvider = context.read<SettingsProvider>();
+    settingsProvider.loadArticleOverrides(article.teleprompterSettings);
+    teleprompterProvider.loadScript(article.id, article.content);
 
-    try {
-      final provider = context.read<ArticleProvider>();
-
-      if (widget.article != null) {
-        // 更新
-        await provider.updateArticle(
-          widget.article!.id,
-          title: title,
-          content: content,
-        );
-      } else {
-        // 创建
-        await provider.createArticle(title: title, content: content);
-      }
-
-      if (mounted) {
-        setState(() => isDirty = false);
-        Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(widget.article != null ? '稿件已更新' : '稿件已创建'),
-            backgroundColor: AppColors.success,
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('保存失败: $e'), backgroundColor: AppColors.error),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => isSaving = false);
-    }
-  }
-
-  /// 未保存提示对话框
-  void showUnsavedDialog() {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('未保存的更改'),
-        content: const Text('当前有未保存的更改，是否放弃？'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('继续编辑'),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(ctx); // 关闭对话框
-              setState(() => isDirty = false);
-              Navigator.pop(context); // 返回上一页
-            },
-            style: TextButton.styleFrom(foregroundColor: AppColors.error),
-            child: const Text('放弃更改'),
-          ),
-        ],
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => MultiProvider(
+          providers: [
+            ChangeNotifierProvider.value(value: teleprompterProvider),
+            ChangeNotifierProvider.value(value: settingsProvider),
+            ChangeNotifierProvider.value(value: _articleProvider),
+          ],
+          child: TeleprompterPage(article: article),
+        ),
       ),
     );
+  }
+
+  void removeEmptyLines() {
+    final updated = contentController.text
+        .replaceAll(RegExp(r'<p>\s*</p>\s*', caseSensitive: false), '')
+        .replaceAll(RegExp(r'(\r?\n)\s*(\r?\n)+'), '\n')
+        .trim();
+    _replaceEditorHtml(updated);
+  }
+
+  void addParagraphIndentation() {
+    _replaceEditorHtml(
+      _mapParagraphs(contentController.text, (body) {
+        final clean = _removeLeadingIndent(body);
+        return clean.trim().isEmpty ? clean : '\u3000\u3000$clean';
+      }),
+    );
+  }
+
+  void removeParagraphIndentation() {
+    _replaceEditorHtml(
+      _mapParagraphs(contentController.text, _removeLeadingIndent),
+    );
+  }
+
+  void normalizeQuotePairs() {
+    _replaceEditorHtml(_mapTextOutsideTags(contentController.text, _quoteText));
+  }
+
+  void _replaceEditorHtml(String html) {
+    _syncingEditorContent = true;
+    quillController.document = quill.Document.fromDelta(_contentToDelta(html));
+    contentController.value = TextEditingValue(
+      text: html,
+      selection: TextSelection.collapsed(offset: html.length),
+    );
+    _syncingEditorContent = false;
+    _markChanged();
+  }
+
+  qd.Delta _contentToDelta(String content) {
+    if (content.trim().isEmpty) {
+      return qd.Delta()..insert('\n');
+    }
+
+    if (TextParser.isHtml(content)) {
+      try {
+        final delta = HtmlToDelta().convert(content);
+        if (delta.operations.isNotEmpty) return delta;
+      } catch (e) {
+        debugPrint('[Editor] HTML to Delta failed: $e');
+      }
+    }
+
+    final normalized = content.endsWith('\n') ? content : '$content\n';
+    return qd.Delta()..insert(normalized);
+  }
+
+  String _deltaToStorageHtml(qd.Delta delta) {
+    final paragraphs = <String>[];
+    final current = StringBuffer();
+
+    for (final operation in delta.operations) {
+      if (!operation.isInsert || operation.data is! String) continue;
+
+      final attributes = operation.attributes ?? const <String, dynamic>{};
+      final text = operation.data as String;
+      final parts = text.split('\n');
+      for (var i = 0; i < parts.length; i++) {
+        if (parts[i].isNotEmpty) {
+          current.write(_formatInlineHtml(parts[i], attributes));
+        }
+        if (i < parts.length - 1) {
+          paragraphs.add('<p>${current.toString()}</p>');
+          current.clear();
+        }
+      }
+    }
+
+    if (current.isNotEmpty) paragraphs.add('<p>${current.toString()}</p>');
+    return paragraphs.join('\n').trim();
+  }
+
+  String _formatInlineHtml(String text, Map<String, dynamic> attributes) {
+    var result = const HtmlEscape(HtmlEscapeMode.element).convert(text);
+
+    if (attributes['bold'] == true) result = '<b>$result</b>';
+    if (attributes['italic'] == true) result = '<i>$result</i>';
+    if (attributes['underline'] == true) result = '<u>$result</u>';
+    if (attributes['strike'] == true) result = '<s>$result</s>';
+
+    final styles = <String>[];
+    final background = attributes['background'];
+    final size = attributes['size'];
+    if (background is String && background.isNotEmpty) {
+      styles.add('background-color: $background');
+    }
+    if (size is String && size.isNotEmpty) {
+      styles.add('font-size: ${_normalizeFontSize(size)}');
+    }
+    if (styles.isNotEmpty) {
+      result = '<span style="${styles.join('; ')}">$result</span>';
+    }
+
+    return result;
+  }
+
+  String _normalizeFontSize(String value) {
+    final parsed = double.tryParse(value);
+    return parsed == null ? value : '${parsed.round()}px';
+  }
+
+  String _mapParagraphs(String html, String Function(String body) mapper) {
+    final pattern = RegExp(r'<p>(.*?)</p>', caseSensitive: false, dotAll: true);
+    if (!pattern.hasMatch(html)) {
+      return html.split('\n').map(mapper).join('\n');
+    }
+    return html.replaceAllMapped(
+      pattern,
+      (match) => '<p>${mapper(match.group(1) ?? '')}</p>',
+    );
+  }
+
+  String _removeLeadingIndent(String text) {
+    return text.replaceFirst(RegExp(r'^(?:\s|　|&nbsp;)+'), '');
+  }
+
+  String _mapTextOutsideTags(String html, String Function(String text) mapper) {
+    final buffer = StringBuffer();
+    var cursor = 0;
+    for (final match in RegExp(r'<[^>]+>').allMatches(html)) {
+      if (match.start > cursor) {
+        buffer.write(mapper(html.substring(cursor, match.start)));
+      }
+      buffer.write(match.group(0));
+      cursor = match.end;
+    }
+    if (cursor < html.length) buffer.write(mapper(html.substring(cursor)));
+    return buffer.toString();
+  }
+
+  String _quoteText(String text) {
+    final buffer = StringBuffer();
+    var doubleOpen = true;
+    var singleOpen = true;
+    for (final codePoint in text.runes) {
+      final char = String.fromCharCode(codePoint);
+      if (char == '"') {
+        buffer.write(doubleOpen ? '“' : '”');
+        doubleOpen = !doubleOpen;
+      } else if (char == "'") {
+        buffer.write(singleOpen ? '‘' : '’');
+        singleOpen = !singleOpen;
+      } else {
+        buffer.write(char);
+      }
+    }
+    return buffer.toString();
   }
 }

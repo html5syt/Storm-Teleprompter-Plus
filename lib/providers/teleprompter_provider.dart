@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
+import '../backend/ws_protocol.dart';
 import '../models/app_settings.dart';
 import '../models/script_character.dart';
 import '../providers/settings_provider.dart';
+import '../providers/connection_provider.dart';
 import '../services/alignment_engine.dart';
 import '../services/asr_service.dart';
 import '../services/text_parser.dart';
@@ -38,6 +40,7 @@ class TeleprompterProvider with ChangeNotifier {
 
   // ─── 自动滚动（RAF 时间累加器） ────────────────────────
   int _totalChars = 0;
+  final List<int> _charRawIndices = <int>[];
   double _accumulator = 0.0; // 时间累加器（毫秒）
   double _lastFrameTime = 0.0; // 上一帧时间戳（毫秒）
   Ticker? _ticker;
@@ -54,6 +57,9 @@ class TeleprompterProvider with ChangeNotifier {
   // ─── 全屏/控制面板 ─────────────────────────────────────
   bool _controlsVisible = true;
   Timer? _hideControlsTimer;
+
+  // ─── WebSocket 同步 ─────────────────────────────────────
+  ConnectionProvider? _connection;
 
   // ─── Getters ────────────────────────────────────────────
   TeleprompterState get state => _state;
@@ -78,9 +84,10 @@ class TeleprompterProvider with ChangeNotifier {
 
   /// 当前阅读进度 (0.0 ~ 1.0)
   double get progress {
-    // 有 currentIndex 时始终使用字符索引计算，保证各模式间进度一致
-    if (_currentIndex >= 0 && _totalChars > 0) {
-      return (_currentIndex + 1) / _totalChars;
+    // currentIndex 是原稿 rawIndex；进度使用可见字符序号换算。
+    final ordinal = _ordinalForRawIndex(_currentIndex);
+    if (ordinal >= 0 && _totalChars > 0) {
+      return (ordinal + 1) / _totalChars;
     }
     return _manualProgress;
   }
@@ -96,6 +103,106 @@ class TeleprompterProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  /// 绑定 WebSocket 连接（用于多端同步）
+  void bindConnection(ConnectionProvider connection) {
+    _connection = connection;
+  }
+
+  void applyRemoteSync({
+    required int currentIndex,
+    required bool isPlaying,
+    required AppSettings settings,
+  }) {
+    if (_state == TeleprompterState.idle || _totalChars == 0) return;
+
+    final normalizedIndex = currentIndex < 0
+        ? -1
+        : _normalizeRawIndex(currentIndex);
+    _currentIndex = normalizedIndex;
+    if (_currentIndex >= 0) {
+      _alignment.setCurrentIndex(_currentIndex);
+    } else {
+      _alignment.reset();
+    }
+
+    if (isPlaying) {
+      if (_state != TeleprompterState.playing) {
+        _state = TeleprompterState.playing;
+        _playStartTime = DateTime.now();
+      }
+      _stopAutoScroll();
+      _stopAsr();
+      _scheduleHideControls(settings);
+    } else {
+      if (_state == TeleprompterState.playing && _playStartTime != null) {
+        _elapsedBeforePause += DateTime.now().difference(_playStartTime!);
+      }
+      _state = TeleprompterState.paused;
+      _playStartTime = null;
+      _stopAutoScroll();
+      _stopAsr();
+      _cancelHideControls();
+      _controlsVisible = true;
+    }
+
+    notifyListeners();
+  }
+
+  /// 同步当前状态到后端
+  void _syncToBackend() {
+    if (_connection == null || !_connection!.isConnected) return;
+    _connection!.send(
+      WsMessage(
+        type: WsMessageType.teleprompterSync,
+        data: {
+          'currentIndex': _currentIndex,
+          'isPlaying': isPlaying,
+          'articleId': _articleId,
+        },
+      ),
+    );
+  }
+
+  void _rebuildRawIndexMap() {
+    _charRawIndices.clear();
+    for (final line in _lines) {
+      for (final char in line.characters) {
+        _charRawIndices.add(char.rawIndex);
+      }
+    }
+    _totalChars = _charRawIndices.length;
+  }
+
+  int _rawIndexAtOrdinal(int ordinal) {
+    if (_charRawIndices.isEmpty || ordinal < 0) return -1;
+    final safe = ordinal.clamp(0, _charRawIndices.length - 1).toInt();
+    return _charRawIndices[safe];
+  }
+
+  int _ordinalForRawIndex(int rawIndex) {
+    if (_charRawIndices.isEmpty || rawIndex < 0) return -1;
+
+    var low = 0;
+    var high = _charRawIndices.length - 1;
+    while (low <= high) {
+      final mid = low + ((high - low) >> 1);
+      final value = _charRawIndices[mid];
+      if (value == rawIndex) return mid;
+      if (value < rawIndex) {
+        low = mid + 1;
+      } else {
+        high = mid - 1;
+      }
+    }
+
+    if (low >= _charRawIndices.length) return _charRawIndices.length - 1;
+    return low;
+  }
+
+  int _normalizeRawIndex(int rawIndex) {
+    return _rawIndexAtOrdinal(_ordinalForRawIndex(rawIndex));
+  }
+
   /// 加载稿件内容
   void loadScript(String articleId, String content) {
     _articleId = articleId;
@@ -107,8 +214,8 @@ class TeleprompterProvider with ChangeNotifier {
       _lines = TextParser.parsePlainText(content);
     }
 
-    // 计算总字符数
-    _totalChars = _lines.fold(0, (sum, line) => sum + line.characters.length);
+    // 建立可见字符序号 -> 原稿 rawIndex 映射。
+    _rebuildRawIndexMap();
 
     // 设置对齐引擎
     _alignment.setScript(content);
@@ -124,7 +231,8 @@ class TeleprompterProvider with ChangeNotifier {
   /// 开始/恢复播放
   void play(AppSettings settings) {
     if (_state == TeleprompterState.idle ||
-        _state == TeleprompterState.completed) {
+        _state == TeleprompterState.completed ||
+        _totalChars == 0) {
       return;
     }
 
@@ -133,6 +241,7 @@ class TeleprompterProvider with ChangeNotifier {
     _startAutoScrollIfNeeded(settings);
     _startAsrIfNeeded(settings);
     _scheduleHideControls(settings);
+    _syncToBackend();
     notifyListeners();
   }
 
@@ -147,6 +256,7 @@ class TeleprompterProvider with ChangeNotifier {
     _stopAsr();
     _cancelHideControls();
     _controlsVisible = true;
+    _syncToBackend();
     notifyListeners();
   }
 
@@ -166,8 +276,9 @@ class TeleprompterProvider with ChangeNotifier {
 
   /// 手动设置当前索引（点击跳转）
   void setCurrentIndex(int rawIndex) {
-    _currentIndex = rawIndex;
-    _alignment.setCurrentIndex(rawIndex);
+    _currentIndex = _normalizeRawIndex(rawIndex);
+    _alignment.setCurrentIndex(_currentIndex);
+    _syncToBackend();
     notifyListeners();
   }
 
@@ -181,12 +292,16 @@ class TeleprompterProvider with ChangeNotifier {
     _controlsVisible = true;
     _playStartTime = null;
     _elapsedBeforePause = Duration.zero;
+    _syncToBackend();
     notifyListeners();
   }
 
-  /// 快退 10 行
+  /// 后退一个字
   void rewind(AppSettings settings) {
-    final target = (_currentIndex - 10).clamp(-1, _totalChars - 1);
+    if (_totalChars == 0) return;
+    final currentOrdinal = _ordinalForRawIndex(_currentIndex);
+    final targetOrdinal = currentOrdinal <= 0 ? 0 : currentOrdinal - 1;
+    final target = _rawIndexAtOrdinal(targetOrdinal);
     _currentIndex = target;
     _alignment.setCurrentIndex(target);
     if (_state == TeleprompterState.playing &&
@@ -194,12 +309,15 @@ class TeleprompterProvider with ChangeNotifier {
       _stopAutoScroll();
       _startAutoScrollIfNeeded(settings);
     }
+    _syncToBackend();
     notifyListeners();
   }
 
-  /// 快进 10 行
+  /// 前进一个字
   void forward(AppSettings settings) {
-    final target = (_currentIndex + 10).clamp(-1, _totalChars - 1);
+    final currentOrdinal = _ordinalForRawIndex(_currentIndex);
+    final targetOrdinal = currentOrdinal < 0 ? 0 : currentOrdinal + 1;
+    final target = _rawIndexAtOrdinal(targetOrdinal);
     _currentIndex = target;
     _alignment.setCurrentIndex(target);
     if (_state == TeleprompterState.playing &&
@@ -207,7 +325,26 @@ class TeleprompterProvider with ChangeNotifier {
       _stopAutoScroll();
       _startAutoScrollIfNeeded(settings);
     }
+    _syncToBackend();
     notifyListeners();
+  }
+
+  /// 重置到开头（长按后退按钮触发）
+  void resetToStart() {
+    _currentIndex = -1;
+    _alignment.reset();
+    _syncToBackend();
+    notifyListeners();
+  }
+
+  /// 重置到结尾（长按前进按钮触发）
+  void resetToEnd() {
+    if (_totalChars > 0) {
+      _currentIndex = _charRawIndices.last;
+      _alignment.setCurrentIndex(_currentIndex);
+      _syncToBackend();
+      notifyListeners();
+    }
   }
 
   /// 切换控制面板可见性
@@ -256,23 +393,26 @@ class TeleprompterProvider with ChangeNotifier {
         final charsToAdvance = (_accumulator / msPerChar).floor();
         _accumulator %= msPerChar;
 
-        final newIndex = (_currentIndex + charsToAdvance).clamp(
-          0,
-          _totalChars - 1,
-        );
+        final currentOrdinal = _ordinalForRawIndex(_currentIndex);
+        final nextOrdinal =
+            ((currentOrdinal < 0 ? -1 : currentOrdinal) + charsToAdvance)
+                .clamp(0, _totalChars - 1)
+                .toInt();
 
-        if (newIndex >= _totalChars - 1) {
+        if (nextOrdinal >= _totalChars - 1) {
           // 播完后回到开头并停止（与原版行为一致）
           _currentIndex = -1;
           _state = TeleprompterState.paused;
           _stopAutoScroll();
           _playStartTime = null;
           _elapsedBeforePause = Duration.zero;
+          _syncToBackend();
           notifyListeners();
           return;
         }
 
-        _currentIndex = newIndex;
+        _currentIndex = _rawIndexAtOrdinal(nextOrdinal);
+        _syncToBackend();
         notifyListeners();
       }
     });
@@ -328,6 +468,7 @@ class TeleprompterProvider with ChangeNotifier {
         final result = _alignment.consumeTranscript(text, false);
         if (result.index >= 0 && result.index > _currentIndex) {
           _currentIndex = result.index;
+          _syncToBackend();
           notifyListeners();
         }
       },
@@ -336,6 +477,7 @@ class TeleprompterProvider with ChangeNotifier {
         final result = _alignment.consumeTranscript(text, true);
         if (result.index >= 0) {
           _currentIndex = result.index;
+          _syncToBackend();
           notifyListeners();
         }
       },

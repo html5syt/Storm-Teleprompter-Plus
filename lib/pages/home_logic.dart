@@ -1,60 +1,815 @@
 part of 'home_page.dart';
 
+/// 内容项（文件夹或稿件）
+class _ContentItem {
+  final String id;
+  final String name;
+  final bool isFolder;
+  final DateTime updatedAt;
+  final Folder? folder;
+  final Article? article;
+
+  _ContentItem.folder(this.folder)
+    : id = folder!.id,
+      name = folder.name,
+      isFolder = true,
+      updatedAt = folder.createdAt,
+      article = null;
+
+  _ContentItem.article(this.article)
+    : id = article!.id,
+      name = article.title.isEmpty ? '无标题' : article.title,
+      isFolder = false,
+      updatedAt = article.updatedAt,
+      folder = null;
+}
+
+/// 剪贴板操作类型
+enum _ClipboardOp { cut, copy }
+
 /// 首页逻辑 mixin
-///
-/// 包含稿件列表管理、搜索、导航等业务逻辑。
 mixin HomeLogic on State<HomePage> {
+  // ─── 搜索 ─────────────────────────────────────────────
   final TextEditingController searchController = TextEditingController();
   String searchQuery = '';
+  final ImportService _importService = ImportService();
+  bool _isDraggingImport = false;
+  bool _isImporting = false;
+
+  // ─── 文件夹导航 ───────────────────────────────────────
+  String? _currentFolderId;
+  final List<String?> _history = [];
+  int _historyIndex = -1;
+
+  // ─── 选择 ─────────────────────────────────────────────
+  final Set<String> _selectedItems = {};
+
+  // ─── 框选 ─────────────────────────────────────────────
+  Offset? _selectionStart;
+  Offset? _selectionEnd;
+  bool _isSelecting = false;
+
+  // ─── 面包屑滚动 ──────────────────────────────────────
+  final ScrollController _breadcrumbScrollController = ScrollController();
+
+  // ─── 网格滚动（框选用） ──────────────────────────────
+  final ScrollController _gridScrollController = ScrollController();
+
+  // ─── 视图/排序 ────────────────────────────────────────
+  ViewMode _viewMode = ViewMode.largeIcons;
+  SortBy _sortBy = SortBy.name;
+  bool _sortAscending = true;
+
+  // ─── 剪贴板 ───────────────────────────────────────────
+  final List<_ContentItem> _clipboard = [];
+  _ClipboardOp _clipboardOp = _ClipboardOp.copy;
+
+  StreamSubscription<WsMessage>? _startSessionSubscription;
+  StreamSubscription<WsMessage>? _syncSubscription;
+  StreamSubscription<WsMessage>? _settingsSubscription;
+  StreamSubscription<WsMessage>? _endSessionSubscription;
+  bool _remoteTeleprompterRouteActive = false;
+  String? _remoteTeleprompterArticleId;
 
   @override
   void initState() {
     super.initState();
+    _history.add(null); // 根目录
+    _historyIndex = 0;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<ArticleProvider>().init();
+      context.read<FolderProvider>().init();
       context.read<SettingsProvider>().init();
+      _bindTeleprompterSession();
     });
   }
 
   @override
   void dispose() {
     searchController.dispose();
+    _gridScrollController.dispose();
+    _breadcrumbScrollController.dispose();
+    _startSessionSubscription?.cancel();
+    _syncSubscription?.cancel();
+    _settingsSubscription?.cancel();
+    _endSessionSubscription?.cancel();
     super.dispose();
   }
 
   // ─── 搜索 ─────────────────────────────────────────────
-
-  void onSearchChanged(String value) {
-    setState(() => searchQuery = value);
+  void _bindTeleprompterSession() {
+    final connection = context.read<ConnectionProvider>();
+    _startSessionSubscription = connection
+        .listenTo(WsMessageType.teleprompterStartSession)
+        .listen(_handleRemoteStartSession);
+    _syncSubscription = connection
+        .listenTo(WsMessageType.teleprompterSync)
+        .listen(_handleRemoteSync);
+    _settingsSubscription = connection
+        .listenTo(WsMessageType.teleprompterSettingsUpdate)
+        .listen(_handleRemoteSettingsUpdate);
+    _endSessionSubscription = connection
+        .listenTo(WsMessageType.teleprompterEndSession)
+        .listen(_handleRemoteEndSession);
   }
 
+  Future<void> _handleRemoteStartSession(WsMessage message) async {
+    if (!mounted || !context.read<ConnectionProvider>().isRemote) return;
+    await _openRemoteTeleprompterSession(message);
+  }
+
+  Future<void> _openRemoteTeleprompterSession(WsMessage message) async {
+    final articleId = message.data['articleId'] as String?;
+    if (articleId == null || articleId.isEmpty) return;
+
+    final article = await context.read<ArticleProvider>().getArticleById(
+      articleId,
+    );
+    if (!mounted || article == null) return;
+
+    final settingsOverride = Map<String, dynamic>.from(
+      message.data['settings'] as Map? ?? const {},
+    );
+    final settingsProvider = context.read<SettingsProvider>();
+    final teleprompterProvider = context.read<TeleprompterProvider>();
+
+    settingsProvider.applyRemoteTeleprompterSettings(settingsOverride);
+    teleprompterProvider.loadScript(article.id, article.content);
+    teleprompterProvider.applyRemoteSync(
+      currentIndex: (message.data['currentIndex'] as num?)?.toInt() ?? -1,
+      isPlaying: message.data['isPlaying'] as bool? ?? false,
+      settings: settingsProvider.mergedSettings,
+    );
+
+    final sessionArticle = article.copyWith(
+      teleprompterSettings: settingsOverride,
+    );
+    await _showRemoteTeleprompter(sessionArticle);
+  }
+
+  Future<void> _showRemoteTeleprompter(Article article) async {
+    if (!mounted) return;
+    final navigator = Navigator.of(context);
+
+    if (_remoteTeleprompterRouteActive) {
+      if (_remoteTeleprompterArticleId == article.id) return;
+      if (navigator.canPop()) {
+        navigator.pop();
+        await Future<void>.delayed(const Duration(milliseconds: 1));
+      }
+    }
+
+    _remoteTeleprompterRouteActive = true;
+    _remoteTeleprompterArticleId = article.id;
+    await navigator.push(
+      MaterialPageRoute(
+        builder: (_) => MultiProvider(
+          providers: [
+            ChangeNotifierProvider.value(
+              value: context.read<TeleprompterProvider>(),
+            ),
+            ChangeNotifierProvider.value(
+              value: context.read<SettingsProvider>(),
+            ),
+            ChangeNotifierProvider.value(
+              value: context.read<ArticleProvider>(),
+            ),
+          ],
+          child: TeleprompterPage(article: article),
+        ),
+      ),
+    );
+    if (!mounted) return;
+    _remoteTeleprompterRouteActive = false;
+    _remoteTeleprompterArticleId = null;
+  }
+
+  Future<void> _handleRemoteSync(WsMessage message) async {
+    if (!mounted || !context.read<ConnectionProvider>().isRemote) return;
+
+    final articleId = message.data['articleId'] as String?;
+    final teleprompterProvider = context.read<TeleprompterProvider>();
+    if (articleId != null &&
+        articleId.isNotEmpty &&
+        teleprompterProvider.articleId != articleId) {
+      await _openRemoteTeleprompterSession(message);
+      return;
+    }
+
+    teleprompterProvider.applyRemoteSync(
+      currentIndex: (message.data['currentIndex'] as num?)?.toInt() ?? -1,
+      isPlaying: message.data['isPlaying'] as bool? ?? false,
+      settings: context.read<SettingsProvider>().mergedSettings,
+    );
+  }
+
+  void _handleRemoteSettingsUpdate(WsMessage message) {
+    if (!mounted || !context.read<ConnectionProvider>().isRemote) return;
+    final settings = Map<String, dynamic>.from(
+      message.data['settings'] as Map? ?? const {},
+    );
+    context.read<SettingsProvider>().applyRemoteTeleprompterSettings(settings);
+  }
+
+  void _handleRemoteEndSession(WsMessage message) {
+    if (!mounted || !context.read<ConnectionProvider>().isRemote) return;
+    context.read<TeleprompterProvider>().stopAll();
+    context.read<SettingsProvider>().clearArticleOverrides();
+    if (_remoteTeleprompterRouteActive && Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+    }
+    _remoteTeleprompterRouteActive = false;
+    _remoteTeleprompterArticleId = null;
+  }
+
+  void onSearchChanged(String value) => setState(() => searchQuery = value);
   void clearSearch() {
     searchController.clear();
     setState(() => searchQuery = '');
   }
 
-  // ─── 过滤文章列表 ─────────────────────────────────────
+  // ─── 排序 ─────────────────────────────────────────────
+  Set<String> _descendantFolderIds(String? rootId, List<Folder> folders) {
+    final childrenByParent = <String?, List<Folder>>{};
+    for (final folder in folders) {
+      childrenByParent.putIfAbsent(folder.parentId, () => []).add(folder);
+    }
 
-  List<Article> getFilteredArticles(List<Article> articles) {
-    if (searchQuery.isEmpty) return articles;
-    return articles
-        .where(
-          (a) =>
-              a.title.toLowerCase().contains(searchQuery.toLowerCase()) ||
-              a.content.toLowerCase().contains(searchQuery.toLowerCase()),
-        )
-        .toList();
+    final result = <String>{};
+    final pending = List<Folder>.from(
+      childrenByParent[rootId] ?? const <Folder>[],
+    );
+    while (pending.isNotEmpty) {
+      final folder = pending.removeLast();
+      if (result.add(folder.id)) {
+        pending.addAll(childrenByParent[folder.id] ?? const <Folder>[]);
+      }
+    }
+    return result;
   }
 
-  // ─── 导航操作 ──────────────────────────────────────────
+  void _handleImportDragEntered(DropEventDetails details) {
+    if (_isImporting) return;
+    setState(() => _isDraggingImport = true);
+  }
 
-  /// 打开提词器
-  void openTeleprompter(BuildContext context, Article article) {
+  void _handleImportDragExited(DropEventDetails details) {
+    if (_isImporting) return;
+    setState(() => _isDraggingImport = false);
+  }
+
+  Future<void> _handleImportDrop(DropDoneDetails details) async {
+    final paths = details.files
+        .map((file) => file.path)
+        .where((path) => path.isNotEmpty)
+        .toList();
+    if (paths.isEmpty) {
+      setState(() => _isDraggingImport = false);
+      return;
+    }
+    await _importDroppedFiles(paths);
+  }
+
+  Future<void> _importDroppedFiles(List<String> paths) async {
+    if (context.read<ConnectionProvider>().isRemote) {
+      setState(() {
+        _isDraggingImport = false;
+        _isImporting = false;
+      });
+      _showImportSnackBar('远程模式下不能导入本机文件');
+      return;
+    }
+
+    setState(() {
+      _isDraggingImport = false;
+      _isImporting = true;
+    });
+
+    final articleProvider = context.read<ArticleProvider>();
+    var importedCount = 0;
+    final errors = <String>[];
+
+    for (final path in paths) {
+      try {
+        final draft = await _importService.importFile(path);
+        if (draft == null) {
+          errors.add('${_fileName(path)}: 不支持的文件格式');
+          continue;
+        }
+        final article = await articleProvider.createArticle(
+          title: draft.title.isEmpty ? '未命名稿件' : draft.title,
+          content: draft.content,
+          folderId: _currentFolderId,
+        );
+        if (article == null) {
+          errors.add('${_fileName(path)}: 创建失败');
+        } else {
+          importedCount++;
+        }
+      } catch (error) {
+        errors.add('${_fileName(path)}: $error');
+      }
+    }
+
+    if (!mounted) return;
+    setState(() => _isImporting = false);
+
+    if (importedCount > 0 && errors.isEmpty) {
+      _showImportSnackBar('已导入 $importedCount 篇稿件');
+    } else if (importedCount > 0) {
+      _showImportSnackBar('已导入 $importedCount 篇稿件，${errors.length} 个文件失败');
+    } else if (errors.isNotEmpty) {
+      _showImportSnackBar(errors.take(2).join('\n'));
+    } else {
+      _showImportSnackBar('没有可导入的文件');
+    }
+  }
+
+  String _fileName(String path) => path.split(RegExp(r'[\\/]')).last;
+
+  void _showImportSnackBar(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Widget _buildImportOverlay() {
+    return IgnorePointer(
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 120),
+        color: AppColors.primary.withValues(alpha: _isImporting ? 0.10 : 0.08),
+        child: Center(
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 360),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            decoration: BoxDecoration(
+              color: AppColors.surface.withValues(alpha: 0.96),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: AppColors.primary.withValues(alpha: 0.45),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.12),
+                  blurRadius: 24,
+                  offset: const Offset(0, 12),
+                ),
+              ],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  _isImporting ? Icons.hourglass_top : Icons.upload_file,
+                  color: AppColors.primary,
+                  size: 28,
+                ),
+                const SizedBox(width: 12),
+                Flexible(
+                  child: Text(
+                    _isImporting ? '正在导入稿件...' : '松开导入 txt/docx 稿件',
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _toggleSort(SortBy by) {
+    setState(() {
+      if (_sortBy == by) {
+        _sortAscending = !_sortAscending;
+      } else {
+        _sortBy = by;
+        _sortAscending = true;
+      }
+    });
+  }
+
+  List<Folder> _sortFolders(List<Folder> folders) {
+    final sorted = List<Folder>.from(folders);
+    sorted.sort((a, b) {
+      final cmp = _sortBy == SortBy.name
+          ? a.name.compareTo(b.name)
+          : a.createdAt.compareTo(b.createdAt);
+      return _sortAscending ? cmp : -cmp;
+    });
+    return sorted;
+  }
+
+  List<Article> _sortArticles(List<Article> articles) {
+    final sorted = List<Article>.from(articles);
+    sorted.sort((a, b) {
+      final cmp = _sortBy == SortBy.name
+          ? a.title.compareTo(b.title)
+          : a.updatedAt.compareTo(b.updatedAt);
+      return _sortAscending ? cmp : -cmp;
+    });
+    return sorted;
+  }
+
+  // ─── 导航 ─────────────────────────────────────────────
+  bool get _canGoBack => _historyIndex > 0;
+  bool get _canGoForward => _historyIndex < _history.length - 1;
+
+  void _navigateToFolder(String? folderId) {
+    if (folderId == _currentFolderId) return;
+    setState(() {
+      // 截断前进历史
+      if (_historyIndex < _history.length - 1) {
+        _history.removeRange(_historyIndex + 1, _history.length);
+      }
+      _history.add(folderId);
+      _historyIndex = _history.length - 1;
+      _currentFolderId = folderId;
+      _selectedItems.clear();
+      searchController.clear();
+      searchQuery = '';
+    });
+  }
+
+  void _navigateUp() {
+    if (_currentFolderId == null) return;
+    final folder = context.read<FolderProvider>().getFolderById(
+      _currentFolderId!,
+    );
+    _navigateToFolder(folder?.parentId);
+  }
+
+  void _navigateBack() {
+    if (!_canGoBack) return;
+    setState(() {
+      _historyIndex--;
+      _currentFolderId = _history[_historyIndex];
+      _selectedItems.clear();
+    });
+  }
+
+  void _navigateForward() {
+    if (!_canGoForward) return;
+    setState(() {
+      _historyIndex++;
+      _currentFolderId = _history[_historyIndex];
+      _selectedItems.clear();
+    });
+  }
+
+  // ─── 项目交互 ────────────────────────────────────────
+  void _handleItemTap(_ContentItem item) {
+    final ctrl = HardwareKeyboard.instance.isControlPressed;
+    final shift = HardwareKeyboard.instance.isShiftPressed;
+
+    setState(() {
+      if (ctrl) {
+        // Ctrl+点击：切换选中状态
+        if (_selectedItems.contains(item.id)) {
+          _selectedItems.remove(item.id);
+        } else {
+          _selectedItems.add(item.id);
+        }
+      } else if (shift && _selectedItems.isNotEmpty) {
+        // Shift+点击：范围选择
+        _handleRangeSelect(item);
+      } else {
+        // 普通点击：单选
+        _selectedItems.clear();
+        _selectedItems.add(item.id);
+      }
+    });
+  }
+
+  void _handleRangeSelect(_ContentItem item) {
+    // 获取当前显示的所有项目
+    final folderProvider = context.read<FolderProvider>();
+    final articleProvider = context.read<ArticleProvider>();
+    final subFolders = folderProvider.folders
+        .where((f) => f.parentId == _currentFolderId)
+        .toList();
+    final articles = articleProvider.articles
+        .where((a) => a.folderId == _currentFolderId)
+        .toList();
+    final allItems = <_ContentItem>[
+      ..._sortFolders(subFolders).map((f) => _ContentItem.folder(f)),
+      ..._sortArticles(articles).map((a) => _ContentItem.article(a)),
+    ];
+
+    // 找到最后选中的项目和当前项目的索引
+    final lastSelectedId = _selectedItems.last;
+    final fromIndex = allItems.indexWhere((i) => i.id == lastSelectedId);
+    final toIndex = allItems.indexWhere((i) => i.id == item.id);
+
+    if (fromIndex < 0 || toIndex < 0) return;
+
+    final start = fromIndex < toIndex ? fromIndex : toIndex;
+    final end = fromIndex < toIndex ? toIndex : fromIndex;
+
+    for (int i = start; i <= end; i++) {
+      _selectedItems.add(allItems[i].id);
+    }
+  }
+
+  void _handleItemLongPress(_ContentItem item, Offset globalPosition) {
+    // 长按：选中并显示上下文菜单
+    if (!_selectedItems.contains(item.id)) {
+      setState(() {
+        _selectedItems.clear();
+        _selectedItems.add(item.id);
+      });
+    }
+    // 使用实际长按位置显示菜单
+    _showContextMenu(
+      TapUpDetails(
+        globalPosition: globalPosition,
+        kind: PointerDeviceKind.touch,
+      ),
+      item,
+    );
+  }
+
+  void _handleItemDoubleTap(_ContentItem item) {
+    if (item.isFolder) {
+      _navigateToFolder(item.id);
+    } else if (item.article != null) {
+      _openTeleprompter(context, item.article!);
+    }
+  }
+
+  // ─── 右键菜单 ────────────────────────────────────────
+  void _showContextMenu(TapUpDetails details, _ContentItem item) {
+    if (!_selectedItems.contains(item.id)) {
+      setState(() {
+        _selectedItems.clear();
+        _selectedItems.add(item.id);
+      });
+    }
+
+    showMenu<String>(
+      context: context,
+      position: RelativeRect.fromLTRB(
+        details.globalPosition.dx,
+        details.globalPosition.dy,
+        details.globalPosition.dx + 1,
+        details.globalPosition.dy + 1,
+      ),
+      items: <PopupMenuEntry<String>>[
+        if (item.isFolder) ...[
+          const PopupMenuItem<String>(value: 'open', child: Text('打开')),
+          const PopupMenuItem<String>(value: 'rename', child: Text('重命名')),
+          const PopupMenuDivider(),
+          const PopupMenuItem<String>(value: 'cut', child: Text('剪切')),
+          const PopupMenuItem<String>(value: 'copy', child: Text('复制')),
+          const PopupMenuDivider(),
+          const PopupMenuItem<String>(value: 'delete', child: Text('删除')),
+        ] else ...[
+          const PopupMenuItem<String>(value: 'open', child: Text('打开提词')),
+          const PopupMenuItem<String>(value: 'edit', child: Text('编辑')),
+          const PopupMenuItem<String>(value: 'rename', child: Text('重命名')),
+          const PopupMenuDivider(),
+          const PopupMenuItem<String>(value: 'cut', child: Text('剪切')),
+          const PopupMenuItem<String>(value: 'copy', child: Text('复制')),
+          const PopupMenuDivider(),
+          const PopupMenuItem<String>(
+            value: 'moveToFolder',
+            child: Text('移动到文件夹...'),
+          ),
+          const PopupMenuItem<String>(value: 'delete', child: Text('删除')),
+        ],
+      ],
+    ).then((value) {
+      if (value == null) return;
+      switch (value) {
+        case 'open':
+          if (item.isFolder)
+            _navigateToFolder(item.id);
+          else if (item.article != null)
+            _openTeleprompter(context, item.article!);
+          break;
+        case 'edit':
+          if (item.article != null) _editArticle(context, item.article!);
+          break;
+        case 'rename':
+          _renameItemDialog(item);
+          break;
+        case 'cut':
+          _clipboardOp = _ClipboardOp.cut;
+          _clipboard.clear();
+          _clipboard.add(item);
+          break;
+        case 'copy':
+          _clipboardOp = _ClipboardOp.copy;
+          _clipboard.clear();
+          _clipboard.add(item);
+          break;
+        case 'delete':
+          _deleteItemDialog(item);
+          break;
+        case 'moveToFolder':
+          if (item.article != null) _moveToFolderDialog(item.article!);
+          break;
+      }
+    });
+  }
+
+  // ─── 文件夹操作 ───────────────────────────────────────
+  void _createFolderDialog(BuildContext context) {
+    final controller = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('新建文件夹'),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(hintText: '输入文件夹名称'),
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () {
+              final name = controller.text.trim();
+              if (name.isNotEmpty) {
+                context.read<FolderProvider>().createFolder(
+                  name,
+                  parentId: _currentFolderId,
+                );
+                Navigator.pop(ctx);
+              }
+            },
+            child: const Text('创建'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _renameItemDialog(_ContentItem item) {
+    final controller = TextEditingController(text: item.name);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('重命名'),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(hintText: '输入新名称'),
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () {
+              final newName = controller.text.trim();
+              if (newName.isNotEmpty) {
+                if (item.isFolder) {
+                  context.read<FolderProvider>().renameFolder(item.id, newName);
+                } else if (item.article != null) {
+                  context.read<ArticleProvider>().updateArticle(
+                    item.id,
+                    title: newName,
+                  );
+                }
+                Navigator.pop(ctx);
+              }
+            },
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _deleteItemDialog(_ContentItem item) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('删除${item.isFolder ? "文件夹" : "稿件"}'),
+        content: Text('确定要删除「${item.name}」吗？此操作不可撤销。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              if (item.isFolder) {
+                context.read<FolderProvider>().deleteFolder(item.id);
+              } else {
+                context.read<ArticleProvider>().deleteArticle(item.id);
+              }
+              setState(() => _selectedItems.remove(item.id));
+            },
+            style: TextButton.styleFrom(foregroundColor: AppColors.error),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _moveToFolderDialog(Article article) {
+    final folderProvider = context.read<FolderProvider>();
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text('移动到文件夹'),
+          content: SizedBox(
+            width: 300,
+            height: 300,
+            child: ListView(
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.home, size: 20),
+                  title: const Text('根目录'),
+                  dense: true,
+                  onTap: () {
+                    context.read<ArticleProvider>().moveArticleToFolder(
+                      article.id,
+                      null,
+                    );
+                    Navigator.pop(ctx);
+                  },
+                ),
+                for (final folder in folderProvider.folders)
+                  ListTile(
+                    leading: const Icon(
+                      Icons.folder,
+                      size: 20,
+                      color: AppColors.primary,
+                    ),
+                    title: Text(folder.name),
+                    dense: true,
+                    onTap: () {
+                      context.read<ArticleProvider>().moveArticleToFolder(
+                        article.id,
+                        folder.id,
+                      );
+                      Navigator.pop(ctx);
+                    },
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('取消'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // ─── 文章操作 ────────────────────────────────────────
+  void _createArticle(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => MultiProvider(
+          providers: [
+            ChangeNotifierProvider.value(
+              value: context.read<ArticleProvider>(),
+            ),
+          ],
+          child: EditorPage(initialFolderId: _currentFolderId),
+        ),
+      ),
+    );
+  }
+
+  void _openTeleprompter(BuildContext context, Article article) {
     final teleprompterProvider = context.read<TeleprompterProvider>();
     final settingsProvider = context.read<SettingsProvider>();
-
+    final connection = context.read<ConnectionProvider>();
+    settingsProvider.loadArticleOverrides(article.teleprompterSettings);
     teleprompterProvider.loadScript(article.id, article.content);
-
+    if (connection.isLocal && connection.isConnected) {
+      connection.send(
+        WsMessage(
+          type: WsMessageType.teleprompterStartSession,
+          data: {
+            'articleId': article.id,
+            'currentIndex': teleprompterProvider.currentIndex,
+            'isPlaying': teleprompterProvider.isPlaying,
+            'settings': settingsProvider.mergedSettings.toTeleprompterMap(),
+          },
+        ),
+      );
+    }
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => MultiProvider(
@@ -71,8 +826,7 @@ mixin HomeLogic on State<HomePage> {
     );
   }
 
-  /// 编辑稿件
-  void editArticle(BuildContext context, Article article) {
+  void _editArticle(BuildContext context, Article article) {
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => MultiProvider(
@@ -87,15 +841,79 @@ mixin HomeLogic on State<HomePage> {
     );
   }
 
-  /// 删除稿件确认
-  void deleteArticle(BuildContext context, Article article) {
+  // ─── 剪贴板操作 ──────────────────────────────────────
+  void _cutSelected() {
+    final items = _getContentItemsByIds(_selectedItems);
+    _clipboard.clear();
+    _clipboard.addAll(items);
+    _clipboardOp = _ClipboardOp.cut;
+  }
+
+  void _copySelected() {
+    final items = _getContentItemsByIds(_selectedItems);
+    _clipboard.clear();
+    _clipboard.addAll(items);
+    _clipboardOp = _ClipboardOp.copy;
+  }
+
+  void _pasteItems() {
+    for (final item in _clipboard) {
+      if (_clipboardOp == _ClipboardOp.cut) {
+        if (item.isFolder) {
+          context.read<FolderProvider>().moveFolder(item.id, _currentFolderId);
+        } else if (item.article != null) {
+          context.read<ArticleProvider>().moveArticleToFolder(
+            item.id,
+            _currentFolderId,
+          );
+        }
+      } else {
+        // 复制操作 - 创建副本
+        if (!item.isFolder && item.article != null) {
+          context.read<ArticleProvider>().createArticle(
+            title: '${item.article!.title} - 副本',
+            content: item.article!.content,
+          );
+        }
+      }
+    }
+    if (_clipboardOp == _ClipboardOp.cut) {
+      _clipboard.clear();
+    }
+    setState(() {});
+  }
+
+  List<_ContentItem> _getContentItemsByIds(Set<String> ids) {
+    final items = <_ContentItem>[];
+    final folderProvider = context.read<FolderProvider>();
+    final articleProvider = context.read<ArticleProvider>();
+    for (final id in ids) {
+      final folder = folderProvider.getFolderById(id);
+      if (folder != null) {
+        items.add(_ContentItem.folder(folder));
+      } else {
+        final article = articleProvider.articles
+            .where((a) => a.id == id)
+            .firstOrNull;
+        if (article != null) items.add(_ContentItem.article(article));
+      }
+    }
+    return items;
+  }
+
+  void _renameSelected() {
+    if (_selectedItems.length != 1) return;
+    final item = _getContentItemsByIds(_selectedItems).firstOrNull;
+    if (item != null) _renameItemDialog(item);
+  }
+
+  void _deleteSelected() {
+    if (_selectedItems.isEmpty) return;
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('删除稿件'),
-        content: Text(
-          '确定要删除「${article.title.isEmpty ? "无标题" : article.title}」吗？此操作不可撤销。',
-        ),
+        title: const Text('删除'),
+        content: Text('确定要删除选中的 ${_selectedItems.length} 个项目吗？'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
@@ -104,7 +922,17 @@ mixin HomeLogic on State<HomePage> {
           TextButton(
             onPressed: () {
               Navigator.pop(ctx);
-              context.read<ArticleProvider>().deleteArticle(article.id);
+              final folderProvider = context.read<FolderProvider>();
+              final articleProvider = context.read<ArticleProvider>();
+              for (final id in _selectedItems) {
+                final folder = folderProvider.getFolderById(id);
+                if (folder != null) {
+                  folderProvider.deleteFolder(id);
+                } else {
+                  articleProvider.deleteArticle(id);
+                }
+              }
+              setState(() => _selectedItems.clear());
             },
             style: TextButton.styleFrom(foregroundColor: AppColors.error),
             child: const Text('删除'),
@@ -114,30 +942,17 @@ mixin HomeLogic on State<HomePage> {
     );
   }
 
-  /// 新建稿件对话框
-  void showCreateDialog(BuildContext context) {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => MultiProvider(
-          providers: [
-            ChangeNotifierProvider.value(
-              value: context.read<ArticleProvider>(),
-            ),
-          ],
-          child: const EditorPage(),
-        ),
-      ),
-    );
-  }
-
-  /// 打开设置页面
-  void showSettingsPage(BuildContext context) {
+  // ─── 设置 ─────────────────────────────────────────────
+  void _openSettings(BuildContext context) {
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => MultiProvider(
           providers: [
             ChangeNotifierProvider.value(
               value: context.read<SettingsProvider>(),
+            ),
+            ChangeNotifierProvider.value(
+              value: context.read<ConnectionProvider>(),
             ),
           ],
           child: const SettingsPage(),
@@ -146,26 +961,222 @@ mixin HomeLogic on State<HomePage> {
     );
   }
 
-  // ─── 工具 ─────────────────────────────────────────────
+  // ─── 远程连接 ────────────────────────────────────────
+  void _showRemoteConnectDialog(
+    BuildContext context,
+    ConnectionProvider connection,
+  ) {
+    final hostController = TextEditingController(text: 'localhost');
+    final portController = TextEditingController(text: '8080');
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('连接到远程后端'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (connection.isConnected)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Text(
+                  '当前: ${connection.connectionInfoText}',
+                  style: const TextStyle(
+                    color: AppColors.textMuted,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+            TextField(
+              controller: hostController,
+              decoration: const InputDecoration(
+                labelText: '服务器地址',
+                hintText: '192.168.1.100',
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: portController,
+              decoration: const InputDecoration(
+                labelText: '端口',
+                hintText: '8080',
+              ),
+              keyboardType: TextInputType.number,
+            ),
+          ],
+        ),
+        actions: [
+          if (connection.isRemote)
+            TextButton(
+              onPressed: () async {
+                Navigator.pop(ctx);
+                await connection.disconnect();
+              },
+              child: const Text('断开远程'),
+            ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final host = hostController.text.trim();
+              final port = int.tryParse(portController.text.trim()) ?? 8080;
+              Navigator.pop(ctx);
+              try {
+                await connection.connectToRemote(host, port);
+                if (mounted) {
+                  context.read<ArticleProvider>().loadArticles();
+                  context.read<FolderProvider>().loadFolders();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('已连接到 $host:$port'),
+                      backgroundColor: AppColors.success,
+                    ),
+                  );
+                }
+              } catch (e) {
+                if (mounted)
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('连接失败: $e'),
+                      backgroundColor: AppColors.error,
+                    ),
+                  );
+              }
+            },
+            child: const Text('连接'),
+          ),
+        ],
+      ),
+    );
+  }
 
-  /// 格式化日期
-  String formatDate(DateTime date) {
+  // ─── 键盘快捷键 ──────────────────────────────────────
+  void _handleKeyEvent(KeyEvent event) {
+    if (event is! KeyDownEvent) return;
+    final key = event.logicalKey;
+    final ctrl = HardwareKeyboard.instance.isControlPressed;
+    final shift = HardwareKeyboard.instance.isShiftPressed;
+    final alt = HardwareKeyboard.instance.isAltPressed;
+
+    if (key == LogicalKeyboardKey.escape) {
+      if (_selectedItems.isNotEmpty) setState(() => _selectedItems.clear());
+    } else if (key == LogicalKeyboardKey.delete) {
+      _deleteSelected();
+    } else if (key == LogicalKeyboardKey.f2) {
+      _renameSelected();
+    } else if (ctrl && key == LogicalKeyboardKey.keyA) {
+      _selectAll();
+    } else if (ctrl && key == LogicalKeyboardKey.keyN && shift) {
+      _createFolderDialog(context);
+    } else if (ctrl && key == LogicalKeyboardKey.keyX) {
+      _cutSelected();
+    } else if (ctrl && key == LogicalKeyboardKey.keyC) {
+      _copySelected();
+    } else if (ctrl && key == LogicalKeyboardKey.keyV) {
+      _pasteItems();
+    } else if (alt && key == LogicalKeyboardKey.arrowLeft) {
+      _navigateBack();
+    } else if (alt && key == LogicalKeyboardKey.arrowRight) {
+      _navigateForward();
+    } else if (alt && key == LogicalKeyboardKey.arrowUp) {
+      _navigateUp();
+    }
+  }
+
+  void _selectAll() {
+    final folderProvider = context.read<FolderProvider>();
+    final articleProvider = context.read<ArticleProvider>();
+    setState(() {
+      _selectedItems.clear();
+      for (final f in folderProvider.folders.where(
+        (f) => f.parentId == _currentFolderId,
+      )) {
+        _selectedItems.add(f.id);
+      }
+      for (final a in articleProvider.articles.where(
+        (a) => a.folderId == _currentFolderId,
+      )) {
+        _selectedItems.add(a.id);
+      }
+    });
+  }
+
+  // ─── 框选 ─────────────────────────────────────────────
+  void _onSelectionStart(DragStartDetails details) {
+    setState(() {
+      _isSelecting = true;
+      _selectionStart = details.globalPosition;
+      _selectionEnd = details.globalPosition;
+    });
+  }
+
+  void _onSelectionUpdate(DragUpdateDetails details) {
+    if (!_isSelecting) return;
+    setState(() {
+      _selectionEnd = details.globalPosition;
+    });
+  }
+
+  // ─── 多客户端警告 ────────────────────────────────────
+  Future<void> _checkMultiClientBeforeExit(BuildContext context) async {
+    if (!mounted) return;
+    final connection = context.read<ConnectionProvider>();
+    if (!connection.isLocal) {
+      if (mounted) Navigator.pop(context);
+      return;
+    }
+    final clientCount = globalBackendServer.clientCount;
+    if (clientCount >= 2) {
+      return showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => AlertDialog(
+          title: const Text('确认退出'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('⚠️ 检测到有外部设备正在连接到本机后端'),
+              const SizedBox(height: 8),
+              Text(
+                '当前连接数: $clientCount',
+                style: const TextStyle(
+                  fontSize: 13,
+                  color: AppColors.textMuted,
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('保留运行'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                if (mounted) Navigator.pop(context);
+              },
+              style: TextButton.styleFrom(foregroundColor: AppColors.error),
+              child: const Text('强制退出'),
+            ),
+          ],
+        ),
+      );
+    } else {
+      if (mounted) Navigator.pop(context);
+    }
+  }
+
+  // ─── 工具 ─────────────────────────────────────────────
+  String _formatDate(DateTime date) {
     final now = DateTime.now();
     final diff = now.difference(date);
-
     if (diff.inMinutes < 1) return '刚刚';
     if (diff.inHours < 1) return '${diff.inMinutes} 分钟前';
     if (diff.inDays < 1) return '${diff.inHours} 小时前';
     if (diff.inDays < 7) return '${diff.inDays} 天前';
-
     return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
-  }
-
-  /// 根据屏幕宽度决定卡片最大宽度
-  double getCardMaxWidth(BuildContext context) {
-    final width = MediaQuery.of(context).size.width;
-    if (width < 600) return double.infinity; // 手机：单列
-    if (width < 900) return 400; // 平板：双列
-    return 380; // 桌面：三列
   }
 }

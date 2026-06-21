@@ -10,6 +10,7 @@ class Article {
   final DateTime updatedAt;
   final int sortOrder;
   final Map<String, dynamic>? teleprompterSettings; // 每稿独立的提词器设置
+  final String? folderId; // 所属文件夹ID，null表示根目录
 
   Article({
     required this.id,
@@ -19,6 +20,7 @@ class Article {
     required this.updatedAt,
     this.sortOrder = 0,
     this.teleprompterSettings,
+    this.folderId,
   });
 
   /// 从 JSON 反序列化
@@ -33,6 +35,7 @@ class Article {
       teleprompterSettings: json['teleprompterSettings'] != null
           ? Map<String, dynamic>.from(json['teleprompterSettings'] as Map)
           : null,
+      folderId: json['folderId'] as String?,
     );
   }
 
@@ -47,6 +50,7 @@ class Article {
       'sortOrder': sortOrder,
       if (teleprompterSettings != null)
         'teleprompterSettings': teleprompterSettings,
+      if (folderId != null) 'folderId': folderId,
     };
   }
 
@@ -59,6 +63,8 @@ class Article {
     DateTime? updatedAt,
     int? sortOrder,
     Map<String, dynamic>? teleprompterSettings,
+    String? folderId,
+    bool clearFolderId = false,
   }) {
     return Article(
       id: id ?? this.id,
@@ -68,6 +74,7 @@ class Article {
       updatedAt: updatedAt ?? this.updatedAt,
       sortOrder: sortOrder ?? this.sortOrder,
       teleprompterSettings: teleprompterSettings ?? this.teleprompterSettings,
+      folderId: clearFolderId ? null : (folderId ?? this.folderId),
     );
   }
 

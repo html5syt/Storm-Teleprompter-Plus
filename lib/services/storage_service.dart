@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/article.dart';
 import '../models/app_settings.dart';
+import '../models/folder.dart';
 import '../utils/constants.dart';
 
 /// 本地存储服务
@@ -113,6 +114,101 @@ class StorageService {
     articles.removeWhere((a) => a.id == id);
     if (articles.length == initialLength) return false;
     await saveArticles(articles);
+    return true;
+  }
+
+  /// 移动稿件到文件夹
+  Future<Article?> moveArticleToFolder(
+    String articleId,
+    String? folderId,
+  ) async {
+    final articles = await loadArticles();
+    final index = articles.indexWhere((a) => a.id == articleId);
+    if (index == -1) return null;
+
+    final updated = articles[index].copyWith(
+      folderId: folderId,
+      clearFolderId: folderId == null,
+      updatedAt: DateTime.now(),
+    );
+    articles[index] = updated;
+    await saveArticles(articles);
+    return updated;
+  }
+
+  // ─── 文件夹存储 ─────────────────────────────────────────
+
+  /// 获取所有文件夹
+  Future<List<Folder>> loadFolders() async {
+    final jsonStr = _prefs.getString(AppConstants.prefKeyFolders);
+    if (jsonStr == null || jsonStr.isEmpty) return [];
+
+    try {
+      final List<dynamic> jsonList = jsonDecode(jsonStr) as List<dynamic>;
+      return jsonList
+          .map((e) => Folder.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// 保存全部文件夹
+  Future<void> saveFolders(List<Folder> folders) async {
+    final jsonStr = jsonEncode(folders.map((f) => f.toJson()).toList());
+    await _prefs.setString(AppConstants.prefKeyFolders, jsonStr);
+  }
+
+  /// 创建新文件夹
+  Future<Folder> createFolder({
+    required String name,
+    String? parentId,
+  }) async {
+    final now = DateTime.now();
+    final folder = Folder(
+      id: _generateId(),
+      name: name,
+      parentId: parentId,
+      createdAt: now,
+    );
+
+    final folders = await loadFolders();
+    folders.add(folder);
+    await saveFolders(folders);
+    return folder;
+  }
+
+  /// 重命名文件夹
+  Future<Folder?> renameFolder(String id, String newName) async {
+    final folders = await loadFolders();
+    final index = folders.indexWhere((f) => f.id == id);
+    if (index == -1) return null;
+
+    final updated = folders[index].copyWith(name: newName);
+    folders[index] = updated;
+    await saveFolders(folders);
+    return updated;
+  }
+
+  /// 删除文件夹（不删除子文件夹和稿件，仅解除关联）
+  Future<bool> deleteFolder(String id) async {
+    final folders = await loadFolders();
+    final initialLength = folders.length;
+    folders.removeWhere((f) => f.id == id);
+    if (folders.length == initialLength) return false;
+    await saveFolders(folders);
+
+    // 将该文件夹下的稿件移回根目录
+    final articles = await loadArticles();
+    bool changed = false;
+    for (int i = 0; i < articles.length; i++) {
+      if (articles[i].folderId == id) {
+        articles[i] = articles[i].copyWith(clearFolderId: true);
+        changed = true;
+      }
+    }
+    if (changed) await saveArticles(articles);
+
     return true;
   }
 

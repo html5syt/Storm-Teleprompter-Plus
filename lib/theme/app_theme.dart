@@ -8,11 +8,17 @@ import 'app_colors.dart';
 class AppTheme {
   AppTheme._();
 
-  /// 默认暗色主题（使用默认金色）
+  /// 默认暗色主题（使用默认金色和字体）
   static ThemeData get darkTheme => fromColor(AppColors.primary);
 
-  /// 从自定义主题色构建主题
-  static ThemeData fromColor(Color primary) {
+  /// 从自定义主题色构建主题（使用默认字体）
+  static ThemeData fromColor(Color primary) => fromColorAndFont(primary);
+
+  /// 从自定义主题色和字体构建主题
+  static ThemeData fromColorAndFont(
+    Color primary, {
+    String fontFamily = 'Noto Sans SC',
+  }) {
     final colorScheme = ColorScheme.dark(
       primary: primary,
       onPrimary: AppColors.background,
@@ -28,6 +34,7 @@ class AppTheme {
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.dark,
+      fontFamily: fontFamily.isEmpty ? null : fontFamily,
       colorScheme: colorScheme,
       scaffoldBackgroundColor: AppColors.background,
 

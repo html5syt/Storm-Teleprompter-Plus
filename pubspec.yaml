@@ -28,6 +28,12 @@ dependencies:
   # 解压模型文件
   archive: ^4.0.2
 
+  # WebSocket 通信
+  web_socket_channel: ^3.0.1
+
+  # JSON 编解码（序列化）
+  json_annotation: ^4.9.0
+
   # 语音识别（原生插件）
   sherpa_onnx: ^1.13.2
 
@@ -36,6 +42,14 @@ dependencies:
 
   # Windows/macOS/Linux 窗口管理（全屏、标题栏等）
   window_manager: ^0.4.3
+
+  # 统一颜色选择器
+  flutter_colorpicker: ^1.1.0
+  flutter_quill: ^11.5.1
+  dart_quill_delta: ^10.8.3
+  flutter_quill_delta_from_html: ^1.5.3
+  desktop_drop: ^0.7.1
+  xml: ^7.0.1
 
 dev_dependencies:
   flutter_test:
