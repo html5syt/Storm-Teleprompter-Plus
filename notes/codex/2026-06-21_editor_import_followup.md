@@ -27,6 +27,7 @@ Follow-up fixes for the latest user test report:
   - Added Quill-only editing, debounced autosave, save status text, and quick-start teleprompter action.
   - Autosave now rereads title/content on each queued save pass, so typing during an in-flight save is not lost.
   - Failed create/update attempts keep the editor dirty instead of showing a saved state.
+  - Root `MaterialApp` now registers `FlutterQuillLocalizations.localizationsDelegates` and `supportedLocales`, fixing `MissingFlutterQuillLocalizationException` from toolbar buttons.
   - Kept formatting tools: remove empty lines, remove paragraph indent, add paragraph indent, normalize quote pairs.
   - Quill exports to the existing simple HTML subset used by the teleprompter parser.
 

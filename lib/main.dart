@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_quill/flutter_quill.dart' as quill;
 import 'package:provider/provider.dart';
 import 'backend/backend_server.dart';
 import 'providers/article_provider.dart';
@@ -97,6 +98,9 @@ class StormTeleprompterApp extends StatelessWidget {
           return MaterialApp(
             title: '飓风提词器 Plus',
             debugShowCheckedModeBanner: false,
+            localizationsDelegates:
+                quill.FlutterQuillLocalizations.localizationsDelegates,
+            supportedLocales: quill.FlutterQuillLocalizations.supportedLocales,
             theme: AppTheme.fromColorAndFont(primary, fontFamily: appFont),
             darkTheme: AppTheme.fromColorAndFont(primary, fontFamily: appFont),
             themeMode: ThemeMode.dark,
