@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/app_settings.dart';
+import '../providers/connection_provider.dart';
 import '../providers/settings_provider.dart';
 import '../services/font_service.dart';
 import '../theme/app_colors.dart';
@@ -26,7 +27,8 @@ class TeleprompterSettingsPanel extends StatelessWidget {
         color: AppColors.surface,
         child: Consumer<SettingsProvider>(
           builder: (context, provider, _) {
-            final settings = provider.settings;
+            final settings = provider.mergedSettings;
+            final isRemoteClient = context.watch<ConnectionProvider>().isRemote;
             return Column(
               children: [
                 _buildTitleBar(context),
@@ -38,6 +40,8 @@ class TeleprompterSettingsPanel extends StatelessWidget {
                       _buildSectionTitle(context, '进度条提示文字'),
                       const SizedBox(height: 8),
                       _buildProgressFontSizeSlider(context, provider, settings),
+                      if (!isRemoteClient)
+                        _buildScrollSpeedInput(context, provider, settings),
                       _buildProgressDisplayItems(context, provider, settings),
                       const Divider(height: 24),
 
@@ -45,6 +49,8 @@ class TeleprompterSettingsPanel extends StatelessWidget {
                       _buildSectionTitle(context, '正文显示'),
                       const SizedBox(height: 8),
                       _buildTeleprompterFontTile(context, provider, settings),
+                      _buildBodyFontSizeInput(context, provider, settings),
+                      _buildMirrorTextSwitch(context, provider, settings),
                       _buildLetterSpacingSlider(context, provider, settings),
                       _buildLineHeightSlider(context, provider, settings),
                       _buildExtraBoldSlider(context, provider, settings),
@@ -65,6 +71,7 @@ class TeleprompterSettingsPanel extends StatelessWidget {
                         provider,
                         settings,
                       ),
+                      _buildTextPaddingSlider(context, provider, settings),
                     ],
                   ),
                 ),
@@ -142,6 +149,56 @@ class TeleprompterSettingsPanel extends StatelessWidget {
       displayFormatter: (v) => '${(v * 100).round()}%',
       onChanged: (v) => provider.setProgressInfoSizeRatio(v),
       onReset: () => provider.setProgressInfoSizeRatio(0.6),
+    );
+  }
+
+  Widget _buildScrollSpeedInput(
+    BuildContext context,
+    SettingsProvider provider,
+    AppSettings settings,
+  ) {
+    final controller = TextEditingController(text: '${settings.wpm}');
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          const Icon(Icons.speed, size: 18, color: AppColors.textSecondary),
+          const SizedBox(width: 8),
+          const SizedBox(
+            width: 72,
+            child: Text(
+              '滚动速度',
+              style: TextStyle(fontSize: 13, color: AppColors.textPrimary),
+            ),
+          ),
+          Expanded(
+            child: TextField(
+              controller: controller,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                suffixText: '字/分',
+                isDense: true,
+                contentPadding: EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 8,
+                ),
+              ),
+              onSubmitted: (value) {
+                final parsed = int.tryParse(value.trim());
+                if (parsed != null) provider.setWpm(parsed < 0 ? 0 : parsed);
+              },
+            ),
+          ),
+          IconButton(
+            tooltip: '应用速度',
+            icon: const Icon(Icons.check, size: 18),
+            onPressed: () {
+              final parsed = int.tryParse(controller.text.trim());
+              if (parsed != null) provider.setWpm(parsed < 0 ? 0 : parsed);
+            },
+          ),
+        ],
+      ),
     );
   }
 
@@ -239,7 +296,10 @@ class TeleprompterSettingsPanel extends StatelessWidget {
       dense: true,
       leading: const Icon(Icons.font_download, size: 20),
       title: const Text('正文字体', style: TextStyle(fontSize: 14)),
-      subtitle: Text(settings.teleprompterFontFamily, style: const TextStyle(fontSize: 12)),
+      subtitle: Text(
+        settings.teleprompterFontFamily,
+        style: const TextStyle(fontSize: 12),
+      ),
       trailing: const Icon(Icons.chevron_right, size: 18),
       onTap: () {
         List<String> allFonts = [];
@@ -289,15 +349,27 @@ class TeleprompterSettingsPanel extends StatelessWidget {
                                 itemCount: filteredFonts.length,
                                 itemBuilder: (context, index) {
                                   final f = filteredFonts[index];
-                                  final isSelected = f == settings.teleprompterFontFamily;
+                                  final isSelected =
+                                      f == settings.teleprompterFontFamily;
                                   return ListTile(
                                     dense: true,
-                                    title: Text(f, style: TextStyle(
-                                      fontFamily: f,
-                                      fontSize: 13,
-                                      color: isSelected ? AppColors.primary : null,
-                                    )),
-                                    trailing: isSelected ? const Icon(Icons.check, size: 18, color: AppColors.primary) : null,
+                                    title: Text(
+                                      f,
+                                      style: TextStyle(
+                                        fontFamily: f,
+                                        fontSize: 13,
+                                        color: isSelected
+                                            ? AppColors.primary
+                                            : null,
+                                      ),
+                                    ),
+                                    trailing: isSelected
+                                        ? const Icon(
+                                            Icons.check,
+                                            size: 18,
+                                            color: AppColors.primary,
+                                          )
+                                        : null,
                                     onTap: () {
                                       provider.setTeleprompterFontFamily(f);
                                       Navigator.pop(ctx);
@@ -310,7 +382,10 @@ class TeleprompterSettingsPanel extends StatelessWidget {
                   ),
                 ),
                 actions: [
-                  TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('关闭')),
+                  TextButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    child: const Text('关闭'),
+                  ),
                 ],
               );
             },
@@ -339,6 +414,75 @@ class TeleprompterSettingsPanel extends StatelessWidget {
     );
   }
 
+  Widget _buildBodyFontSizeInput(
+    BuildContext context,
+    SettingsProvider provider,
+    AppSettings settings,
+  ) {
+    final controller = TextEditingController(
+      text: settings.fontSize.toStringAsFixed(
+        settings.fontSize.truncateToDouble() == settings.fontSize ? 0 : 1,
+      ),
+    );
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.format_size,
+            size: 18,
+            color: AppColors.textSecondary,
+          ),
+          const SizedBox(width: 8),
+          const SizedBox(
+            width: 72,
+            child: Text(
+              '正文字号',
+              style: TextStyle(fontSize: 13, color: AppColors.textPrimary),
+            ),
+          ),
+          Expanded(
+            child: TextField(
+              controller: controller,
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+              decoration: const InputDecoration(
+                suffixText: 'px',
+                isDense: true,
+                contentPadding: EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 8,
+                ),
+              ),
+              onSubmitted: (value) {
+                final parsed = double.tryParse(value.trim());
+                if (parsed != null && parsed > 0) {
+                  provider.setFontSize(parsed);
+                }
+              },
+            ),
+          ),
+          IconButton(
+            tooltip: '应用字号',
+            icon: const Icon(Icons.check, size: 18),
+            onPressed: () {
+              final parsed = double.tryParse(controller.text.trim());
+              if (parsed != null && parsed > 0) {
+                provider.setFontSize(parsed);
+              }
+            },
+          ),
+          IconButton(
+            tooltip: '重置字号',
+            icon: const Icon(Icons.restart_alt, size: 18),
+            onPressed: () => provider.setFontSize(64),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildLineHeightSlider(
     BuildContext context,
     SettingsProvider provider,
@@ -356,6 +500,24 @@ class TeleprompterSettingsPanel extends StatelessWidget {
       onChanged: (v) =>
           provider.setLineHeight(double.parse(v.toStringAsFixed(1))),
       onReset: () => provider.setLineHeight(1.5),
+    );
+  }
+
+  Widget _buildMirrorTextSwitch(
+    BuildContext context,
+    SettingsProvider provider,
+    AppSettings settings,
+  ) {
+    return SwitchListTile(
+      dense: true,
+      secondary: const Icon(Icons.flip, size: 20),
+      title: const Text('镜像提词画面', style: TextStyle(fontSize: 14)),
+      subtitle: const Text(
+        '水平翻转正文、阅读框和进度条，适配分光镜',
+        style: TextStyle(fontSize: 12),
+      ),
+      value: settings.mirrorMode,
+      onChanged: (_) => provider.toggleMirrorMode(),
     );
   }
 
@@ -472,6 +634,25 @@ class TeleprompterSettingsPanel extends StatelessWidget {
       displayFormatter: (v) => '${(v * 100).round()}%',
       onChanged: (v) => provider.setReadingLineOffset(v),
       onReset: () => provider.setReadingLineOffset(0.5),
+    );
+  }
+
+  Widget _buildTextPaddingSlider(
+    BuildContext context,
+    SettingsProvider provider,
+    AppSettings settings,
+  ) {
+    return _buildSlider(
+      context,
+      icon: Icons.format_indent_increase,
+      title: '正文边距',
+      value: settings.paddingX,
+      min: 0,
+      max: 40,
+      divisions: 40,
+      displayFormatter: (v) => '${v.round()}%',
+      onChanged: (v) => provider.setPaddingX(v),
+      onReset: () => provider.setPaddingX(5.0),
     );
   }
 

@@ -6,12 +6,14 @@ part of 'teleprompter_page.dart';
 mixin TeleprompterPageLogic<T extends StatefulWidget>
     on State<T>, WidgetsBindingObserver {
   final ScrollController scrollController = ScrollController();
-  final GlobalKey textLayerKey = GlobalKey();
+  final GlobalKey<TeleprompterTextLayerState> textLayerKey =
+      GlobalKey<TeleprompterTextLayerState>();
   bool isFullScreen = false;
 
   TeleprompterProvider? _teleprompterProvider;
   SettingsProvider? _settingsProvider;
   _WindowEventListener? _windowListener;
+  bool _remoteSessionEndSent = false;
 
   @override
   void initState() {
@@ -63,6 +65,7 @@ mixin TeleprompterPageLogic<T extends StatefulWidget>
     }
     // 保存稿件覆盖设置到稿件
     _saveArticleOverrides();
+    _sendRemoteSessionEndIfMaster();
     // 清除稿件覆盖
     _settingsProvider?.clearArticleOverrides();
     scrollController.dispose();
@@ -87,6 +90,49 @@ mixin TeleprompterPageLogic<T extends StatefulWidget>
       } catch (e) {
         debugPrint('[TeleprompterLogic] 保存稿件设置失败: $e');
       }
+    }
+  }
+
+  Map<String, dynamic> _sessionEndData() {
+    return {'articleId': (widget as TeleprompterPage).article.id};
+  }
+
+  bool _canEndRemoteSession(ConnectionProvider connection) {
+    return !_remoteSessionEndSent &&
+        connection.isLocal &&
+        connection.isConnected;
+  }
+
+  void _sendRemoteSessionEndIfMaster() {
+    final connection = context.read<ConnectionProvider>();
+    if (!_canEndRemoteSession(connection)) return;
+    _remoteSessionEndSent = true;
+    connection.send(
+      WsMessage(
+        type: WsMessageType.teleprompterEndSession,
+        data: _sessionEndData(),
+      ),
+    );
+  }
+
+  Future<void> _endRemoteSessionIfMaster() async {
+    final connection = context.read<ConnectionProvider>();
+    if (!_canEndRemoteSession(connection)) return;
+    _remoteSessionEndSent = true;
+    try {
+      await connection.request(
+        WsMessageType.teleprompterEndSession,
+        data: _sessionEndData(),
+        timeout: const Duration(seconds: 2),
+      );
+    } catch (e) {
+      debugPrint('[TeleprompterLogic] 结束远程会话确认失败: $e');
+      connection.send(
+        WsMessage(
+          type: WsMessageType.teleprompterEndSession,
+          data: _sessionEndData(),
+        ),
+      );
     }
   }
 
@@ -163,14 +209,41 @@ mixin TeleprompterPageLogic<T extends StatefulWidget>
     final teleprompter = context.read<TeleprompterProvider>();
     final settingsProvider = context.read<SettingsProvider>();
     final settings = settingsProvider.mergedSettings;
+    if (context.read<ConnectionProvider>().isRemote) return;
 
-    if (settings.scrollMode == ScrollMode.auto && teleprompter.isPlaying) {
+    if (settings.scrollMode == ScrollMode.auto &&
+        teleprompter.isPlaying &&
+        settings.wpm > 0) {
       // 自动模式：滚轮只调速，不滚动页面
-      teleprompter.adjustSpeedByWheel(event.scrollDelta.dy, settingsProvider);
+      teleprompter.adjustSpeedByWheel(
+        event.scrollDelta.dy,
+        settingsProvider,
+        stepMultiplier: _speedStepMultiplier(),
+      );
+      return;
+    }
+
+    if (settings.scrollMode == ScrollMode.auto &&
+        teleprompter.isPlaying &&
+        settings.wpm <= 0) {
+      final direction = event.scrollDelta.dy > 0 ? 1 : -1;
+      final visualTarget = textLayerKey.currentState?.rawIndexForVisualLineMove(
+        direction,
+      );
+      if (visualTarget != null) {
+        teleprompter.setCurrentIndex(visualTarget);
+      }
       return;
     }
 
     // 手动/ASR 模式：让滚动自然传播
+  }
+
+  int _speedStepMultiplier() {
+    final keyboard = HardwareKeyboard.instance;
+    if (keyboard.isControlPressed) return 10;
+    if (keyboard.isShiftPressed) return 4;
+    return 1;
   }
 
   // ─── 手动滚动进度更新 ──────────────────────────────────
@@ -199,36 +272,6 @@ mixin TeleprompterPageLogic<T extends StatefulWidget>
     );
     final progress = (contentOffset / contentExtent).clamp(0.0, 1.0);
     context.read<TeleprompterProvider>().setManualProgress(progress);
-  }
-
-  /// 重置到开头并滚动到顶部
-  ///
-  /// 双重保险：teleprompter.reset() 通知 widget 层触发滚动，
-  /// 同时 scrollController 直接 animateTo(0) 作为兜底。
-  void _resetAndScrollToTop(TeleprompterProvider teleprompter) {
-    teleprompter.reset();
-    if (scrollController.hasClients) {
-      scrollController.animateTo(
-        0,
-        duration: const Duration(milliseconds: 250),
-        curve: Curves.easeOutCubic,
-      );
-    }
-  }
-
-  /// 快速滚动到稿件尾部
-  ///
-  /// 双重保险：resetToEnd() 触发 widget 层滚动 + 直接 animateTo 兜底。
-  void _scrollToEnd() {
-    final teleprompter = context.read<TeleprompterProvider>();
-    teleprompter.resetToEnd();
-    if (!scrollController.hasClients) return;
-    // 滚到 maxScrollExtent（底部空气垫末尾 = 真正的文档末尾之后）
-    scrollController.animateTo(
-      scrollController.position.maxScrollExtent,
-      duration: const Duration(milliseconds: 500),
-      curve: Curves.easeOutCubic,
-    );
   }
 
   // ─── 格式化工具 ────────────────────────────────────────

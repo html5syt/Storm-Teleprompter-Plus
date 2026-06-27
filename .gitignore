@@ -44,5 +44,11 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 
+# Signing material. Keep these out of source control.
+*.jks
+*.keystore
+key.properties
+android/key.properties
+
 .venv/
 chat.josn

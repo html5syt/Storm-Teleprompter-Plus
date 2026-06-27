@@ -12,6 +12,7 @@ class ArticleProvider with ChangeNotifier {
   String? _error;
 
   ConnectionProvider? _connection;
+  VoidCallback? _connectionListener;
 
   List<Article> get articles => _articles;
   bool get isLoading => _isLoading;
@@ -19,7 +20,18 @@ class ArticleProvider with ChangeNotifier {
 
   /// 绑定连接
   void bindConnection(ConnectionProvider connection) {
+    if (_connection != null && _connectionListener != null) {
+      _connection!.removeListener(_connectionListener!);
+    }
     _connection = connection;
+    _connectionListener = () {
+      if (!connection.isConnected) {
+        _articles = [];
+        _error = '后端未连接';
+        notifyListeners();
+      }
+    };
+    connection.addListener(_connectionListener!);
   }
 
   /// 初始化并加载稿件
@@ -193,9 +205,18 @@ class ArticleProvider with ChangeNotifier {
   }
 
   /// 将稿件移动到文件夹
-  Future<Article?> getArticleById(String id) async {
+  Future<Article?> getArticleById(
+    String id, {
+    bool forceRefresh = false,
+  }) async {
+    if (_connection == null || !_connection!.isConnected) {
+      _error = '后端未连接';
+      notifyListeners();
+      return null;
+    }
+
     final cached = _articles.where((a) => a.id == id).firstOrNull;
-    if (cached != null) return cached;
+    if (cached != null && !forceRefresh) return cached;
 
     try {
       if (_connection != null && _connection!.isConnected) {
@@ -218,6 +239,22 @@ class ArticleProvider with ChangeNotifier {
       notifyListeners();
     }
     return null;
+  }
+
+  void upsertArticle(Article article) {
+    final index = _articles.indexWhere((a) => a.id == article.id);
+    if (index >= 0) {
+      _articles[index] = article;
+    } else {
+      _articles.insert(0, article);
+    }
+    notifyListeners();
+  }
+
+  void clear() {
+    _articles = [];
+    _error = null;
+    notifyListeners();
   }
 
   Future<bool> moveArticleToFolder(String articleId, String? folderId) async {
@@ -263,5 +300,13 @@ class ArticleProvider with ChangeNotifier {
       debugPrint('[ArticleProvider] 删除失败: $e');
       rethrow;
     }
+  }
+
+  @override
+  void dispose() {
+    if (_connection != null && _connectionListener != null) {
+      _connection!.removeListener(_connectionListener!);
+    }
+    super.dispose();
   }
 }

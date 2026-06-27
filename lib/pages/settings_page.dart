@@ -569,6 +569,8 @@ class SettingsPage extends StatelessWidget {
             if (connection.clientId != null)
               _infoRow('客户端 ID', connection.clientId!),
             _infoRow('已连接设备数', '${connection.deviceCount}'),
+            if (connection.remoteDeviceIds.isNotEmpty)
+              _infoRow('传入连接 ID', connection.remoteDeviceIds.join('\n')),
           ],
         ),
         actions: [
@@ -583,6 +585,7 @@ class SettingsPage extends StatelessWidget {
 
   /// 已连接设备对话框
   void _showDevicesDialog(BuildContext context, ConnectionProvider connection) {
+    final remoteDeviceIds = connection.remoteDeviceIds;
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -606,22 +609,25 @@ class SettingsPage extends StatelessWidget {
                     ListTile(
                       leading: const Icon(Icons.computer, size: 20),
                       title: Text('本机 (${connection.clientId ?? "未知"})'),
-                      subtitle: const Text('当前设备'),
+                      subtitle: const Text('当前客户端 / 主控端'),
                       dense: true,
                     ),
-                    if (connection.deviceCount > 1) const Divider(),
-                    // 其他设备
-                    ...List.generate(
-                      connection.deviceCount > 1
-                          ? connection.deviceCount - 1
-                          : 0,
-                      (i) => ListTile(
+                    if (remoteDeviceIds.isNotEmpty) const Divider(),
+                    ...remoteDeviceIds.map(
+                      (deviceId) => ListTile(
                         leading: const Icon(Icons.devices_other, size: 20),
-                        title: Text('设备 ${i + 2}'),
-                        subtitle: const Text('远程连接'),
+                        title: Text(deviceId),
+                        subtitle: const Text('传入远程连接'),
                         dense: true,
                       ),
                     ),
+                    if (remoteDeviceIds.isEmpty && connection.deviceCount <= 1)
+                      const ListTile(
+                        leading: Icon(Icons.info_outline, size: 20),
+                        title: Text('暂无传入连接'),
+                        subtitle: Text('当前设备'),
+                        dense: true,
+                      ),
                   ],
                 ),
         ),

@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
+import '../backend/ws_protocol.dart';
 import '../models/article.dart';
 import '../models/app_settings.dart';
 import '../providers/article_provider.dart';
@@ -46,99 +49,76 @@ class _TeleprompterPageState extends State<TeleprompterPage>
     return Consumer2<TeleprompterProvider, SettingsProvider>(
       builder: (context, teleprompter, settingsProvider, _) {
         final settings = settingsProvider.mergedSettings;
+        final isRemoteClient = context.watch<ConnectionProvider>().isRemote;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          teleprompter.refreshAutoScrollSettings(
+            context.read<SettingsProvider>().mergedSettings,
+          );
+        });
 
         return Scaffold(
           backgroundColor: AppColors.teleprompterBgFromSettings(
             settings.teleprompterBgColor,
           ),
-          body: CallbackShortcuts(
-            bindings: {
-              // F11 / Ctrl+Shift+F 全屏切换
-              const SingleActivator(LogicalKeyboardKey.f11): toggleFullScreen,
-              const SingleActivator(
-                LogicalKeyboardKey.keyF,
-                control: true,
-                shift: true,
-              ): toggleFullScreen,
-              // Esc 退出提词器
-              LogicalKeySet(LogicalKeyboardKey.escape): () =>
-                  _exitTeleprompter(context),
-              // Enter 切换全屏
-              const SingleActivator(LogicalKeyboardKey.enter): toggleFullScreen,
-              // Space 开始/暂停
-              const SingleActivator(LogicalKeyboardKey.space): () =>
-                  teleprompter.togglePlayPause(settings),
-              // ↑ 上移一行（未开始时）
-              const SingleActivator(LogicalKeyboardKey.arrowUp): () =>
-                  _handleVerticalMove(context, settings, -1),
-              // ↓ 下移一行（未开始时）
-              const SingleActivator(LogicalKeyboardKey.arrowDown): () =>
-                  _handleVerticalMove(context, settings, 1),
-              // ← 后退一个字
-              const SingleActivator(LogicalKeyboardKey.arrowLeft): () =>
-                  _handleHorizontalMove(context, settings, -1),
-              // → 前进一个字
-              const SingleActivator(LogicalKeyboardKey.arrowRight): () =>
-                  _handleHorizontalMove(context, settings, 1),
-            },
-            child: Focus(
-              autofocus: true,
-              child: Listener(
-                onPointerSignal: handlePointerSignal,
-                child: GestureDetector(
-                  behavior: HitTestBehavior.translucent,
-                  onTap: () {
-                    // 任何模式下点击空白区域都切换控制面板
-                    if (teleprompter.controlsVisible) {
-                      teleprompter.toggleControls();
-                    } else {
-                      teleprompter.showControls(settings);
-                    }
-                  },
-                  child: Stack(
-                    children: [
-                      // ── 1. 文本层（占据全屏，可滚动） ──
-                      _buildTextLayer(context, teleprompter, settings),
+          body: Focus(
+            autofocus: true,
+            onKeyEvent: _handleTeleprompterKeyEvent,
+            child: Listener(
+              onPointerSignal: _showSettings ? null : handlePointerSignal,
+              child: GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onTap: () {
+                  // 任何模式下点击空白区域都切换控制面板
+                  if (teleprompter.controlsVisible) {
+                    teleprompter.toggleControls();
+                  } else {
+                    teleprompter.showControls(settings);
+                  }
+                },
+                child: Stack(
+                  children: [
+                    // ── 1. 文本层（占据全屏，可滚动） ──
+                    _buildTextLayer(context, teleprompter, settings),
 
-                      // ── 2. 阅读线指示器 ──
-                      _buildReadingLine(context, settings),
+                    // ── 2. 阅读线指示器 ──
+                    _buildReadingLine(context, settings),
 
-                      // ── 3. 顶部进度条（全幅 + 右侧信息） ──
-                      if (teleprompter.isPlaying ||
-                          (settings.scrollMode == ScrollMode.auto &&
-                              teleprompter.state == TeleprompterState.paused))
-                        _buildTopProgressBar(context, teleprompter, settings),
+                    // ── 3. 顶部进度条（全幅 + 右侧信息） ──
+                    if (teleprompter.isPlaying ||
+                        (settings.scrollMode == ScrollMode.auto &&
+                            teleprompter.state == TeleprompterState.paused))
+                      _buildTopProgressBar(context, teleprompter, settings),
 
-                      // ── 4. 顶部导航栏（浮动、可隐藏） ──
-                      if (teleprompter.controlsVisible)
-                        _buildTopNavBar(context, teleprompter, settings),
+                    // ── 4. 顶部导航栏（浮动、可隐藏） ──
+                    if (teleprompter.controlsVisible)
+                      _buildTopNavBar(context, teleprompter, settings),
 
-                      // ── 5. 底部浮动工具栏（可隐藏） ──
-                      if (teleprompter.controlsVisible)
-                        _buildBottomToolbar(
-                          context,
-                          teleprompter,
-                          settingsProvider,
+                    // ── 5. 底部浮动工具栏（可隐藏） ──
+                    if (teleprompter.controlsVisible)
+                      _buildBottomToolbar(
+                        context,
+                        teleprompter,
+                        settingsProvider,
+                        isRemoteClient: isRemoteClient,
+                      ),
+
+                    // ── 6. ASR 音量指示器 ──
+                    if (settings.scrollMode == ScrollMode.asr &&
+                        teleprompter.isPlaying)
+                      _buildRmsMeter(teleprompter, settings),
+
+                    // ── 7. 设置抽屉面板 ──
+                    if (_showSettings)
+                      Positioned(
+                        top: 0,
+                        right: 0,
+                        bottom: 0,
+                        child: TeleprompterSettingsPanel(
+                          onClose: () => setState(() => _showSettings = false),
                         ),
-
-                      // ── 6. ASR 音量指示器 ──
-                      if (settings.scrollMode == ScrollMode.asr &&
-                          teleprompter.isPlaying)
-                        _buildRmsMeter(teleprompter, settings),
-
-                      // ── 7. 设置抽屉面板 ──
-                      if (_showSettings)
-                        Positioned(
-                          top: 0,
-                          right: 0,
-                          bottom: 0,
-                          child: TeleprompterSettingsPanel(
-                            onClose: () =>
-                                setState(() => _showSettings = false),
-                          ),
-                        ),
-                    ],
-                  ),
+                      ),
+                  ],
                 ),
               ),
             ),
@@ -146,6 +126,48 @@ class _TeleprompterPageState extends State<TeleprompterPage>
         );
       },
     );
+  }
+
+  KeyEventResult _handleTeleprompterKeyEvent(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+      return KeyEventResult.ignored;
+    }
+
+    final key = event.logicalKey;
+    final settings = context.read<SettingsProvider>().mergedSettings;
+    final teleprompter = context.read<TeleprompterProvider>();
+    final isRemoteClient = context.read<ConnectionProvider>().isRemote;
+
+    if (key == LogicalKeyboardKey.f11 ||
+        (key == LogicalKeyboardKey.keyF &&
+            HardwareKeyboard.instance.isControlPressed &&
+            HardwareKeyboard.instance.isShiftPressed) ||
+        key == LogicalKeyboardKey.enter) {
+      toggleFullScreen();
+    } else if (key == LogicalKeyboardKey.escape) {
+      unawaited(_exitTeleprompter(context));
+    } else if (isRemoteClient &&
+        (key == LogicalKeyboardKey.space ||
+            key == LogicalKeyboardKey.arrowUp ||
+            key == LogicalKeyboardKey.arrowDown ||
+            key == LogicalKeyboardKey.arrowLeft ||
+            key == LogicalKeyboardKey.arrowRight)) {
+      return KeyEventResult.handled;
+    } else if (key == LogicalKeyboardKey.space) {
+      teleprompter.togglePlayPause(settings);
+    } else if (key == LogicalKeyboardKey.arrowUp) {
+      _handleVerticalMove(context, settings, -1);
+    } else if (key == LogicalKeyboardKey.arrowDown) {
+      _handleVerticalMove(context, settings, 1);
+    } else if (key == LogicalKeyboardKey.arrowLeft) {
+      _handleHorizontalMove(context, settings, -1);
+    } else if (key == LogicalKeyboardKey.arrowRight) {
+      _handleHorizontalMove(context, settings, 1);
+    } else {
+      return KeyEventResult.ignored;
+    }
+
+    return KeyEventResult.handled;
   }
 
   // ─── 动态颜色辅助 ──────────────────────────────────────
@@ -156,6 +178,18 @@ class _TeleprompterPageState extends State<TeleprompterPage>
   /// 从设置中获取当前提词器背景色
   Color _bgFromSettings(AppSettings s) =>
       AppColors.teleprompterBgFromSettings(s.teleprompterBgColor);
+
+  Widget _mirrorPromptOverlayIfNeeded({
+    required AppSettings settings,
+    required Widget child,
+  }) {
+    if (!settings.mirrorMode) return child;
+    return Transform(
+      alignment: Alignment.center,
+      transform: Matrix4.identity()..setEntry(0, 0, -1.0),
+      child: child,
+    );
+  }
 
   // ─── 顶部进度条（全幅，右侧显示时间+速度） ──────────
 
@@ -235,44 +269,47 @@ class _TeleprompterPageState extends State<TeleprompterPage>
       right: 0,
       child: GestureDetector(
         onTap: () {}, // 拦截点击，不触发父级
-        child: SizedBox(
-          height: barHeight,
-          child: Stack(
-            children: [
-              // 进度条背景
-              Positioned.fill(
-                child: Container(
-                  color: AppColors.background.withValues(alpha: 0.6),
+        child: _mirrorPromptOverlayIfNeeded(
+          settings: settings,
+          child: SizedBox(
+            height: barHeight,
+            child: Stack(
+              children: [
+                // 进度条背景
+                Positioned.fill(
+                  child: Container(
+                    color: AppColors.background.withValues(alpha: 0.6),
+                  ),
                 ),
-              ),
-              // 进度条填充
-              Positioned(
-                top: 0,
-                left: 0,
-                bottom: 0,
-                width: MediaQuery.of(context).size.width * progress,
-                child: Container(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        _primaryFromSettings(settings).withValues(alpha: 0.8),
-                        _primaryFromSettings(settings),
-                      ],
+                // 进度条填充
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  bottom: 0,
+                  width: MediaQuery.of(context).size.width * progress,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          _primaryFromSettings(settings).withValues(alpha: 0.8),
+                          _primaryFromSettings(settings),
+                        ],
+                      ),
                     ),
                   ),
                 ),
-              ),
-              // 右侧信息（自动根据文本宽度调整）
-              Positioned(
-                top: 0,
-                right: 12,
-                bottom: 0,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: infoChildren,
+                // 右侧信息（自动根据文本宽度调整）
+                Positioned(
+                  top: 0,
+                  right: 12,
+                  bottom: 0,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: infoChildren,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -323,10 +360,7 @@ class _TeleprompterPageState extends State<TeleprompterPage>
                   size: 22,
                 ),
                 onPressed: () async {
-                  if (isFullScreen) {
-                    await exitFullScreen();
-                  }
-                  if (context.mounted) Navigator.pop(context);
+                  await _exitTeleprompter(context);
                 },
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
@@ -357,30 +391,6 @@ class _TeleprompterPageState extends State<TeleprompterPage>
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
               ),
-              // 快速滚动到尾部
-              IconButton(
-                icon: const Icon(
-                  Icons.vertical_align_bottom,
-                  color: AppColors.textPrimary,
-                  size: 22,
-                ),
-                onPressed: () => _scrollToEnd(),
-                tooltip: '快速滚动到尾部',
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-              ),
-              // 重置
-              IconButton(
-                icon: const Icon(
-                  Icons.replay,
-                  color: AppColors.textPrimary,
-                  size: 22,
-                ),
-                onPressed: () => _resetAndScrollToTop(teleprompter),
-                tooltip: '重置到开头',
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-              ),
             ],
           ),
         ),
@@ -393,9 +403,10 @@ class _TeleprompterPageState extends State<TeleprompterPage>
   Widget _buildBottomToolbar(
     BuildContext context,
     TeleprompterProvider teleprompter,
-    SettingsProvider settingsProvider,
-  ) {
-    final settings = settingsProvider.settings;
+    SettingsProvider settingsProvider, {
+    required bool isRemoteClient,
+  }) {
+    final settings = settingsProvider.mergedSettings;
 
     return AnimatedPositioned(
       duration: const Duration(milliseconds: 300),
@@ -427,16 +438,23 @@ class _TeleprompterPageState extends State<TeleprompterPage>
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               // ── 模式选择 ──
-              _buildModeSelector(settings, settingsProvider),
-              const SizedBox(width: 12),
+              if (!isRemoteClient) ...[
+                _buildModeSelector(settings, settingsProvider),
+                const SizedBox(width: 12),
+              ],
 
               // ── 播放控制 ──
-              _buildCompactPlaybackControls(teleprompter, settings),
+              if (!isRemoteClient)
+                _buildCompactPlaybackControls(teleprompter, settings),
 
               // ── 速度/信息 ──
               if (settings.scrollMode != ScrollMode.asr) ...[
-                const SizedBox(width: 12),
-                _buildSpeedDisplay(settings, settingsProvider),
+                if (!isRemoteClient) const SizedBox(width: 12),
+                _buildSpeedDisplay(
+                  settings,
+                  settingsProvider,
+                  readOnly: isRemoteClient,
+                ),
               ],
 
               // ── 设置齿轮 ──
@@ -468,17 +486,20 @@ class _TeleprompterPageState extends State<TeleprompterPage>
       mainAxisSize: MainAxisSize.min,
       children: [
         // 后退一个字（长按：重置到开头）
-        GestureDetector(
-          onTap: () => teleprompter.rewind(settings),
-          onLongPress: () {
-            teleprompter.resetToStart();
-          },
-          child: Container(
-            padding: const EdgeInsets.all(8),
-            child: const Icon(
-              Icons.skip_previous,
-              color: AppColors.textSecondary,
-              size: 26,
+        Tooltip(
+          message: '后退一个字；长按回到开头',
+          child: GestureDetector(
+            onTap: () => teleprompter.rewind(settings),
+            onLongPress: () {
+              teleprompter.resetToStart();
+            },
+            child: Container(
+              padding: const EdgeInsets.all(8),
+              child: const Icon(
+                Icons.skip_previous,
+                color: AppColors.textSecondary,
+                size: 26,
+              ),
             ),
           ),
         ),
@@ -513,15 +534,18 @@ class _TeleprompterPageState extends State<TeleprompterPage>
         ),
         const SizedBox(width: 8),
         // 前进一个字（长按：重置到结尾）
-        GestureDetector(
-          onTap: () => teleprompter.forward(settings),
-          onLongPress: () => teleprompter.resetToEnd(),
-          child: Container(
-            padding: const EdgeInsets.all(8),
-            child: const Icon(
-              Icons.skip_next,
-              color: AppColors.textSecondary,
-              size: 26,
+        Tooltip(
+          message: '前进一个字；长按到结尾',
+          child: GestureDetector(
+            onTap: () => teleprompter.forward(settings),
+            onLongPress: () => _jumpToEnd(teleprompter),
+            child: Container(
+              padding: const EdgeInsets.all(8),
+              child: const Icon(
+                Icons.skip_next,
+                color: AppColors.textSecondary,
+                size: 26,
+              ),
             ),
           ),
         ),
@@ -529,13 +553,28 @@ class _TeleprompterPageState extends State<TeleprompterPage>
     );
   }
 
+  void _jumpToEnd(TeleprompterProvider teleprompter) {
+    teleprompter.resetToEnd();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !scrollController.hasClients) return;
+      scrollController.animateTo(
+        scrollController.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+      );
+    });
+  }
+
   /// 速度显示（源版本风格）
   Widget _buildSpeedDisplay(
     AppSettings settings,
-    SettingsProvider settingsProvider,
-  ) {
+    SettingsProvider settingsProvider, {
+    bool readOnly = false,
+  }) {
     return GestureDetector(
-      onTap: () => _showSpeedPresets(settingsProvider, settings.wpm),
+      onTap: readOnly
+          ? null
+          : () => _showSpeedPresets(settingsProvider, settings.wpm),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
@@ -571,6 +610,7 @@ class _TeleprompterPageState extends State<TeleprompterPage>
       context: context,
       builder: (ctx) {
         final presets = [60, 80, 100, 120, 150, 180, 200, 250, 300, 400];
+        final controller = TextEditingController(text: '$currentWpm');
         return SafeArea(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -583,6 +623,42 @@ class _TeleprompterPageState extends State<TeleprompterPage>
                 ),
               ),
               const Divider(height: 1),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: controller,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: '自定义速度',
+                          suffixText: '字/分',
+                          isDense: true,
+                        ),
+                        onSubmitted: (value) {
+                          final wpm = int.tryParse(value.trim());
+                          if (wpm != null) {
+                            settingsProvider.setWpm(wpm < 0 ? 0 : wpm);
+                            Navigator.pop(ctx);
+                          }
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    FilledButton(
+                      onPressed: () {
+                        final wpm = int.tryParse(controller.text.trim());
+                        if (wpm != null) {
+                          settingsProvider.setWpm(wpm < 0 ? 0 : wpm);
+                          Navigator.pop(ctx);
+                        }
+                      },
+                      child: const Text('应用'),
+                    ),
+                  ],
+                ),
+              ),
               ...presets.map(
                 (wpm) => ListTile(
                   title: Text('$wpm 字/分'),
@@ -706,13 +782,22 @@ class _TeleprompterPageState extends State<TeleprompterPage>
     final teleprompter = context.read<TeleprompterProvider>();
 
     // 自动滚动播放中：上键减速/下键加速
-    if (settings.scrollMode == ScrollMode.auto && teleprompter.isPlaying) {
-      final step = direction > 0 ? 10 : -10;
-      final newWpm = (settings.wpm + step).clamp(
-        AppConstants.minWpm,
-        AppConstants.maxWpm,
-      );
+    if (settings.scrollMode == ScrollMode.auto &&
+        teleprompter.isPlaying &&
+        settings.wpm > 0) {
+      final baseStep = 10 * _speedStepMultiplier();
+      final step = direction > 0 ? baseStep : -baseStep;
+      final newWpm = (settings.wpm + step).clamp(0, 1 << 30).toInt();
       context.read<SettingsProvider>().setWpm(newWpm);
+      teleprompter.refreshAutoScrollSettings(settings.copyWith(wpm: newWpm));
+      return;
+    }
+
+    final visualTarget = textLayerKey.currentState?.rawIndexForVisualLineMove(
+      direction,
+    );
+    if (visualTarget != null) {
+      teleprompter.setCurrentIndex(visualTarget);
       return;
     }
 
@@ -754,19 +839,20 @@ class _TeleprompterPageState extends State<TeleprompterPage>
     final teleprompter = context.read<TeleprompterProvider>();
     if (direction > 0) {
       teleprompter.forward(settings);
-    } else if (teleprompter.currentIndex < 0) {
-      teleprompter.resetToStart();
+    } else if (teleprompter.currentIndex <= 0) {
+      return;
     } else {
       teleprompter.rewind(settings);
     }
   }
 
   /// 退出提词器（Esc 键）
-  void _exitTeleprompter(BuildContext context) {
+  Future<void> _exitTeleprompter(BuildContext context) async {
     if (isFullScreen) {
-      exitFullScreen();
+      await exitFullScreen();
     }
-    Navigator.pop(context);
+    await _endRemoteSessionIfMaster();
+    if (context.mounted) Navigator.pop(context);
   }
 
   // ─── 文本层 ──────────────────────────────────────────
@@ -777,8 +863,11 @@ class _TeleprompterPageState extends State<TeleprompterPage>
     AppSettings settings,
   ) {
     // 自动滚动播放中阻止滚轮手动滚动
+    final isRemoteClient = context.read<ConnectionProvider>().isRemote;
     final bool blockScroll =
-        settings.scrollMode == ScrollMode.auto && teleprompter.isPlaying;
+        settings.scrollMode == ScrollMode.auto &&
+        teleprompter.isPlaying &&
+        settings.wpm > 0;
     final ScrollPhysics? physics = blockScroll
         ? const NeverScrollableScrollPhysics()
         : null;
@@ -796,10 +885,11 @@ class _TeleprompterPageState extends State<TeleprompterPage>
         readingLineOffset: settings.readingLineOffset,
         physics: physics,
         onCharTap: (rawIndex) {
+          if (isRemoteClient) return;
           teleprompter.setCurrentIndex(rawIndex);
         },
         onReadingLineChanged: (rawIndex) {
-          if (blockScroll) return;
+          if (blockScroll || isRemoteClient) return;
           teleprompter.setCurrentIndex(rawIndex);
         },
         teleprompterFontFamily: settings.teleprompterFontFamily,
@@ -843,47 +933,50 @@ class _TeleprompterPageState extends State<TeleprompterPage>
       left: horizontalPadding,
       right: horizontalPadding,
       child: IgnorePointer(
-        child: SizedBox(
-          height: areaHeight,
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              // 金色边框（与原版 #fdc800 一致）
-              Positioned.fill(
-                child: Container(
-                  decoration: BoxDecoration(
-                    border: Border.all(
-                      color: _readingLineGold.withValues(alpha: 0.9),
-                      width: settings.readingAreaBorderWidth,
-                    ),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                ),
-              ),
-              // "Reading Area" 标签
-              Positioned(
-                top: -10,
-                left: 16,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 6,
-                    vertical: 1,
-                  ),
-                  color: AppColors.teleprompterBgFromSettings(
-                    settings.teleprompterBgColor,
-                  ),
-                  child: Text(
-                    'READING AREA',
-                    style: TextStyle(
-                      fontSize: 10,
-                      color: _readingLineGold.withValues(alpha: 0.8),
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: 1.2,
+        child: _mirrorPromptOverlayIfNeeded(
+          settings: settings,
+          child: SizedBox(
+            height: areaHeight,
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                // 金色边框（与原版 #fdc800 一致）
+                Positioned.fill(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      border: Border.all(
+                        color: _readingLineGold.withValues(alpha: 0.9),
+                        width: settings.readingAreaBorderWidth,
+                      ),
+                      borderRadius: BorderRadius.circular(4),
                     ),
                   ),
                 ),
-              ),
-            ],
+                // "Reading Area" 标签
+                Positioned(
+                  top: -10,
+                  left: 16,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 1,
+                    ),
+                    color: AppColors.teleprompterBgFromSettings(
+                      settings.teleprompterBgColor,
+                    ),
+                    child: Text(
+                      'READING AREA',
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: _readingLineGold.withValues(alpha: 0.8),
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

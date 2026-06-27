@@ -11,6 +11,7 @@ class FolderProvider with ChangeNotifier {
   bool _isLoading = false;
 
   ConnectionProvider? _connection;
+  VoidCallback? _connectionListener;
 
   List<Folder> get folders => _folders;
   String? get currentFolderId => _currentFolderId;
@@ -18,7 +19,19 @@ class FolderProvider with ChangeNotifier {
 
   /// 绑定连接
   void bindConnection(ConnectionProvider connection) {
+    if (_connection != null && _connectionListener != null) {
+      _connection!.removeListener(_connectionListener!);
+    }
     _connection = connection;
+    _connectionListener = () {
+      if (!connection.isConnected) {
+        _folders = [];
+        _currentFolderId = null;
+        _isLoading = false;
+        notifyListeners();
+      }
+    };
+    connection.addListener(_connectionListener!);
   }
 
   List<Folder> getRootFolders() =>
@@ -175,5 +188,13 @@ class FolderProvider with ChangeNotifier {
     _folders.clear();
     _currentFolderId = null;
     notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    if (_connection != null && _connectionListener != null) {
+      _connection!.removeListener(_connectionListener!);
+    }
+    super.dispose();
   }
 }

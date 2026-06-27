@@ -16,6 +16,7 @@ class SettingsProvider with ChangeNotifier {
   // ─── 稿件覆盖设置 ──────────────────────────────────────
   Map<String, dynamic> _articleOverrides = {};
 
+  VoidCallback? _connectionListener;
   AppSettings get settings => _settings;
   bool get isLoading => _isLoading;
 
@@ -30,7 +31,18 @@ class SettingsProvider with ChangeNotifier {
 
   /// 绑定连接
   void bindConnection(ConnectionProvider connection) {
+    if (_connection != null && _connectionListener != null) {
+      _connection!.removeListener(_connectionListener!);
+    }
     _connection = connection;
+    _connectionListener = () {
+      if (!connection.isConnected) {
+        _articleOverrides = {};
+        _isLoading = false;
+        notifyListeners();
+      }
+    };
+    connection.addListener(_connectionListener!);
   }
 
   /// 加载稿件覆盖设置
@@ -42,6 +54,16 @@ class SettingsProvider with ChangeNotifier {
   void applyRemoteTeleprompterSettings(Map<String, dynamic> settings) {
     _articleOverrides = Map<String, dynamic>.from(settings);
     notifyListeners();
+  }
+
+  void applyRemoteSyncedRuntimeSettings(Map<String, dynamic> settings) {
+    if (settings.containsKey('wpm')) {
+      final value = settings['wpm'];
+      if (value is num) {
+        _articleOverrides['wpm'] = value.toInt();
+      }
+      notifyListeners();
+    }
   }
 
   /// 清除稿件覆盖设置
@@ -146,6 +168,28 @@ class SettingsProvider with ChangeNotifier {
               (overrideData['readingAreaBorderWidth'] as num).toDouble(),
         );
       }
+      if (overrideData.containsKey('progressShowTime')) {
+        updated = updated.copyWith(
+          progressShowTime: overrideData['progressShowTime'] as bool,
+        );
+      }
+      if (overrideData.containsKey('progressShowPercentage')) {
+        updated = updated.copyWith(
+          progressShowPercentage:
+              overrideData['progressShowPercentage'] as bool,
+        );
+      }
+      if (overrideData.containsKey('progressShowSpeed')) {
+        updated = updated.copyWith(
+          progressShowSpeed: overrideData['progressShowSpeed'] as bool,
+        );
+      }
+      if (overrideData.containsKey('progressShowCurrentTime')) {
+        updated = updated.copyWith(
+          progressShowCurrentTime:
+              overrideData['progressShowCurrentTime'] as bool,
+        );
+      }
       _settings = updated;
       notifyListeners();
       await _saveSettings();
@@ -232,7 +276,7 @@ class SettingsProvider with ChangeNotifier {
 
   /// 更新 WPM
   Future<void> setWpm(int wpm) async {
-    await _setAndSave(overrideData: {'wpm': wpm});
+    await _setAndSave(overrideData: {'wpm': wpm < 0 ? 0 : wpm});
   }
 
   /// 切换镜像模式
@@ -370,42 +414,34 @@ class SettingsProvider with ChangeNotifier {
 
   /// 切换进度条显示 - 已用时间
   Future<void> toggleProgressShowTime() async {
-    _settings = _settings.copyWith(
-      progressShowTime: !_settings.progressShowTime,
+    await _setAndSave(
+      overrideData: {'progressShowTime': !mergedSettings.progressShowTime},
     );
-    notifyListeners();
-    await _saveSettings();
-    _syncTeleprompterSettingsToBackend();
   }
 
   /// 切换进度条显示 - 进度百分比
   Future<void> toggleProgressShowPercentage() async {
-    _settings = _settings.copyWith(
-      progressShowPercentage: !_settings.progressShowPercentage,
+    await _setAndSave(
+      overrideData: {
+        'progressShowPercentage': !mergedSettings.progressShowPercentage,
+      },
     );
-    notifyListeners();
-    await _saveSettings();
-    _syncTeleprompterSettingsToBackend();
   }
 
   /// 切换进度条显示 - 滚动速度
   Future<void> toggleProgressShowSpeed() async {
-    _settings = _settings.copyWith(
-      progressShowSpeed: !_settings.progressShowSpeed,
+    await _setAndSave(
+      overrideData: {'progressShowSpeed': !mergedSettings.progressShowSpeed},
     );
-    notifyListeners();
-    await _saveSettings();
-    _syncTeleprompterSettingsToBackend();
   }
 
   /// 切换进度条显示 - 当前时间
   Future<void> toggleProgressShowCurrentTime() async {
-    _settings = _settings.copyWith(
-      progressShowCurrentTime: !_settings.progressShowCurrentTime,
+    await _setAndSave(
+      overrideData: {
+        'progressShowCurrentTime': !mergedSettings.progressShowCurrentTime,
+      },
     );
-    notifyListeners();
-    await _saveSettings();
-    _syncTeleprompterSettingsToBackend();
   }
 
   /// 设置局域网发布状态
@@ -433,5 +469,13 @@ class SettingsProvider with ChangeNotifier {
     _settings = newSettings;
     notifyListeners();
     await _saveSettings();
+  }
+
+  @override
+  void dispose() {
+    if (_connection != null && _connectionListener != null) {
+      _connection!.removeListener(_connectionListener!);
+    }
+    super.dispose();
   }
 }

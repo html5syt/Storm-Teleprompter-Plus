@@ -43,11 +43,18 @@ mixin HomeLogic on State<HomePage> {
 
   // ─── 选择 ─────────────────────────────────────────────
   final Set<String> _selectedItems = {};
+  int _lastGridCrossAxisCount = 1;
 
   // ─── 框选 ─────────────────────────────────────────────
   Offset? _selectionStart;
   Offset? _selectionEnd;
   bool _isSelecting = false;
+  int? _selectionPointer;
+  bool _suppressNextGridSelection = false;
+  bool _isItemDragActive = false;
+  Timer? _itemHoldMenuTimer;
+  Offset? _itemHoldStartPosition;
+  final double _selectionDragThreshold = 6.0;
 
   // ─── 面包屑滚动 ──────────────────────────────────────
   final ScrollController _breadcrumbScrollController = ScrollController();
@@ -69,7 +76,6 @@ mixin HomeLogic on State<HomePage> {
   StreamSubscription<WsMessage>? _settingsSubscription;
   StreamSubscription<WsMessage>? _endSessionSubscription;
   bool _remoteTeleprompterRouteActive = false;
-  String? _remoteTeleprompterArticleId;
 
   @override
   void initState() {
@@ -89,6 +95,7 @@ mixin HomeLogic on State<HomePage> {
     searchController.dispose();
     _gridScrollController.dispose();
     _breadcrumbScrollController.dispose();
+    _itemHoldMenuTimer?.cancel();
     _startSessionSubscription?.cancel();
     _syncSubscription?.cancel();
     _settingsSubscription?.cancel();
@@ -122,9 +129,18 @@ mixin HomeLogic on State<HomePage> {
     final articleId = message.data['articleId'] as String?;
     if (articleId == null || articleId.isEmpty) return;
 
-    final article = await context.read<ArticleProvider>().getArticleById(
-      articleId,
-    );
+    final articleProvider = context.read<ArticleProvider>();
+    final articleSnapshot = message.data['article'] as Map?;
+    final Article? article;
+    if (articleSnapshot != null) {
+      article = Article.fromJson(Map<String, dynamic>.from(articleSnapshot));
+      articleProvider.upsertArticle(article);
+    } else {
+      article = await articleProvider.getArticleById(
+        articleId,
+        forceRefresh: true,
+      );
+    }
     if (!mounted || article == null) return;
 
     final settingsOverride = Map<String, dynamic>.from(
@@ -152,7 +168,6 @@ mixin HomeLogic on State<HomePage> {
     final navigator = Navigator.of(context);
 
     if (_remoteTeleprompterRouteActive) {
-      if (_remoteTeleprompterArticleId == article.id) return;
       if (navigator.canPop()) {
         navigator.pop();
         await Future<void>.delayed(const Duration(milliseconds: 1));
@@ -160,7 +175,6 @@ mixin HomeLogic on State<HomePage> {
     }
 
     _remoteTeleprompterRouteActive = true;
-    _remoteTeleprompterArticleId = article.id;
     await navigator.push(
       MaterialPageRoute(
         builder: (_) => MultiProvider(
@@ -181,7 +195,6 @@ mixin HomeLogic on State<HomePage> {
     );
     if (!mounted) return;
     _remoteTeleprompterRouteActive = false;
-    _remoteTeleprompterArticleId = null;
   }
 
   Future<void> _handleRemoteSync(WsMessage message) async {
@@ -208,7 +221,7 @@ mixin HomeLogic on State<HomePage> {
     final settings = Map<String, dynamic>.from(
       message.data['settings'] as Map? ?? const {},
     );
-    context.read<SettingsProvider>().applyRemoteTeleprompterSettings(settings);
+    context.read<SettingsProvider>().applyRemoteSyncedRuntimeSettings(settings);
   }
 
   void _handleRemoteEndSession(WsMessage message) {
@@ -219,7 +232,6 @@ mixin HomeLogic on State<HomePage> {
       Navigator.of(context).pop();
     }
     _remoteTeleprompterRouteActive = false;
-    _remoteTeleprompterArticleId = null;
   }
 
   void onSearchChanged(String value) => setState(() => searchQuery = value);
@@ -463,7 +475,7 @@ mixin HomeLogic on State<HomePage> {
   }
 
   // ─── 项目交互 ────────────────────────────────────────
-  void _handleItemTap(_ContentItem item) {
+  void _selectSingleItem(_ContentItem item) {
     final ctrl = HardwareKeyboard.instance.isControlPressed;
     final shift = HardwareKeyboard.instance.isShiftPressed;
 
@@ -484,6 +496,69 @@ mixin HomeLogic on State<HomePage> {
         _selectedItems.add(item.id);
       }
     });
+  }
+
+  void _moveSelectionByKeyboard(int delta) {
+    final items = _currentVisibleItems();
+    if (items.isEmpty) return;
+
+    final selectedId = _selectedItems.isEmpty ? null : _selectedItems.last;
+    final currentIndex = selectedId == null
+        ? -1
+        : items.indexWhere((item) => item.id == selectedId);
+    final targetIndex = (currentIndex < 0 ? 0 : currentIndex + delta)
+        .clamp(0, items.length - 1)
+        .toInt();
+
+    setState(() {
+      _selectedItems
+        ..clear()
+        ..add(items[targetIndex].id);
+    });
+  }
+
+  List<_ContentItem> _currentVisibleItems() {
+    final folderProvider = context.read<FolderProvider>();
+    final articleProvider = context.read<ArticleProvider>();
+    final currentId = _currentFolderId;
+    List<Folder> folders;
+    List<Article> articles;
+
+    if (searchQuery.isNotEmpty) {
+      final query = searchQuery.toLowerCase();
+      final descendantFolderIds = _descendantFolderIds(
+        currentId,
+        folderProvider.folders,
+      );
+      final articleFolderScope = <String?>{currentId, ...descendantFolderIds};
+      folders = folderProvider.folders
+          .where(
+            (f) =>
+                (currentId == null || descendantFolderIds.contains(f.id)) &&
+                f.name.toLowerCase().contains(query),
+          )
+          .toList();
+      articles = articleProvider.articles
+          .where(
+            (a) =>
+                articleFolderScope.contains(a.folderId) &&
+                (a.title.toLowerCase().contains(query) ||
+                    a.content.toLowerCase().contains(query)),
+          )
+          .toList();
+    } else {
+      folders = folderProvider.folders
+          .where((f) => f.parentId == currentId)
+          .toList();
+      articles = articleProvider.articles
+          .where((a) => a.folderId == currentId)
+          .toList();
+    }
+
+    return [
+      ..._sortFolders(folders).map((f) => _ContentItem.folder(f)),
+      ..._sortArticles(articles).map((a) => _ContentItem.article(a)),
+    ];
   }
 
   void _handleRangeSelect(_ContentItem item) {
@@ -524,14 +599,48 @@ mixin HomeLogic on State<HomePage> {
         _selectedItems.add(item.id);
       });
     }
-    // 使用实际长按位置显示菜单
-    _showContextMenu(
-      TapUpDetails(
-        globalPosition: globalPosition,
-        kind: PointerDeviceKind.touch,
-      ),
-      item,
-    );
+    if (globalPosition != Offset.zero) {
+      _showContextMenuAtPosition(globalPosition, item);
+    }
+  }
+
+  bool _canDropItemOnFolder(_ContentItem dragged, String targetFolderId) {
+    if (dragged.isFolder && dragged.id == targetFolderId) return false;
+    if (!dragged.isFolder) return true;
+    final folders = context.read<FolderProvider>().folders;
+    var parentId = targetFolderId;
+    while (parentId.isNotEmpty) {
+      if (parentId == dragged.id) return false;
+      final parent = folders.where((f) => f.id == parentId).firstOrNull;
+      if (parent?.parentId == null) break;
+      parentId = parent!.parentId!;
+    }
+    return true;
+  }
+
+  Future<void> _moveDraggedItemsToFolder(
+    _ContentItem dragged,
+    String targetFolderId,
+  ) async {
+    if (!_canDropItemOnFolder(dragged, targetFolderId)) return;
+
+    final itemsToMove = _selectedItems.contains(dragged.id)
+        ? _getContentItemsByIds(_selectedItems)
+        : <_ContentItem>[dragged];
+    final folderProvider = context.read<FolderProvider>();
+    final articleProvider = context.read<ArticleProvider>();
+
+    for (final item in itemsToMove) {
+      if (item.isFolder) {
+        if (!_canDropItemOnFolder(item, targetFolderId)) continue;
+        await folderProvider.moveFolder(item.id, targetFolderId);
+      } else if (item.article != null) {
+        await articleProvider.moveArticleToFolder(item.id, targetFolderId);
+      }
+    }
+
+    if (!mounted) return;
+    setState(() => _selectedItems.clear());
   }
 
   void _handleItemDoubleTap(_ContentItem item) {
@@ -544,6 +653,10 @@ mixin HomeLogic on State<HomePage> {
 
   // ─── 右键菜单 ────────────────────────────────────────
   void _showContextMenu(TapUpDetails details, _ContentItem item) {
+    _showContextMenuAtPosition(details.globalPosition, item);
+  }
+
+  void _showContextMenuAtPosition(Offset globalPosition, _ContentItem item) {
     if (!_selectedItems.contains(item.id)) {
       setState(() {
         _selectedItems.clear();
@@ -554,10 +667,10 @@ mixin HomeLogic on State<HomePage> {
     showMenu<String>(
       context: context,
       position: RelativeRect.fromLTRB(
-        details.globalPosition.dx,
-        details.globalPosition.dy,
-        details.globalPosition.dx + 1,
-        details.globalPosition.dy + 1,
+        globalPosition.dx,
+        globalPosition.dy,
+        globalPosition.dx + 1,
+        globalPosition.dy + 1,
       ),
       items: <PopupMenuEntry<String>>[
         if (item.isFolder) ...[
@@ -805,6 +918,7 @@ mixin HomeLogic on State<HomePage> {
             'articleId': article.id,
             'currentIndex': teleprompterProvider.currentIndex,
             'isPlaying': teleprompterProvider.isPlaying,
+            'article': article.toJson(),
             'settings': settingsProvider.mergedSettings.toTeleprompterMap(),
           },
         ),
@@ -873,6 +987,7 @@ mixin HomeLogic on State<HomePage> {
           context.read<ArticleProvider>().createArticle(
             title: '${item.article!.title} - 副本',
             content: item.article!.content,
+            folderId: _currentFolderId,
           );
         }
       }
@@ -979,10 +1094,11 @@ mixin HomeLogic on State<HomePage> {
               Padding(
                 padding: const EdgeInsets.only(bottom: 12),
                 child: Text(
-                  '当前: ${connection.connectionInfoText}',
+                  connection.connectionDetailText,
                   style: const TextStyle(
                     color: AppColors.textMuted,
                     fontSize: 13,
+                    height: 1.35,
                   ),
                 ),
               ),
@@ -1009,7 +1125,7 @@ mixin HomeLogic on State<HomePage> {
             TextButton(
               onPressed: () async {
                 Navigator.pop(ctx);
-                await connection.disconnect();
+                await _disconnectRemoteAndRestoreLocal(connection);
               },
               child: const Text('断开远程'),
             ),
@@ -1022,6 +1138,12 @@ mixin HomeLogic on State<HomePage> {
               final host = hostController.text.trim();
               final port = int.tryParse(portController.text.trim()) ?? 8080;
               Navigator.pop(ctx);
+              if (!await _confirmLocalBackendShutdown(
+                context,
+                actionLabel: '切换到远程后端',
+              )) {
+                return;
+              }
               try {
                 await connection.connectToRemote(host, port);
                 if (mounted) {
@@ -1051,9 +1173,49 @@ mixin HomeLogic on State<HomePage> {
     );
   }
 
+  Future<void> _restoreLocalBackend(ConnectionProvider connection) async {
+    await connection.connectToBundledLocal();
+    if (!mounted) return;
+    if (connection.isConnected && connection.isLocal) {
+      await Future.wait([
+        context.read<ArticleProvider>().loadArticles(),
+        context.read<FolderProvider>().loadFolders(),
+        context.read<SettingsProvider>().init(),
+      ]);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('已启动并连接本地后端'),
+          backgroundColor: AppColors.success,
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(connection.lastError ?? '本地后端连接失败'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    }
+  }
+
+  Future<void> _disconnectRemoteAndRestoreLocal(
+    ConnectionProvider connection,
+  ) async {
+    await connection.disconnectRemoteAndReconnectLocal();
+    if (!mounted) return;
+    if (connection.isConnected && connection.isLocal) {
+      await Future.wait([
+        context.read<ArticleProvider>().loadArticles(),
+        context.read<FolderProvider>().loadFolders(),
+        context.read<SettingsProvider>().init(),
+      ]);
+    }
+  }
+
   // ─── 键盘快捷键 ──────────────────────────────────────
-  void _handleKeyEvent(KeyEvent event) {
-    if (event is! KeyDownEvent) return;
+  KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
     final key = event.logicalKey;
     final ctrl = HardwareKeyboard.instance.isControlPressed;
     final shift = HardwareKeyboard.instance.isShiftPressed;
@@ -1081,7 +1243,29 @@ mixin HomeLogic on State<HomePage> {
       _navigateForward();
     } else if (alt && key == LogicalKeyboardKey.arrowUp) {
       _navigateUp();
+    } else if (!ctrl && !shift && !alt && key == LogicalKeyboardKey.arrowLeft) {
+      _moveSelectionByKeyboard(-1);
+    } else if (!ctrl &&
+        !shift &&
+        !alt &&
+        key == LogicalKeyboardKey.arrowRight) {
+      _moveSelectionByKeyboard(1);
+    } else if (!ctrl && !shift && !alt && key == LogicalKeyboardKey.arrowUp) {
+      final step =
+          _viewMode == ViewMode.largeIcons || _viewMode == ViewMode.smallIcons
+          ? -_lastGridCrossAxisCount
+          : -1;
+      _moveSelectionByKeyboard(step);
+    } else if (!ctrl && !shift && !alt && key == LogicalKeyboardKey.arrowDown) {
+      final step =
+          _viewMode == ViewMode.largeIcons || _viewMode == ViewMode.smallIcons
+          ? _lastGridCrossAxisCount
+          : 1;
+      _moveSelectionByKeyboard(step);
+    } else {
+      return KeyEventResult.ignored;
     }
+    return KeyEventResult.handled;
   }
 
   void _selectAll() {
@@ -1103,70 +1287,115 @@ mixin HomeLogic on State<HomePage> {
   }
 
   // ─── 框选 ─────────────────────────────────────────────
-  void _onSelectionStart(DragStartDetails details) {
-    setState(() {
-      _isSelecting = true;
-      _selectionStart = details.globalPosition;
-      _selectionEnd = details.globalPosition;
+  void _suppressGridSelectionForItem() {
+    _suppressNextGridSelection = true;
+  }
+
+  void _startItemHoldMenuTimer(_ContentItem item, Offset globalPosition) {
+    _itemHoldMenuTimer?.cancel();
+    _itemHoldStartPosition = globalPosition;
+    _itemHoldMenuTimer = Timer(const Duration(milliseconds: 900), () {
+      if (!mounted || _itemHoldStartPosition == null) return;
+      _endItemDrag();
+      _handleItemLongPress(item, globalPosition);
     });
   }
 
-  void _onSelectionUpdate(DragUpdateDetails details) {
-    if (!_isSelecting) return;
+  void _updateItemHoldPosition(Offset globalPosition) {
+    final start = _itemHoldStartPosition;
+    if (start == null) return;
+    if ((globalPosition - start).distance > _selectionDragThreshold) {
+      _cancelItemHoldMenuTimer();
+    }
+  }
+
+  void _cancelItemHoldMenuTimer() {
+    _itemHoldMenuTimer?.cancel();
+    _itemHoldMenuTimer = null;
+    _itemHoldStartPosition = null;
+  }
+
+  void _beginItemDrag(_ContentItem item) {
     setState(() {
-      _selectionEnd = details.globalPosition;
+      _isItemDragActive = true;
+      _isSelecting = false;
+      _selectionPointer = null;
+      _selectionStart = null;
+      _selectionEnd = null;
+      if (!_selectedItems.contains(item.id)) {
+        _selectedItems
+          ..clear()
+          ..add(item.id);
+      }
     });
+  }
+
+  void _endItemDrag() {
+    if (!_isItemDragActive) return;
+    setState(() => _isItemDragActive = false);
+  }
+
+  void _clearGridSelectionGesture() {
+    _isSelecting = false;
+    _selectionPointer = null;
+    _selectionStart = null;
+    _selectionEnd = null;
   }
 
   // ─── 多客户端警告 ────────────────────────────────────
   Future<void> _checkMultiClientBeforeExit(BuildContext context) async {
     if (!mounted) return;
-    final connection = context.read<ConnectionProvider>();
-    if (!connection.isLocal) {
-      if (mounted) Navigator.pop(context);
-      return;
+    if (await _confirmLocalBackendShutdown(context, actionLabel: '退出主端') &&
+        mounted) {
+      Navigator.pop(context);
     }
+  }
+
+  Future<bool> _confirmLocalBackendShutdown(
+    BuildContext context, {
+    required String actionLabel,
+  }) async {
+    if (!mounted) return false;
+    final connection = context.read<ConnectionProvider>();
+    if (!connection.isLocal || !connection.isConnected) return true;
+
     final clientCount = globalBackendServer.clientCount;
-    if (clientCount >= 2) {
-      return showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (ctx) => AlertDialog(
-          title: const Text('确认退出'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('⚠️ 检测到有外部设备正在连接到本机后端'),
-              const SizedBox(height: 8),
-              Text(
-                '当前连接数: $clientCount',
-                style: const TextStyle(
-                  fontSize: 13,
-                  color: AppColors.textMuted,
+    if (clientCount < 2) return true;
+
+    return await showDialog<bool>(
+          context: context,
+          barrierDismissible: false,
+          builder: (ctx) => AlertDialog(
+            title: Text('确认$actionLabel'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('检测到有外部设备正在连接到本机后端。继续操作会中断从端提词。'),
+                const SizedBox(height: 8),
+                Text(
+                  '当前连接数: $clientCount',
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: AppColors.textMuted,
+                  ),
                 ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('保留运行'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                style: TextButton.styleFrom(foregroundColor: AppColors.error),
+                child: Text(actionLabel),
               ),
             ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('保留运行'),
-            ),
-            TextButton(
-              onPressed: () {
-                Navigator.pop(ctx);
-                if (mounted) Navigator.pop(context);
-              },
-              style: TextButton.styleFrom(foregroundColor: AppColors.error),
-              child: const Text('强制退出'),
-            ),
-          ],
-        ),
-      );
-    } else {
-      if (mounted) Navigator.pop(context);
-    }
+        ) ??
+        false;
   }
 
   // ─── 工具 ─────────────────────────────────────────────

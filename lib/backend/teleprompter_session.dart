@@ -20,6 +20,9 @@ class TeleprompterSession {
   /// 提词器设置覆盖（每个稿件独立）
   Map<String, dynamic> _settingsOverride = {};
 
+  /// 开始提词时的稿件快照，用于让从端避开旧缓存。
+  Map<String, dynamic>? _articleSnapshot;
+
   /// 状态变更控制器
   final StreamController<TeleprompterSessionState> _stateController =
       StreamController<TeleprompterSessionState>.broadcast();
@@ -63,6 +66,9 @@ class TeleprompterSession {
     _settingsOverride = Map<String, dynamic>.from(
       data['settings'] as Map? ?? {},
     );
+    _articleSnapshot = data['article'] == null
+        ? null
+        : Map<String, dynamic>.from(data['article'] as Map);
 
     debugPrint('[TeleprompterSession] 会话开始: $_activeArticleId');
 
@@ -93,6 +99,7 @@ class TeleprompterSession {
     _currentIndex = -1;
     _isPlaying = false;
     _settingsOverride = {};
+    _articleSnapshot = null;
 
     _emitState();
 
@@ -152,6 +159,7 @@ class TeleprompterSession {
       'currentIndex': _currentIndex,
       'isPlaying': _isPlaying,
       'settings': _settingsOverride,
+      if (_articleSnapshot != null) 'article': _articleSnapshot,
     };
   }
 
@@ -164,6 +172,14 @@ class TeleprompterSession {
         settingsOverride: _settingsOverride,
       ),
     );
+  }
+
+  void reset() {
+    _activeArticleId = null;
+    _currentIndex = -1;
+    _isPlaying = false;
+    _settingsOverride = {};
+    _articleSnapshot = null;
   }
 
   void dispose() {

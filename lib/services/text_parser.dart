@@ -30,8 +30,9 @@ class TextParser {
     bool italic = false;
     bool underline = false;
     bool strikeThrough = false;
-    double? fontSizeRatio;
+    double? fontSizePx;
     int? backgroundColor;
+    int? textColor;
 
     // 简化的 HTML 解析状态机
     int i = 0;
@@ -50,8 +51,9 @@ class TextParser {
             italic,
             underline,
             strikeThrough,
-            fontSizeRatio,
+            fontSizePx,
             backgroundColor,
+            textColor,
           );
           rawIndex += buffer.length;
           buffer.clear();
@@ -121,8 +123,9 @@ class TextParser {
               strikeThrough = false;
               break;
             case 'span':
-              fontSizeRatio = null;
+              fontSizePx = null;
               backgroundColor = null;
+              textColor = null;
               break;
           }
         } else {
@@ -144,8 +147,9 @@ class TextParser {
               strikeThrough = true;
               break;
             case 'span':
-              fontSizeRatio = _extractFontSize(tagContent);
+              fontSizePx = _extractFontSizePx(tagContent);
               backgroundColor = _extractBackgroundColor(tagContent);
+              textColor = _extractTextColor(tagContent);
               break;
           }
         }
@@ -164,8 +168,9 @@ class TextParser {
             italic,
             underline,
             strikeThrough,
-            fontSizeRatio,
+            fontSizePx,
             backgroundColor,
+            textColor,
           );
           rawIndex += buffer.length;
           buffer.clear();
@@ -191,8 +196,9 @@ class TextParser {
         italic,
         underline,
         strikeThrough,
-        fontSizeRatio,
+        fontSizePx,
         backgroundColor,
+        textColor,
       );
     }
 
@@ -214,8 +220,9 @@ class TextParser {
     bool italic,
     bool underline,
     bool strikeThrough,
-    double? fontSizeRatio,
+    double? fontSizePx,
     int? backgroundColor,
+    int? textColor,
   ) {
     if (lines.isEmpty) {
       lines.add(ScriptLine(characters: [], lineIndex: lineIndex));
@@ -231,8 +238,9 @@ class TextParser {
           italic: italic,
           underline: underline,
           strikeThrough: strikeThrough,
-          fontSizeRatio: fontSizeRatio,
+          fontSizePx: fontSizePx,
           backgroundColor: backgroundColor,
+          textColor: textColor,
         ),
       );
     }
@@ -254,33 +262,139 @@ class TextParser {
     ].contains(tag);
   }
 
-  /// 从标签属性中提取 font-size
-  static double? _extractFontSize(String tagContent) {
-    final match = RegExp(
-      r'font-size:\s*(\d+(?:\.\d+)?)px',
-    ).firstMatch(tagContent);
-    if (match != null) {
-      final px = double.tryParse(match.group(1) ?? '');
-      if (px != null) return px / 16; // 转换为相对倍数
+  /// 从标签属性中提取 font-size，单位统一为 px。
+  static double? _extractFontSizePx(String tagContent) {
+    final value = RegExp(
+      r'''font-size:\s*([^;"']+)''',
+      caseSensitive: false,
+    ).firstMatch(tagContent)?.group(1)?.trim().toLowerCase();
+    if (value == null || value.isEmpty) return null;
+
+    switch (value) {
+      case 'small':
+        return 13;
+      case 'normal':
+        return 16;
+      case 'large':
+        return 24;
+      case 'huge':
+        return 32;
     }
-    return null;
+
+    final numberMatch = RegExp(
+      r'^(\d+(?:\.\d+)?)(px|pt|em|rem)?$',
+      caseSensitive: false,
+    ).firstMatch(value);
+    if (numberMatch == null) return null;
+
+    final number = double.tryParse(numberMatch.group(1) ?? '');
+    if (number == null || number <= 0) return null;
+    final unit = numberMatch.group(2);
+    if (unit == 'pt') return number * 96 / 72;
+    if (unit == 'em' || unit == 'rem') return number * 16;
+    return number;
   }
 
   /// 从标签属性中提取背景色
   static int? _extractBackgroundColor(String tagContent) {
-    // background-color: #XXXXXX
-    final match = RegExp(
-      r'background(?:-color)?:\s*#([0-9a-fA-F]{6}|[0-9a-fA-F]{8})',
-    ).firstMatch(tagContent);
-    if (match != null) {
-      final hex = match.group(1)!;
+    final value = RegExp(
+      r'''background(?:-color)?:\s*([^;"']+)''',
+      caseSensitive: false,
+    ).firstMatch(tagContent)?.group(1);
+    return value == null ? null : _parseCssColor(value);
+  }
+
+  static int? _extractTextColor(String tagContent) {
+    final value = RegExp(
+      r'''(?:^|[;"\s])color:\s*([^;"']+)''',
+      caseSensitive: false,
+    ).firstMatch(tagContent)?.group(1);
+    return value == null ? null : _parseCssColor(value);
+  }
+
+  static int? _parseCssColor(String value) {
+    final color = value.trim();
+    final hexMatch = RegExp(
+      r'^#?([0-9a-fA-F]{6}|[0-9a-fA-F]{8})$',
+    ).firstMatch(color);
+    if (hexMatch != null) {
+      final hex = hexMatch.group(1)!;
       if (hex.length == 6) {
         return int.parse('FF$hex', radix: 16);
       }
       return int.parse(hex, radix: 16);
     }
-    // rgba(r, g, b, a) — 暂不支持
-    return null;
+
+    final rgbaMatch = RegExp(
+      r'^rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})(?:\s*,\s*([0-9.]+)\s*)?\)$',
+      caseSensitive: false,
+    ).firstMatch(color);
+    if (rgbaMatch == null) return null;
+
+    final r = int.parse(rgbaMatch.group(1)!).clamp(0, 255).toInt();
+    final g = int.parse(rgbaMatch.group(2)!).clamp(0, 255).toInt();
+    final b = int.parse(rgbaMatch.group(3)!).clamp(0, 255).toInt();
+    final alphaText = rgbaMatch.group(4);
+    final a = alphaText == null
+        ? 255
+        : (double.parse(alphaText).clamp(0.0, 1.0) * 255).round();
+    return (a << 24) | (r << 16) | (g << 8) | b;
+  }
+
+  static String decodeHtmlEntities(String text) {
+    return text
+        .replaceAll('&nbsp;', ' ')
+        .replaceAll('&lt;', '<')
+        .replaceAll('&gt;', '>')
+        .replaceAll('&quot;', '"')
+        .replaceAll('&#39;', "'")
+        .replaceAll('&amp;', '&');
+  }
+
+  static String encodeHtmlEntities(String text) {
+    return text
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+  }
+
+  static String normalizeQuotePairs(String text) {
+    final buffer = StringBuffer();
+    var doubleOpen = true;
+    var singleOpen = true;
+
+    for (var i = 0; i < text.length; i++) {
+      final char = text[i];
+      if (_isDoubleQuote(char)) {
+        buffer.write(doubleOpen ? '“' : '”');
+        doubleOpen = !doubleOpen;
+      } else if (_isSingleQuote(char)) {
+        if (_isAsciiApostrophe(text, i)) {
+          buffer.write(char);
+        } else {
+          buffer.write(singleOpen ? '‘' : '’');
+          singleOpen = !singleOpen;
+        }
+      } else {
+        buffer.write(char);
+      }
+    }
+    return buffer.toString();
+  }
+
+  static bool _isDoubleQuote(String char) =>
+      char == '"' || char == '“' || char == '”';
+
+  static bool _isSingleQuote(String char) =>
+      char == "'" || char == '‘' || char == '’';
+
+  static bool _isAsciiApostrophe(String text, int index) {
+    if (text[index] != "'") return false;
+    if (index == 0 || index >= text.length - 1) return false;
+    return RegExp(r'[A-Za-z0-9]').hasMatch(text[index - 1]) &&
+        RegExp(r'[A-Za-z0-9]').hasMatch(text[index + 1]);
   }
 
   /// 将纯文本解析为字符行列表（不含格式）

@@ -9,7 +9,6 @@ import '../providers/connection_provider.dart';
 import '../services/alignment_engine.dart';
 import '../services/asr_service.dart';
 import '../services/text_parser.dart';
-import '../utils/constants.dart';
 
 /// 提词器运行状态
 enum TeleprompterState {
@@ -44,6 +43,8 @@ class TeleprompterProvider with ChangeNotifier {
   double _accumulator = 0.0; // 时间累加器（毫秒）
   double _lastFrameTime = 0.0; // 上一帧时间戳（毫秒）
   Ticker? _ticker;
+  int? _activeAutoWpm;
+  ScrollMode? _activeAutoMode;
 
   // ─── 播放时间跟踪 ──────────────────────────────────────
   DateTime? _playStartTime;
@@ -150,7 +151,11 @@ class TeleprompterProvider with ChangeNotifier {
 
   /// 同步当前状态到后端
   void _syncToBackend() {
-    if (_connection == null || !_connection!.isConnected) return;
+    if (_connection == null ||
+        !_connection!.isConnected ||
+        !_connection!.isLocal) {
+      return;
+    }
     _connection!.send(
       WsMessage(
         type: WsMessageType.teleprompterSync,
@@ -363,9 +368,31 @@ class TeleprompterProvider with ChangeNotifier {
     }
   }
 
+  void refreshAutoScrollSettings(AppSettings settings) {
+    final changed =
+        _activeAutoWpm != settings.wpm ||
+        _activeAutoMode != settings.scrollMode;
+
+    if (_state != TeleprompterState.playing) {
+      _rememberAutoScrollSettings(settings);
+      return;
+    }
+
+    if (settings.scrollMode != ScrollMode.auto) {
+      if (_ticker != null) _stopAutoScroll();
+      _rememberAutoScrollSettings(settings);
+      return;
+    }
+
+    if (changed || _ticker == null) {
+      _startAutoScrollIfNeeded(settings);
+    }
+  }
+
   // ─── 自动滚动逻辑（RAF 时间累加器） ───────────────────
 
   void _startAutoScrollIfNeeded(AppSettings settings) {
+    _rememberAutoScrollSettings(settings);
     if (settings.scrollMode != ScrollMode.auto) return;
     _stopAutoScroll();
 
@@ -386,6 +413,7 @@ class TeleprompterProvider with ChangeNotifier {
       _lastFrameTime = currentTime;
 
       // 每字符间隔 = 60000ms / WPM
+      if (settings.wpm <= 0) return;
       final msPerChar = 60000.0 / settings.wpm;
       _accumulator += deltaTime;
 
@@ -428,27 +456,34 @@ class TeleprompterProvider with ChangeNotifier {
     _lastFrameTime = 0.0;
   }
 
+  void _rememberAutoScrollSettings(AppSettings settings) {
+    _activeAutoWpm = settings.wpm;
+    _activeAutoMode = settings.scrollMode;
+  }
+
   /// 滚轮动态调速（自动模式下，鼠标滚轮上下滚动改变 WPM）
   ///
   /// [delta] 为正数表示向下滚动（加速），负数表示向上滚动（减速）
-  void adjustSpeedByWheel(double delta, SettingsProvider settingsProvider) {
+  void adjustSpeedByWheel(
+    double delta,
+    SettingsProvider settingsProvider, {
+    int stepMultiplier = 1,
+  }) {
     if (_state != TeleprompterState.playing) return;
     final merged = settingsProvider.mergedSettings;
     if (merged.scrollMode != ScrollMode.auto) return;
 
     // 每次滚轮事件调整 WPM：小步 ±5，大步 ±15
-    final step = delta.abs() > 0.5 ? 15 : 5;
+    final step = (delta.abs() > 0.5 ? 15 : 5) * stepMultiplier;
     final direction = delta > 0 ? 1 : -1;
-    final newWpm = (merged.wpm + step * direction).clamp(
-      AppConstants.minWpm,
-      AppConstants.maxWpm,
-    );
+    final newWpm = (merged.wpm + step * direction).clamp(0, 1 << 30).toInt();
 
     if (newWpm != merged.wpm) {
+      final runtimeSettings = merged.copyWith(wpm: newWpm);
       settingsProvider.setWpm(newWpm);
       // 重启 ticker 使新 WPM 立即生效
       _stopAutoScroll();
-      _startAutoScrollIfNeeded(settingsProvider.mergedSettings);
+      _startAutoScrollIfNeeded(runtimeSettings);
     }
   }
 

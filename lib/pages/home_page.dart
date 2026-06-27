@@ -1,10 +1,11 @@
 import 'dart:async';
 
 import 'package:desktop_drop/desktop_drop.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:window_manager/window_manager.dart';
 import '../backend/ws_protocol.dart';
 import '../providers/article_provider.dart';
 import '../providers/folder_provider.dart';
@@ -36,7 +37,7 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> with HomeLogic {
+class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
   IconData get _viewModeIcon {
     switch (_viewMode) {
       case ViewMode.largeIcons:
@@ -47,6 +48,45 @@ class _HomePageState extends State<HomePage> with HomeLogic {
         return Icons.view_list;
       case ViewMode.details:
         return Icons.table_rows;
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    if (!kIsWeb &&
+        (defaultTargetPlatform == TargetPlatform.windows ||
+            defaultTargetPlatform == TargetPlatform.macOS ||
+            defaultTargetPlatform == TargetPlatform.linux)) {
+      unawaited(_initWindowCloseGuard());
+    }
+  }
+
+  Future<void> _initWindowCloseGuard() async {
+    await windowManager.ensureInitialized();
+    await windowManager.setPreventClose(true);
+    windowManager.addListener(this);
+  }
+
+  @override
+  void dispose() {
+    if (!kIsWeb &&
+        (defaultTargetPlatform == TargetPlatform.windows ||
+            defaultTargetPlatform == TargetPlatform.macOS ||
+            defaultTargetPlatform == TargetPlatform.linux)) {
+      windowManager.removeListener(this);
+    }
+    super.dispose();
+  }
+
+  @override
+  void onWindowClose() {
+    unawaited(_handleWindowClose());
+  }
+
+  Future<void> _handleWindowClose() async {
+    if (await _confirmLocalBackendShutdown(context, actionLabel: '关闭主端')) {
+      await windowManager.destroy();
     }
   }
 
@@ -90,6 +130,7 @@ class _HomePageState extends State<HomePage> with HomeLogic {
           },
           child: Focus(
             autofocus: true,
+            onKeyEvent: _handleKeyEvent,
             child: PopScope(
               canPop: false,
               onPopInvokedWithResult: (didPop, result) async {
@@ -104,26 +145,31 @@ class _HomePageState extends State<HomePage> with HomeLogic {
               },
               child: Scaffold(
                 appBar: _buildCommandBar(context, connection),
-                body: DropTarget(
-                  onDragEntered: _handleImportDragEntered,
-                  onDragExited: _handleImportDragExited,
-                  onDragDone: _handleImportDrop,
-                  child: Stack(
-                    children: [
-                      Column(
-                        children: [
-                          _buildBreadcrumbBar(),
-                          _buildSearchBar(),
-                          Expanded(child: _buildContentPane()),
-                          _buildStatusBar(),
-                        ],
-                      ),
-                      if (_isDraggingImport || _isImporting)
-                        Positioned.fill(child: _buildImportOverlay()),
-                    ],
-                  ),
-                ),
-                floatingActionButton: _buildFabMenu(context, connection),
+                body: connection.isLocal && connection.isConnected
+                    ? DropTarget(
+                        onDragEntered: _handleImportDragEntered,
+                        onDragExited: _handleImportDragExited,
+                        onDragDone: _handleImportDrop,
+                        child: Stack(
+                          children: [
+                            Column(
+                              children: [
+                                _buildBreadcrumbBar(),
+                                _buildSearchBar(),
+                                Expanded(child: _buildContentPane()),
+                                _buildStatusBar(),
+                              ],
+                            ),
+                            if (_isDraggingImport || _isImporting)
+                              Positioned.fill(child: _buildImportOverlay()),
+                          ],
+                        ),
+                      )
+                    : _buildContentPane(),
+                floatingActionButton:
+                    connection.isLocal && connection.isConnected
+                    ? _buildFabMenu(context, connection)
+                    : null,
               ),
             ),
           ),
@@ -200,18 +246,23 @@ class _HomePageState extends State<HomePage> with HomeLogic {
                 : AppColors.textMuted,
           ),
           tooltip: '连接信息',
-          onSelected: (value) {
-            if (value == 'remote')
+          onSelected: (value) async {
+            if (value == 'remote') {
               _showRemoteConnectDialog(context, connection);
-            else if (value == 'disconnect')
-              connection.disconnect();
+            } else if (value == 'disconnect') {
+              await _disconnectRemoteAndRestoreLocal(connection);
+            }
           },
           itemBuilder: (context) => [
             PopupMenuItem(
               enabled: false,
               child: Text(
-                connection.connectionInfoText,
-                style: const TextStyle(fontSize: 12),
+                connection.connectionDetailText,
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: AppColors.textMuted,
+                  height: 1.35,
+                ),
               ),
             ),
             const PopupMenuDivider(),
@@ -222,7 +273,9 @@ class _HomePageState extends State<HomePage> with HomeLogic {
         ),
         IconButton(
           icon: const Icon(Icons.settings_outlined, size: 20),
-          onPressed: () => _openSettings(context),
+          onPressed: connection.isConnected
+              ? () => _openSettings(context)
+              : null,
           tooltip: '设置',
         ),
         const SizedBox(width: 8),
@@ -358,6 +411,9 @@ class _HomePageState extends State<HomePage> with HomeLogic {
   Widget _buildContentPane() {
     return Consumer3<ArticleProvider, FolderProvider, ConnectionProvider>(
       builder: (context, articleProvider, folderProvider, connection, _) {
+        if (!connection.isConnected) {
+          return _buildDisconnectedPlaceholder(connection);
+        }
         if (connection.isRemote) return _buildRemotePlaceholder(connection);
 
         // 获取当前目录内容
@@ -459,14 +515,47 @@ class _HomePageState extends State<HomePage> with HomeLogic {
           ),
           const SizedBox(height: 8),
           Text(
-            connection.connectionInfoText,
+            connection.connectionDetailText,
+            textAlign: TextAlign.center,
             style: const TextStyle(fontSize: 13, color: AppColors.textMuted),
           ),
           const SizedBox(height: 24),
           ElevatedButton.icon(
-            onPressed: () => connection.disconnect(),
+            onPressed: () => _disconnectRemoteAndRestoreLocal(connection),
             icon: const Icon(Icons.cloud_off),
             label: const Text('断开连接'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDisconnectedPlaceholder(ConnectionProvider connection) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.cloud_off,
+            size: 64,
+            color: AppColors.warning.withValues(alpha: 0.75),
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            '未连接到后端',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            connection.connectionDetailText,
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 13, color: AppColors.textMuted),
+          ),
+          const SizedBox(height: 24),
+          ElevatedButton.icon(
+            onPressed: () => _restoreLocalBackend(connection),
+            icon: const Icon(Icons.restart_alt),
+            label: const Text('启动并连接本地后端'),
           ),
         ],
       ),
@@ -484,6 +573,7 @@ class _HomePageState extends State<HomePage> with HomeLogic {
             : constraints.maxWidth > 800
             ? 4
             : 3;
+        _lastGridCrossAxisCount = crossAxisCount;
         const padding = 16.0;
         const spacing = 8.0;
         final itemWidth =
@@ -491,26 +581,44 @@ class _HomePageState extends State<HomePage> with HomeLogic {
                 padding * 2 -
                 (crossAxisCount - 1) * spacing) /
             crossAxisCount;
-        final itemHeight = compact ? 96.0 : itemWidth * 1.16;
+        final itemHeight = compact ? 110.0 : itemWidth * 1.16;
 
         return Listener(
           behavior: HitTestBehavior.translucent,
           onPointerDown: (e) {
+            if (_suppressNextGridSelection || _isItemDragActive) {
+              _suppressNextGridSelection = false;
+              return;
+            }
+            _selectionPointer = e.pointer;
+            _selectionStart = e.localPosition;
+            _selectionEnd = e.localPosition;
+            _isSelecting = false;
+          },
+          onPointerMove: (e) {
+            if (_suppressNextGridSelection) {
+              if (_selectionPointer == e.pointer) {
+                setState(_clearGridSelectionGesture);
+              }
+              return;
+            }
+            if (_selectionPointer != e.pointer || _selectionStart == null) {
+              return;
+            }
+            if (_isItemDragActive) {
+              setState(_clearGridSelectionGesture);
+              return;
+            }
+            final moved = (e.localPosition - _selectionStart!).distance;
+            if (!_isSelecting && moved < _selectionDragThreshold) return;
             setState(() {
               _isSelecting = true;
-              _selectionStart = e.localPosition;
               _selectionEnd = e.localPosition;
             });
           },
-          onPointerMove: (e) {
-            if (_isSelecting) {
-              setState(() {
-                _selectionEnd = e.localPosition;
-              });
-            }
-          },
           onPointerUp: (e) {
-            if (_isSelecting &&
+            if (_selectionPointer == e.pointer &&
+                _isSelecting &&
                 _selectionStart != null &&
                 _selectionEnd != null) {
               final rawRect = Rect.fromPoints(_selectionStart!, _selectionEnd!);
@@ -557,11 +665,14 @@ class _HomePageState extends State<HomePage> with HomeLogic {
                 setState(() => _selectedItems.clear());
               }
             }
-            setState(() {
-              _isSelecting = false;
-              _selectionStart = null;
-              _selectionEnd = null;
-            });
+            if (_selectionPointer == e.pointer) {
+              setState(_clearGridSelectionGesture);
+            }
+          },
+          onPointerCancel: (e) {
+            if (_selectionPointer == e.pointer) {
+              setState(_clearGridSelectionGesture);
+            }
           },
           child: Stack(
             children: [
@@ -575,8 +686,10 @@ class _HomePageState extends State<HomePage> with HomeLogic {
                   childAspectRatio: itemWidth / itemHeight,
                 ),
                 itemCount: items.length,
-                itemBuilder: (context, index) =>
-                    _buildItemCard(items[index], compact: compact),
+                itemBuilder: (context, index) => _buildDraggableItem(
+                  items[index],
+                  _buildItemCard(items[index], compact: compact),
+                ),
               ),
               if (_isSelecting &&
                   _selectionStart != null &&
@@ -598,16 +711,127 @@ class _HomePageState extends State<HomePage> with HomeLogic {
     );
   }
 
+  Widget _buildDraggableItem(_ContentItem item, Widget child) {
+    Widget targetChild = child;
+    if (item.isFolder) {
+      targetChild = DragTarget<_ContentItem>(
+        onWillAcceptWithDetails: (details) =>
+            _canDropItemOnFolder(details.data, item.id),
+        onAcceptWithDetails: (details) =>
+            _moveDraggedItemsToFolder(details.data, item.id),
+        builder: (context, candidateItems, rejectedItems) {
+          final hovering = candidateItems.isNotEmpty;
+          return AnimatedContainer(
+            duration: const Duration(milliseconds: 60),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(8),
+              boxShadow: hovering
+                  ? [
+                      BoxShadow(
+                        color: AppColors.primary.withValues(alpha: 0.24),
+                        blurRadius: 18,
+                        spreadRadius: 2,
+                      ),
+                    ]
+                  : null,
+            ),
+            child: child,
+          );
+        },
+      );
+    }
+
+    return Listener(
+      behavior: HitTestBehavior.translucent,
+      onPointerDown: (event) {
+        _suppressGridSelectionForItem();
+        _startItemHoldMenuTimer(item, event.position);
+      },
+      onPointerMove: (event) => _updateItemHoldPosition(event.position),
+      onPointerUp: (_) {
+        _cancelItemHoldMenuTimer();
+        _suppressNextGridSelection = false;
+      },
+      onPointerCancel: (_) {
+        _cancelItemHoldMenuTimer();
+        _suppressNextGridSelection = false;
+      },
+      child: LongPressDraggable<_ContentItem>(
+        data: item,
+        delay: const Duration(milliseconds: 260),
+        dragAnchorStrategy: pointerDragAnchorStrategy,
+        onDragStarted: () => _beginItemDrag(item),
+        onDragCompleted: _endItemDrag,
+        onDraggableCanceled: (_, _) => _endItemDrag(),
+        onDragEnd: (_) => _endItemDrag(),
+        feedback: Material(
+          color: Colors.transparent,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 180),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: AppColors.surfaceElevated.withValues(alpha: 0.96),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: AppColors.primary),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.25),
+                    blurRadius: 18,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      item.isFolder ? Icons.folder : Icons.article,
+                      size: 18,
+                      color: item.isFolder
+                          ? AppColors.primary
+                          : AppColors.textSecondary,
+                    ),
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Text(
+                        _selectedItems.length > 1 &&
+                                _selectedItems.contains(item.id)
+                            ? '${_selectedItems.length} 个项目'
+                            : item.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: AppColors.textPrimary,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+        childWhenDragging: Opacity(opacity: 0.45, child: targetChild),
+        child: targetChild,
+      ),
+    );
+  }
+
   Widget _buildItemCard(_ContentItem item, {required bool compact}) {
     final isSelected = _selectedItems.contains(item.id);
     return GestureDetector(
-      onTap: () => _handleItemTap(item),
+      onTapDown: (_) => _selectSingleItem(item),
+      onTap: () {},
       onDoubleTap: () => _handleItemDoubleTap(item),
-      onLongPressStart: (details) =>
-          _handleItemLongPress(item, details.globalPosition),
       onSecondaryTapUp: (details) => _showContextMenu(details, item),
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 90),
+        duration: const Duration(milliseconds: 35),
         curve: Curves.easeOut,
         decoration: BoxDecoration(
           color: isSelected
@@ -618,18 +842,18 @@ class _HomePageState extends State<HomePage> with HomeLogic {
               ? Border.all(color: AppColors.primary, width: 2)
               : Border.all(color: AppColors.border.withValues(alpha: 0.3)),
         ),
-        padding: const EdgeInsets.all(12),
+        padding: EdgeInsets.all(compact ? 8 : 12),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(
               item.isFolder ? Icons.folder : Icons.article,
-              size: compact ? 32 : 48,
+              size: compact ? 28 : 48,
               color: item.isFolder
                   ? AppColors.primary
                   : AppColors.textSecondary,
             ),
-            SizedBox(height: compact ? 6 : 8),
+            SizedBox(height: compact ? 4 : 8),
             Text(
               item.name,
               style: TextStyle(
@@ -681,58 +905,62 @@ class _HomePageState extends State<HomePage> with HomeLogic {
       itemBuilder: (context, index) {
         final item = items[index];
         final isSelected = _selectedItems.contains(item.id);
-        return GestureDetector(
-          onLongPressStart: (details) =>
-              _handleItemLongPress(item, details.globalPosition),
-          child: Material(
-            color: isSelected
-                ? AppColors.primary.withValues(alpha: 0.1)
-                : Colors.transparent,
-            borderRadius: BorderRadius.circular(6),
-            child: InkWell(
-              onTap: () => _handleItemTap(item),
-              onDoubleTap: () => _handleItemDoubleTap(item),
-              onSecondaryTapUp: (details) => _showContextMenu(details, item),
+        return _buildDraggableItem(
+          item,
+          GestureDetector(
+            child: Material(
+              color: isSelected
+                  ? AppColors.primary.withValues(alpha: 0.1)
+                  : Colors.transparent,
               borderRadius: BorderRadius.circular(6),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 8,
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      item.isFolder ? Icons.folder : Icons.article,
-                      size: 20,
-                      color: item.isFolder
-                          ? AppColors.primary
-                          : AppColors.textSecondary,
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            item.name,
-                            style: const TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w500,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          Text(
-                            item.isFolder ? '文件夹' : _formatDate(item.updatedAt),
-                            style: const TextStyle(
-                              fontSize: 11,
-                              color: AppColors.textMuted,
-                            ),
-                          ),
-                        ],
+              child: InkWell(
+                onTapDown: (_) => _selectSingleItem(item),
+                onTap: () {},
+                onDoubleTap: () => _handleItemDoubleTap(item),
+                onSecondaryTapUp: (details) => _showContextMenu(details, item),
+                borderRadius: BorderRadius.circular(6),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        item.isFolder ? Icons.folder : Icons.article,
+                        size: 20,
+                        color: item.isFolder
+                            ? AppColors.primary
+                            : AppColors.textSecondary,
                       ),
-                    ),
-                  ],
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              item.name,
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            Text(
+                              item.isFolder
+                                  ? '文件夹'
+                                  : _formatDate(item.updatedAt),
+                              style: const TextStyle(
+                                fontSize: 11,
+                                color: AppColors.textMuted,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -803,71 +1031,75 @@ class _HomePageState extends State<HomePage> with HomeLogic {
             itemBuilder: (context, index) {
               final item = items[index];
               final isSelected = _selectedItems.contains(item.id);
-              return GestureDetector(
-                onLongPressStart: (details) =>
-                    _handleItemLongPress(item, details.globalPosition),
-                child: Material(
-                  color: isSelected
-                      ? AppColors.primary.withValues(alpha: 0.1)
-                      : Colors.transparent,
-                  borderRadius: BorderRadius.circular(4),
-                  child: InkWell(
-                    onTap: () => _handleItemTap(item),
-                    onDoubleTap: () => _handleItemDoubleTap(item),
-                    onSecondaryTapUp: (details) =>
-                        _showContextMenu(details, item),
+              return _buildDraggableItem(
+                item,
+                GestureDetector(
+                  child: Material(
+                    color: isSelected
+                        ? AppColors.primary.withValues(alpha: 0.1)
+                        : Colors.transparent,
                     borderRadius: BorderRadius.circular(4),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 10,
-                      ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            flex: 3,
-                            child: Row(
-                              children: [
-                                Icon(
-                                  item.isFolder ? Icons.folder : Icons.article,
-                                  size: 18,
-                                  color: item.isFolder
-                                      ? AppColors.primary
-                                      : AppColors.textSecondary,
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    item.name,
-                                    style: const TextStyle(fontSize: 13),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
+                    child: InkWell(
+                      onTapDown: (_) => _selectSingleItem(item),
+                      onTap: () {},
+                      onDoubleTap: () => _handleItemDoubleTap(item),
+                      onSecondaryTapUp: (details) =>
+                          _showContextMenu(details, item),
+                      borderRadius: BorderRadius.circular(4),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 10,
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              flex: 3,
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    item.isFolder
+                                        ? Icons.folder
+                                        : Icons.article,
+                                    size: 18,
+                                    color: item.isFolder
+                                        ? AppColors.primary
+                                        : AppColors.textSecondary,
                                   ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      item.name,
+                                      style: const TextStyle(fontSize: 13),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Expanded(
+                              flex: 1,
+                              child: Text(
+                                item.isFolder ? '文件夹' : '稿件',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: AppColors.textMuted,
                                 ),
-                              ],
-                            ),
-                          ),
-                          Expanded(
-                            flex: 1,
-                            child: Text(
-                              item.isFolder ? '文件夹' : '稿件',
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: AppColors.textMuted,
                               ),
                             ),
-                          ),
-                          Expanded(
-                            flex: 2,
-                            child: Text(
-                              _formatDate(item.updatedAt),
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: AppColors.textMuted,
+                            Expanded(
+                              flex: 2,
+                              child: Text(
+                                _formatDate(item.updatedAt),
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: AppColors.textMuted,
+                                ),
                               ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
                   ),

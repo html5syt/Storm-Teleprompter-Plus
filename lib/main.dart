@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_quill/flutter_quill.dart' as quill;
 import 'package:provider/provider.dart';
 import 'backend/backend_server.dart';
@@ -25,7 +26,7 @@ void main() async {
 
   // ── 1. 启动后端服务 ──
   globalBackendServer = BackendServer();
-  final port = await globalBackendServer.start(); // 自动分配端口
+  final port = kIsWeb ? 0 : await globalBackendServer.start(); // 自动分配端口
 
   // ── 2. 创建 Provider ──
   final connectionProvider = ConnectionProvider();
@@ -35,13 +36,18 @@ void main() async {
   final teleprompterProvider = TeleprompterProvider();
 
   // 绑定连接到数据 Provider
+  connectionProvider.bindLocalBackend(globalBackendServer);
   articleProvider.bindConnection(connectionProvider);
   folderProvider.bindConnection(connectionProvider);
   settingsProvider.bindConnection(connectionProvider);
   teleprompterProvider.bindConnection(connectionProvider);
 
   // ── 3. 连接到本机后端 ──
-  await connectionProvider.connectToLocal(port);
+  if (!kIsWeb) {
+    await connectionProvider.connectToLocal(port);
+  } else {
+    debugPrint('[Main] Web build skips the bundled local backend.');
+  }
 
   // ── 4. 加载初始数据 ──
   await articleProvider.init();

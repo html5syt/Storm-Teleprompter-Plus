@@ -27,6 +27,7 @@ class BackendServer {
   StreamSubscription? _pingSubscription;
   StreamSubscription? _clientCountSubscription;
   bool _hasMultipleClients = false;
+  bool _handlersRegistered = false;
 
   /// 是否正在运行
   bool get isRunning => _isRunning;
@@ -58,10 +59,14 @@ class BackendServer {
       // 启动 WebSocket 服务器
       _port = await wsServer.start(port: port);
 
-      // 注册消息处理器
-      articleService.registerHandlers(wsServer);
-      settingsService.registerHandlers(wsServer);
-      teleprompterSession.registerHandlers(wsServer);
+      // 注册消息处理器。WsServer 的请求流在 stop/start 间保持同一个实例，
+      // 避免重复注册导致同一请求被处理多次。
+      if (!_handlersRegistered) {
+        articleService.registerHandlers(wsServer);
+        settingsService.registerHandlers(wsServer);
+        teleprompterSession.registerHandlers(wsServer);
+        _handlersRegistered = true;
+      }
 
       // 注册 Ping/Pong 处理
       _registerPingHandler();
@@ -84,7 +89,7 @@ class BackendServer {
 
     _pingSubscription?.cancel();
     _clientCountSubscription?.cancel();
-    teleprompterSession.dispose();
+    teleprompterSession.reset();
     await wsServer.stop();
 
     _isRunning = false;
@@ -95,7 +100,8 @@ class BackendServer {
 
   /// 注册 Ping 处理器
   void _registerPingHandler() {
-    wsServer.requests.listen((request) {
+    _pingSubscription?.cancel();
+    _pingSubscription = wsServer.requests.listen((request) {
       if (request.message.type == WsMessageType.connectionPing) {
         wsServer.respond(
           request.clientId,

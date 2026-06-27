@@ -101,10 +101,12 @@ class TeleprompterTextLayer extends StatefulWidget {
   });
 
   @override
-  State<TeleprompterTextLayer> createState() => _TeleprompterTextLayerState();
+  State<TeleprompterTextLayer> createState() => TeleprompterTextLayerState();
 }
 
-class _TeleprompterTextLayerState extends State<TeleprompterTextLayer> {
+class TeleprompterTextLayerState extends State<TeleprompterTextLayer> {
+  static const double _lineVerticalPadding = 2.0;
+
   int _lastScrolledToIndex = -2;
   int _lastReportedReadingLine = -2;
   int _scrollRequestId = 0;
@@ -126,6 +128,7 @@ class _TeleprompterTextLayerState extends State<TeleprompterTextLayer> {
         widget.fontSize != oldWidget.fontSize ||
         widget.lineHeight != oldWidget.lineHeight ||
         widget.letterSpacing != oldWidget.letterSpacing ||
+        widget.paddingX != oldWidget.paddingX ||
         widget.defaultBold != oldWidget.defaultBold ||
         widget.teleprompterFontFamily != oldWidget.teleprompterFontFamily;
 
@@ -145,7 +148,7 @@ class _TeleprompterTextLayerState extends State<TeleprompterTextLayer> {
           metricsChanged) {
         _lastScrolledToIndex = widget.currentIndex;
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) _scrollToCurrentChar();
+          if (mounted) _scrollToCurrentChar(animate: !metricsChanged);
         });
       }
     }
@@ -254,7 +257,9 @@ class _TeleprompterTextLayerState extends State<TeleprompterTextLayer> {
     }
 
     painter.dispose();
-    return (rowCenter + 2).clamp(0.0, _lineHeights[lineIndex]).toDouble();
+    return (rowCenter + _lineVerticalPadding)
+        .clamp(0.0, _lineHeights[lineIndex])
+        .toDouble();
   }
 
   void _ensureLineMetrics(double textWidth, TextDirection textDirection) {
@@ -297,7 +302,7 @@ class _TeleprompterTextLayerState extends State<TeleprompterTextLayer> {
 
     final painter = _layoutLinePainter(line, textWidth, textDirection);
 
-    final height = painter.height + 4;
+    final height = painter.height + _lineVerticalPadding * 2;
     painter.dispose();
     return height;
   }
@@ -332,6 +337,7 @@ class _TeleprompterTextLayerState extends State<TeleprompterTextLayer> {
     double contentOffset,
     double textWidth,
     TextDirection textDirection,
+    double x,
   ) {
     if (widget.lines.isEmpty || _lineTops.isEmpty) return null;
 
@@ -340,16 +346,84 @@ class _TeleprompterTextLayerState extends State<TeleprompterTextLayer> {
     if (line.characters.isEmpty) return null;
 
     final painter = _layoutLinePainter(line, textWidth, textDirection);
-    final localY = (contentOffset - _lineTops[lineIndex] - 2)
+    final localY = (contentOffset - _lineTops[lineIndex] - _lineVerticalPadding)
         .clamp(0.0, painter.height)
         .toDouble();
-    final position = painter.getPositionForOffset(Offset(0, localY));
+    final localX = x.clamp(0.0, textWidth).toDouble();
+    final position = painter.getPositionForOffset(Offset(localX, localY));
     painter.dispose();
 
     final charOffset = position.offset
         .clamp(0, line.characters.length - 1)
         .toInt();
     return line.characters[charOffset].rawIndex;
+  }
+
+  int? rawIndexForVisualLineMove(int direction) {
+    if (direction == 0 || widget.lines.isEmpty) return null;
+
+    final viewportWidth =
+        context.size?.width ?? MediaQuery.of(context).size.width;
+    final textWidth = _textWidthForViewport(viewportWidth);
+    final textDirection = Directionality.of(context);
+    _ensureLineMetrics(textWidth, textDirection);
+    if (_lineHeights.isEmpty) return null;
+
+    if (widget.currentIndex < 0) {
+      for (final line in widget.lines) {
+        if (line.characters.isNotEmpty) return line.characters.first.rawIndex;
+      }
+      return null;
+    }
+
+    final currentLine = _findLineForRawIndex(widget.currentIndex);
+    final safeLine = currentLine.clamp(0, _lineHeights.length - 1).toInt();
+    final line = widget.lines[safeLine];
+    if (line.characters.isEmpty) return null;
+
+    final painter = _layoutLinePainter(line, textWidth, textDirection);
+    final charOffset = _charOffsetInLine(safeLine, widget.currentIndex);
+    final selectionEnd = (charOffset + 1).clamp(0, line.characters.length);
+    final boxes = painter.getBoxesForSelection(
+      TextSelection(baseOffset: charOffset, extentOffset: selectionEnd),
+    );
+    final caretOffset = painter.getOffsetForCaret(
+      TextPosition(offset: charOffset),
+      Rect.zero,
+    );
+    final sampleY = boxes.isNotEmpty
+        ? (boxes.first.top + boxes.first.bottom) / 2
+        : caretOffset.dy;
+    var currentMetricHeight = painter.preferredLineHeight;
+    var currentRowCenter = caretOffset.dy + currentMetricHeight / 2;
+    for (final metric in painter.computeLineMetrics()) {
+      final top = metric.baseline - metric.ascent;
+      final bottom = top + metric.height;
+      if (sampleY >= top - 0.5 && sampleY <= bottom + 0.5) {
+        currentMetricHeight = metric.height;
+        currentRowCenter = top + metric.height / 2;
+        break;
+      }
+    }
+    final currentX = boxes.isNotEmpty
+        ? (boxes.first.left + boxes.first.right) / 2
+        : caretOffset.dx;
+    painter.dispose();
+
+    final targetContentY =
+        _lineTops[safeLine] +
+        currentRowCenter +
+        direction * currentMetricHeight;
+    final targetLine = _findLineForContentOffset(targetContentY);
+    final target = widget.lines[targetLine];
+    if (target.characters.isEmpty) return null;
+
+    return _rawIndexForContentOffset(
+      targetContentY,
+      textWidth,
+      textDirection,
+      currentX,
+    );
   }
 
   void _animateToOffset(double targetOffset, Duration duration) {
@@ -372,7 +446,18 @@ class _TeleprompterTextLayerState extends State<TeleprompterTextLayer> {
     );
   }
 
-  void _scrollToCurrentChar() {
+  void _jumpToOffset(double targetOffset) {
+    if (!widget.scrollController.hasClients) return;
+
+    _scrollRequestId++;
+    _isProgrammaticScroll = true;
+    widget.scrollController.jumpTo(targetOffset);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _isProgrammaticScroll = false;
+    });
+  }
+
+  void _scrollToCurrentChar({bool animate = true}) {
     if (!widget.scrollController.hasClients) return;
 
     final pos = widget.scrollController.position;
@@ -382,7 +467,11 @@ class _TeleprompterTextLayerState extends State<TeleprompterTextLayer> {
     final maxScroll = pos.maxScrollExtent;
 
     if (widget.currentIndex < 0 || widget.lines.isEmpty) {
-      _animateToOffset(0, const Duration(milliseconds: 200));
+      if (animate) {
+        _animateToOffset(0, const Duration(milliseconds: 200));
+      } else {
+        _jumpToOffset(0);
+      }
       return;
     }
 
@@ -407,7 +496,11 @@ class _TeleprompterTextLayerState extends State<TeleprompterTextLayer> {
             .clamp(0.0, maxScroll)
             .toDouble();
 
-    _animateToOffset(targetOffset, const Duration(milliseconds: 120));
+    if (animate) {
+      _animateToOffset(targetOffset, const Duration(milliseconds: 120));
+    } else {
+      _jumpToOffset(targetOffset);
+    }
   }
 
   bool _handleScrollNotification(ScrollNotification notification) {
@@ -434,6 +527,7 @@ class _TeleprompterTextLayerState extends State<TeleprompterTextLayer> {
       contentY,
       textWidth,
       Directionality.of(context),
+      0,
     );
 
     if (lineIndex == _lastReportedReadingLine &&
@@ -478,11 +572,7 @@ class _TeleprompterTextLayerState extends State<TeleprompterTextLayer> {
               onNotification: _handleScrollNotification,
               child: CustomScrollView(
                 controller: widget.scrollController,
-                physics:
-                    widget.physics ??
-                    LineSnapScrollPhysics(
-                      lineHeight: widget.fontSize * widget.lineHeight + 4,
-                    ),
+                physics: widget.physics ?? const ClampingScrollPhysics(),
                 slivers: [
                   SliverToBoxAdapter(
                     child: SizedBox(height: _topPad(screenHeight)),
@@ -533,10 +623,7 @@ class _TeleprompterTextLayerState extends State<TeleprompterTextLayer> {
   }) {
     final textColor = widget.textColor != 0
         ? Color(widget.textColor)
-        : AppColors.textPrimary;
-    final readColor = widget.grayReadChars
-        ? textColor.withValues(alpha: 0.6)
-        : textColor;
+        : const Color(0xFFFFFFFF);
     final baseWeight = widget.defaultBold ? FontWeight.w700 : FontWeight.w400;
     final boldWeight = widget.defaultBold ? FontWeight.w900 : FontWeight.w700;
 
@@ -544,7 +631,14 @@ class _TeleprompterTextLayerState extends State<TeleprompterTextLayer> {
       final isRead = !forMeasurement && char.rawIndex <= widget.currentIndex;
       final isCurrent = !forMeasurement && char.rawIndex == widget.currentIndex;
       final doHighlight = isCurrent && widget.highlightCurrentChar;
-      final effectiveFontSize = widget.fontSize * (char.fontSizeRatio ?? 1.0);
+      final effectiveFontSize =
+          char.fontSizePx ?? widget.fontSize * (char.fontSizeRatio ?? 1.0);
+      final effectiveTextColor = char.textColor != null
+          ? Color(char.textColor!)
+          : textColor;
+      final effectiveReadColor = widget.grayReadChars
+          ? effectiveTextColor.withValues(alpha: 0.6)
+          : effectiveTextColor;
 
       final style = TextStyle(
         fontSize: effectiveFontSize,
@@ -556,8 +650,10 @@ class _TeleprompterTextLayerState extends State<TeleprompterTextLayer> {
         decoration: (isCurrent && widget.underlineCurrentChar)
             ? TextDecoration.underline
             : (char.underline ? TextDecoration.underline : TextDecoration.none),
-        decorationColor: textColor,
-        color: doHighlight ? textColor : (isRead ? readColor : textColor),
+        decorationColor: effectiveTextColor,
+        color: doHighlight
+            ? effectiveTextColor
+            : (isRead ? effectiveReadColor : effectiveTextColor),
         fontFamily: widget.teleprompterFontFamily.isNotEmpty
             ? widget.teleprompterFontFamily
             : null,
@@ -573,11 +669,13 @@ class _TeleprompterTextLayerState extends State<TeleprompterTextLayer> {
 
   Widget _buildLine(ScriptLine line, double textWidth) {
     if (line.characters.isEmpty) {
-      return SizedBox(height: widget.fontSize * widget.lineHeight);
+      return SizedBox(
+        height: widget.fontSize * widget.lineHeight + _lineVerticalPadding * 2,
+      );
     }
 
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
+      padding: const EdgeInsets.symmetric(vertical: _lineVerticalPadding),
       child: MouseRegion(
         cursor: SystemMouseCursors.click,
         child: GestureDetector(

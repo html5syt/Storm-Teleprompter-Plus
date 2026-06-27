@@ -300,7 +300,7 @@ class AppSettings {
               orElse: () => scrollMode,
             )
           : scrollMode,
-      wpm: overrides['wpm'] as int? ?? wpm,
+      wpm: (overrides['wpm'] as num?)?.toInt() ?? wpm,
       mirrorMode: overrides['mirrorMode'] as bool? ?? mirrorMode,
       fullScreenMode: overrides['fullScreenMode'] as bool? ?? fullScreenMode,
       autoHideUI: overrides['autoHideUI'] as bool? ?? autoHideUI,

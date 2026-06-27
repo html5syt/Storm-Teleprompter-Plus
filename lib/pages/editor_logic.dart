@@ -4,6 +4,7 @@ mixin EditorLogic on State<EditorPage> {
   late final TextEditingController titleController;
   late final TextEditingController contentController;
   late final quill.QuillController quillController;
+  late final FocusNode editorFocusNode;
   late ArticleProvider _articleProvider;
 
   Article? _savedArticle;
@@ -35,11 +36,19 @@ mixin EditorLogic on State<EditorPage> {
     contentController = TextEditingController(
       text: widget.article?.content ?? '',
     );
+    editorFocusNode = FocusNode(debugLabel: 'ArticleEditor');
     quillController = quill.QuillController(
       document: quill.Document.fromDelta(
         _contentToDelta(widget.article?.content ?? ''),
       ),
       selection: const TextSelection.collapsed(offset: 0),
+      config: quill_config.QuillControllerConfig(
+        clipboardConfig: quill_config.QuillClipboardConfig(
+          onPlainTextPaste: (plainText) async => _cleanPastedText(plainText),
+          onRichTextPaste: (delta, isExternal) async =>
+              _cleanPastedDelta(delta),
+        ),
+      ),
     );
 
     titleController.addListener(_markChanged);
@@ -58,6 +67,7 @@ mixin EditorLogic on State<EditorPage> {
     _autosaveTimer?.cancel();
     titleController.dispose();
     contentController.dispose();
+    editorFocusNode.dispose();
     quillController.dispose();
     super.dispose();
   }
@@ -65,7 +75,12 @@ mixin EditorLogic on State<EditorPage> {
   void _onQuillContentChanged() {
     if (_syncingEditorContent) return;
 
-    final html = _deltaToStorageHtml(quillController.document.toDelta());
+    final rawHtml = _deltaToStorageHtml(quillController.document.toDelta());
+    final html = _sanitizeStorageHtml(rawHtml);
+    if (html != rawHtml) {
+      _replaceEditorHtml(html);
+      return;
+    }
     if (html == contentController.text) {
       if (mounted) setState(() {});
       return;
@@ -174,6 +189,21 @@ mixin EditorLogic on State<EditorPage> {
     final settingsProvider = context.read<SettingsProvider>();
     settingsProvider.loadArticleOverrides(article.teleprompterSettings);
     teleprompterProvider.loadScript(article.id, article.content);
+    final connection = context.read<ConnectionProvider>();
+    if (connection.isLocal && connection.isConnected) {
+      connection.send(
+        WsMessage(
+          type: WsMessageType.teleprompterStartSession,
+          data: {
+            'articleId': article.id,
+            'currentIndex': teleprompterProvider.currentIndex,
+            'isPlaying': teleprompterProvider.isPlaying,
+            'article': article.toJson(),
+            'settings': settingsProvider.mergedSettings.toTeleprompterMap(),
+          },
+        ),
+      );
+    }
 
     await Navigator.of(context).push(
       MaterialPageRoute(
@@ -216,6 +246,15 @@ mixin EditorLogic on State<EditorPage> {
     _replaceEditorHtml(_mapTextOutsideTags(contentController.text, _quoteText));
   }
 
+  void applyFontSize(String value) {
+    final parsed = double.tryParse(value.trim());
+    if (parsed == null || parsed <= 0) return;
+    quillController.formatSelection(
+      quill.Attribute.fromKeyValue(quill.Attribute.size.key, parsed)!,
+    );
+    _onQuillContentChanged();
+  }
+
   void _replaceEditorHtml(String html) {
     _syncingEditorContent = true;
     quillController.document = quill.Document.fromDelta(_contentToDelta(html));
@@ -233,9 +272,11 @@ mixin EditorLogic on State<EditorPage> {
     }
 
     if (TextParser.isHtml(content)) {
+      final storageDelta = _storageHtmlToDelta(content);
+      if (storageDelta.operations.isNotEmpty) return storageDelta;
       try {
         final delta = HtmlToDelta().convert(content);
-        if (delta.operations.isNotEmpty) return delta;
+        if (delta.operations.isNotEmpty) return _sanitizeEditorDelta(delta);
       } catch (e) {
         debugPrint('[Editor] HTML to Delta failed: $e');
       }
@@ -243,6 +284,115 @@ mixin EditorLogic on State<EditorPage> {
 
     final normalized = content.endsWith('\n') ? content : '$content\n';
     return qd.Delta()..insert(normalized);
+  }
+
+  qd.Delta _storageHtmlToDelta(String html) {
+    final delta = qd.Delta();
+    final paragraphPattern = RegExp(
+      r'<(?:p|div|h[1-6])[^>]*>(.*?)</(?:p|div|h[1-6])>',
+      caseSensitive: false,
+      dotAll: true,
+    );
+    final matches = paragraphPattern.allMatches(html).toList();
+    if (matches.isEmpty) return delta;
+
+    for (final match in matches) {
+      _appendInlineHtmlToDelta(delta, match.group(1) ?? '');
+      delta.insert('\n');
+    }
+    return delta;
+  }
+
+  void _appendInlineHtmlToDelta(qd.Delta delta, String html) {
+    final attributes = <String, dynamic>{};
+    var cursor = 0;
+    for (final match in RegExp(r'<[^>]+>').allMatches(html)) {
+      if (match.start > cursor) {
+        _insertDeltaText(
+          delta,
+          html.substring(cursor, match.start),
+          attributes,
+        );
+      }
+      final tag = match.group(0) ?? '';
+      _applyInlineTagToAttributes(tag, attributes);
+      cursor = match.end;
+    }
+    if (cursor < html.length) {
+      _insertDeltaText(delta, html.substring(cursor), attributes);
+    }
+  }
+
+  void _insertDeltaText(
+    qd.Delta delta,
+    String text,
+    Map<String, dynamic> attributes,
+  ) {
+    final normalized = _decodeHtml(text).replaceAll(RegExp(r'[\r\n\t]+'), ' ');
+    if (normalized.isEmpty) return;
+    delta.insert(
+      normalized,
+      attributes.isEmpty ? null : Map<String, dynamic>.from(attributes),
+    );
+  }
+
+  void _applyInlineTagToAttributes(
+    String rawTag,
+    Map<String, dynamic> attributes,
+  ) {
+    final tag = rawTag.toLowerCase();
+    final isClosing = tag.startsWith('</');
+    final nameMatch = RegExp(r'</?\s*([a-z0-9]+)').firstMatch(tag);
+    final name = nameMatch?.group(1);
+    if (name == null) return;
+
+    switch (name) {
+      case 'br':
+        return;
+      case 'b':
+      case 'strong':
+        isClosing ? attributes.remove('bold') : attributes['bold'] = true;
+        return;
+      case 'i':
+      case 'em':
+        isClosing ? attributes.remove('italic') : attributes['italic'] = true;
+        return;
+      case 'u':
+        isClosing
+            ? attributes.remove('underline')
+            : attributes['underline'] = true;
+        return;
+      case 's':
+      case 'strike':
+      case 'del':
+        isClosing ? attributes.remove('strike') : attributes['strike'] = true;
+        return;
+      case 'span':
+        if (isClosing) {
+          attributes.remove('background');
+          attributes.remove('color');
+          attributes.remove('size');
+        } else {
+          final style = RegExp(
+            r'''style\s*=\s*["']([^"']+)["']''',
+            caseSensitive: false,
+          ).firstMatch(rawTag)?.group(1);
+          if (style != null) {
+            final background =
+                _extractCssColor(style, 'background-color') ??
+                _extractCssColor(style, 'background');
+            final color = _extractCssColor(style, 'color');
+            final size = RegExp(
+              r'font-size\s*:\s*([^;]+)',
+              caseSensitive: false,
+            ).firstMatch(style)?.group(1)?.trim();
+            if (background != null) attributes['background'] = background;
+            if (color != null) attributes['color'] = color;
+            final parsedSize = _fontSizeAttributeValue(size);
+            if (parsedSize != null) attributes['size'] = parsedSize;
+          }
+        }
+    }
   }
 
   String _deltaToStorageHtml(qd.Delta delta) {
@@ -280,11 +430,17 @@ mixin EditorLogic on State<EditorPage> {
 
     final styles = <String>[];
     final background = attributes['background'];
+    final color = attributes['color'];
     final size = attributes['size'];
     if (background is String && background.isNotEmpty) {
       styles.add('background-color: $background');
     }
-    if (size is String && size.isNotEmpty) {
+    if (color is String && color.isNotEmpty) {
+      styles.add('color: $color');
+    }
+    if (size is num) {
+      styles.add('font-size: ${_normalizeFontSize(size.toString())}');
+    } else if (size is String && size.isNotEmpty) {
       styles.add('font-size: ${_normalizeFontSize(size)}');
     }
     if (styles.isNotEmpty) {
@@ -294,9 +450,150 @@ mixin EditorLogic on State<EditorPage> {
     return result;
   }
 
+  String _cleanPastedText(String text) {
+    return text
+        .replaceAll('\r\n', '\n')
+        .replaceAll('\r', '\n')
+        .split('\n')
+        .where((line) => !_isSourceUrlLine(line))
+        .join('\n');
+  }
+
+  qd.Delta _cleanPastedDelta(qd.Delta delta) {
+    final cleaned = qd.Delta();
+    for (final operation in delta.operations) {
+      if (operation.isInsert && operation.data is String) {
+        final text = _cleanPastedText(operation.data as String);
+        if (text.isEmpty) continue;
+        cleaned.insert(text, _sanitizeDeltaAttributes(operation.attributes));
+      } else if (operation.isInsert) {
+        cleaned.insert(
+          operation.data,
+          _sanitizeDeltaAttributes(operation.attributes),
+        );
+      } else {
+        cleaned.push(operation);
+      }
+    }
+    return cleaned;
+  }
+
+  String _sanitizeStorageHtml(String html) {
+    final withoutParagraphs = html.replaceAll(
+      RegExp(
+        r'<p[^>]*>\s*(?:sourceurl|source url)\s*:?.*?</p>\s*',
+        caseSensitive: false,
+        dotAll: true,
+      ),
+      '',
+    );
+    return withoutParagraphs
+        .split(RegExp(r'\r?\n'))
+        .where(
+          (line) => !_isSourceUrlLine(line.replaceAll(RegExp(r'<[^>]+>'), '')),
+        )
+        .join('\n')
+        .trim();
+  }
+
+  bool _isSourceUrlLine(String line) {
+    return RegExp(
+      r'^\s*(?:sourceurl|source\s+url)\s*:?.*$',
+      caseSensitive: false,
+    ).hasMatch(line.trim());
+  }
+
+  String? _extractCssColor(String style, String property) {
+    final match = RegExp(
+      '$property\\s*:\\s*(#[0-9a-fA-F]{6}|#[0-9a-fA-F]{8}|rgba?\\([^;]+\\))',
+      caseSensitive: false,
+    ).firstMatch(style);
+    return match?.group(1);
+  }
+
+  qd.Delta _sanitizeEditorDelta(qd.Delta delta) {
+    final sanitized = qd.Delta();
+    for (final operation in delta.operations) {
+      if (operation.isInsert) {
+        sanitized.insert(
+          operation.data,
+          _sanitizeDeltaAttributes(operation.attributes),
+        );
+      } else {
+        sanitized.push(operation);
+      }
+    }
+    return sanitized;
+  }
+
+  Map<String, dynamic>? _sanitizeDeltaAttributes(
+    Map<String, dynamic>? attributes,
+  ) {
+    if (attributes == null || attributes.isEmpty) return attributes;
+    final sanitized = Map<String, dynamic>.from(attributes);
+    final size = sanitized['size'];
+    if (size != null) {
+      final normalized = size is num
+          ? size.toDouble()
+          : _fontSizeAttributeValue(size.toString());
+      if (normalized == null || normalized <= 0) {
+        sanitized.remove('size');
+      } else {
+        sanitized['size'] = normalized;
+      }
+    }
+    return sanitized.isEmpty ? null : sanitized;
+  }
+
+  String _decodeHtml(String text) {
+    return text
+        .replaceAll('&nbsp;', ' ')
+        .replaceAll('&lt;', '<')
+        .replaceAll('&gt;', '>')
+        .replaceAll('&quot;', '"')
+        .replaceAll('&#39;', "'")
+        .replaceAll('&amp;', '&');
+  }
+
   String _normalizeFontSize(String value) {
-    final parsed = double.tryParse(value);
-    return parsed == null ? value : '${parsed.round()}px';
+    final trimmed = value.trim().toLowerCase();
+    final match = RegExp(
+      r'^(\d+(?:\.\d+)?)(px|pt|em|rem)?$',
+    ).firstMatch(trimmed);
+    if (match == null) return value;
+    final parsed = double.tryParse(match.group(1) ?? '');
+    if (parsed == null || parsed <= 0) return value;
+    final unit = match.group(2) ?? 'px';
+    final display = parsed.truncateToDouble() == parsed
+        ? parsed.toStringAsFixed(0)
+        : parsed.toStringAsFixed(1);
+    return '$display$unit';
+  }
+
+  double? _fontSizeAttributeValue(String? value) {
+    if (value == null) return null;
+    final normalized = value.trim().toLowerCase();
+    switch (normalized) {
+      case 'small':
+        return 13;
+      case 'normal':
+        return 16;
+      case 'large':
+        return 24;
+      case 'huge':
+        return 32;
+    }
+
+    final match = RegExp(
+      r'^(\d+(?:\.\d+)?)(px|pt|em|rem)?$',
+    ).firstMatch(normalized);
+    if (match == null) return null;
+    final number = double.tryParse(match.group(1) ?? '');
+    if (number == null || number <= 0) return null;
+    final unit = match.group(2);
+    if (unit == 'pt') return number * 96 / 72;
+    if (unit == 'em' || unit == 'rem') return number * 16;
+    return number;
   }
 
   String _mapParagraphs(String html, String Function(String body) mapper) {
@@ -329,21 +626,8 @@ mixin EditorLogic on State<EditorPage> {
   }
 
   String _quoteText(String text) {
-    final buffer = StringBuffer();
-    var doubleOpen = true;
-    var singleOpen = true;
-    for (final codePoint in text.runes) {
-      final char = String.fromCharCode(codePoint);
-      if (char == '"') {
-        buffer.write(doubleOpen ? '“' : '”');
-        doubleOpen = !doubleOpen;
-      } else if (char == "'") {
-        buffer.write(singleOpen ? '‘' : '’');
-        singleOpen = !singleOpen;
-      } else {
-        buffer.write(char);
-      }
-    }
-    return buffer.toString();
+    final decoded = TextParser.decodeHtmlEntities(text);
+    final normalized = TextParser.normalizeQuotePairs(decoded);
+    return TextParser.encodeHtmlEntities(normalized);
   }
 }
