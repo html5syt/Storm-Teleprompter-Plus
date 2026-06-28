@@ -41,7 +41,7 @@ dependencies:
   record: ^7.0.0
 
   # Windows/macOS/Linux 窗口管理（全屏、标题栏等）
-  window_manager: ^0.4.3
+  window_manager: ^0.5.1
 
   # 统一颜色选择器
   flutter_colorpicker: ^1.1.0

@@ -1,0 +1,183 @@
+name: debug
+
+on:
+  push:
+    branches:
+      - v2
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  FLUTTER_VERSION: "3.44.1"
+  APP_NAME: storm_teleprompter_plus
+
+jobs:
+  android:
+    name: Android
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Configure Android signing
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for name in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::$name is required for signed Android debug builds."
+              exit 1
+            fi
+          done
+
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > html5syt.jks
+          {
+            echo "storeFile=../html5syt.jks"
+            echo "storePassword=$ANDROID_KEYSTORE_PASSWORD"
+            echo "keyAlias=$ANDROID_KEY_ALIAS"
+            echo "keyPassword=$ANDROID_KEY_PASSWORD"
+          } > android/key.properties
+
+      - name: Build Android debug artifacts
+        run: |
+          flutter pub get
+          flutter build apk --debug
+          flutter build appbundle --debug
+          mkdir -p artifacts
+          cp build/app/outputs/flutter-apk/app-debug.apk artifacts/${APP_NAME}-android.apk
+          cp build/app/outputs/bundle/debug/app-debug.aab artifacts/${APP_NAME}-android.aab
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android
+          path: artifacts/*
+
+  web:
+    name: Web
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Build Web
+        run: |
+          flutter pub get
+          flutter build web --debug
+          mkdir -p artifacts
+          tar -czf artifacts/${APP_NAME}-web.tar.gz -C build/web .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web
+          path: artifacts/*
+
+  linux:
+    name: Linux
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libasound2-dev
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Build Linux
+        run: |
+          flutter config --enable-linux-desktop
+          flutter pub get
+          flutter build linux --debug
+          mkdir -p artifacts
+          tar -czf artifacts/${APP_NAME}-linux-x64.tar.gz -C build/linux/x64/debug/bundle .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: artifacts/*
+
+  windows:
+    name: Windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Build Windows
+        shell: powershell
+        run: |
+          flutter config --enable-windows-desktop
+          flutter pub get
+          flutter build windows --debug
+          New-Item -ItemType Directory -Force artifacts | Out-Null
+          Compress-Archive -Path build\windows\x64\runner\debug\* -DestinationPath artifacts\${env:APP_NAME}-windows-x64.zip -Force
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: artifacts/*
+
+  apple:
+    name: macOS and iOS
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Build macOS and unsigned iOS
+        run: |
+          flutter config --enable-macos-desktop
+          flutter pub get
+          flutter build macos --debug
+          flutter build ios --debug --no-codesign
+          mkdir -p artifacts
+          MACOS_APP="$(find build/macos/Build/Products/debug -maxdepth 1 -name '*.app' -print -quit)"
+          if [ -z "$MACOS_APP" ]; then
+            echo "No macOS .app bundle found."
+            exit 1
+          fi
+          ditto -c -k --sequesterRsrc --keepParent "$MACOS_APP" artifacts/${APP_NAME}-macos.zip
+          ditto -c -k --sequesterRsrc --keepParent build/ios/iphoneos/Runner.app artifacts/${APP_NAME}-ios-unsigned.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apple
+          path: artifacts/*
+
