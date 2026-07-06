@@ -76,6 +76,8 @@ mixin HomeLogic on State<HomePage> {
   StreamSubscription<WsMessage>? _settingsSubscription;
   StreamSubscription<WsMessage>? _endSessionSubscription;
   bool _remoteTeleprompterRouteActive = false;
+  int _lastRemoteSessionRevision = -1;
+  bool _remoteLoadingDialogVisible = false;
 
   @override
   void initState() {
@@ -122,7 +124,46 @@ mixin HomeLogic on State<HomePage> {
 
   Future<void> _handleRemoteStartSession(WsMessage message) async {
     if (!mounted || !context.read<ConnectionProvider>().isRemote) return;
-    await _openRemoteTeleprompterSession(message);
+    _lastRemoteSessionRevision = _remoteSessionRevision(message) ?? -1;
+    _showRemoteSessionLoading();
+    try {
+      await _openRemoteTeleprompterSession(message);
+    } finally {
+      _hideRemoteSessionLoading();
+    }
+  }
+
+  void _showRemoteSessionLoading() {
+    if (_remoteLoadingDialogVisible || !mounted) return;
+    _remoteLoadingDialogVisible = true;
+    unawaited(
+      showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => const PopScope(
+          canPop: false,
+          child: AlertDialog(
+            title: Text('正在加载稿件'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('正在从服务端下载稿件数据...'),
+                SizedBox(height: 16),
+                LinearProgressIndicator(),
+              ],
+            ),
+          ),
+        ),
+      ).whenComplete(() => _remoteLoadingDialogVisible = false),
+    );
+  }
+
+  void _hideRemoteSessionLoading() {
+    if (!_remoteLoadingDialogVisible || !mounted) return;
+    final navigator = Navigator.of(context, rootNavigator: true);
+    if (navigator.canPop()) navigator.pop();
+    _remoteLoadingDialogVisible = false;
   }
 
   Future<void> _openRemoteTeleprompterSession(WsMessage message) async {
@@ -160,6 +201,7 @@ mixin HomeLogic on State<HomePage> {
     final sessionArticle = article.copyWith(
       teleprompterSettings: settingsOverride,
     );
+    _hideRemoteSessionLoading();
     await _showRemoteTeleprompter(sessionArticle);
   }
 
@@ -199,13 +241,19 @@ mixin HomeLogic on State<HomePage> {
 
   Future<void> _handleRemoteSync(WsMessage message) async {
     if (!mounted || !context.read<ConnectionProvider>().isRemote) return;
+    if (!_acceptRemoteSessionUpdate(message)) return;
 
     final articleId = message.data['articleId'] as String?;
     final teleprompterProvider = context.read<TeleprompterProvider>();
     if (articleId != null &&
         articleId.isNotEmpty &&
         teleprompterProvider.articleId != articleId) {
-      await _openRemoteTeleprompterSession(message);
+      _showRemoteSessionLoading();
+      try {
+        await _openRemoteTeleprompterSession(message);
+      } finally {
+        _hideRemoteSessionLoading();
+      }
       return;
     }
 
@@ -218,6 +266,7 @@ mixin HomeLogic on State<HomePage> {
 
   void _handleRemoteSettingsUpdate(WsMessage message) {
     if (!mounted || !context.read<ConnectionProvider>().isRemote) return;
+    if (!_acceptRemoteSessionUpdate(message)) return;
     final settings = Map<String, dynamic>.from(
       message.data['settings'] as Map? ?? const {},
     );
@@ -226,12 +275,26 @@ mixin HomeLogic on State<HomePage> {
 
   void _handleRemoteEndSession(WsMessage message) {
     if (!mounted || !context.read<ConnectionProvider>().isRemote) return;
+    if (!_acceptRemoteSessionUpdate(message)) return;
     context.read<TeleprompterProvider>().stopAll();
     context.read<SettingsProvider>().clearArticleOverrides();
     if (_remoteTeleprompterRouteActive && Navigator.of(context).canPop()) {
       Navigator.of(context).pop();
     }
     _remoteTeleprompterRouteActive = false;
+    _lastRemoteSessionRevision = -1;
+  }
+
+  int? _remoteSessionRevision(WsMessage message) {
+    return (message.data['revision'] as num?)?.toInt();
+  }
+
+  bool _acceptRemoteSessionUpdate(WsMessage message) {
+    final revision = _remoteSessionRevision(message);
+    if (revision == null) return true;
+    if (revision <= _lastRemoteSessionRevision) return false;
+    _lastRemoteSessionRevision = revision;
+    return true;
   }
 
   void onSearchChanged(String value) => setState(() => searchQuery = value);
@@ -432,6 +495,13 @@ mixin HomeLogic on State<HomePage> {
   bool get _canGoBack => _historyIndex > 0;
   bool get _canGoForward => _historyIndex < _history.length - 1;
 
+  void _resetBreadcrumbScroll() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_breadcrumbScrollController.hasClients) return;
+      _breadcrumbScrollController.jumpTo(0);
+    });
+  }
+
   void _navigateToFolder(String? folderId) {
     if (folderId == _currentFolderId) return;
     setState(() {
@@ -446,6 +516,7 @@ mixin HomeLogic on State<HomePage> {
       searchController.clear();
       searchQuery = '';
     });
+    _resetBreadcrumbScroll();
   }
 
   void _navigateUp() {
@@ -463,6 +534,7 @@ mixin HomeLogic on State<HomePage> {
       _currentFolderId = _history[_historyIndex];
       _selectedItems.clear();
     });
+    _resetBreadcrumbScroll();
   }
 
   void _navigateForward() {
@@ -472,6 +544,7 @@ mixin HomeLogic on State<HomePage> {
       _currentFolderId = _history[_historyIndex];
       _selectedItems.clear();
     });
+    _resetBreadcrumbScroll();
   }
 
   // ─── 项目交互 ────────────────────────────────────────
@@ -653,10 +726,13 @@ mixin HomeLogic on State<HomePage> {
 
   // ─── 右键菜单 ────────────────────────────────────────
   void _showContextMenu(TapUpDetails details, _ContentItem item) {
-    _showContextMenuAtPosition(details.globalPosition, item);
+    unawaited(_showContextMenuAtPosition(details.globalPosition, item));
   }
 
-  void _showContextMenuAtPosition(Offset globalPosition, _ContentItem item) {
+  Future<void> _showContextMenuAtPosition(
+    Offset globalPosition,
+    _ContentItem item,
+  ) async {
     if (!_selectedItems.contains(item.id)) {
       setState(() {
         _selectedItems.clear();
@@ -664,7 +740,7 @@ mixin HomeLogic on State<HomePage> {
       });
     }
 
-    showMenu<String>(
+    final value = await showMenu<String>(
       context: context,
       position: RelativeRect.fromLTRB(
         globalPosition.dx,
@@ -696,39 +772,39 @@ mixin HomeLogic on State<HomePage> {
           const PopupMenuItem<String>(value: 'delete', child: Text('删除')),
         ],
       ],
-    ).then((value) {
-      if (value == null) return;
-      switch (value) {
-        case 'open':
-          if (item.isFolder)
-            _navigateToFolder(item.id);
-          else if (item.article != null)
-            _openTeleprompter(context, item.article!);
-          break;
-        case 'edit':
-          if (item.article != null) _editArticle(context, item.article!);
-          break;
-        case 'rename':
-          _renameItemDialog(item);
-          break;
-        case 'cut':
-          _clipboardOp = _ClipboardOp.cut;
-          _clipboard.clear();
-          _clipboard.add(item);
-          break;
-        case 'copy':
-          _clipboardOp = _ClipboardOp.copy;
-          _clipboard.clear();
-          _clipboard.add(item);
-          break;
-        case 'delete':
-          _deleteItemDialog(item);
-          break;
-        case 'moveToFolder':
-          if (item.article != null) _moveToFolderDialog(item.article!);
-          break;
-      }
-    });
+    );
+    if (!mounted || value == null) return;
+    switch (value) {
+      case 'open':
+        if (item.isFolder) {
+          _navigateToFolder(item.id);
+        } else if (item.article != null) {
+          _openTeleprompter(context, item.article!);
+        }
+        break;
+      case 'edit':
+        if (item.article != null) _editArticle(context, item.article!);
+        break;
+      case 'rename':
+        _renameItemDialog(item);
+        break;
+      case 'cut':
+        _clipboardOp = _ClipboardOp.cut;
+        _clipboard.clear();
+        _clipboard.add(item);
+        break;
+      case 'copy':
+        _clipboardOp = _ClipboardOp.copy;
+        _clipboard.clear();
+        _clipboard.add(item);
+        break;
+      case 'delete':
+        _deleteItemDialog(item);
+        break;
+      case 'moveToFolder':
+        if (item.article != null) _moveToFolderDialog(item.article!);
+        break;
+    }
   }
 
   // ─── 文件夹操作 ───────────────────────────────────────
@@ -1081,44 +1157,79 @@ mixin HomeLogic on State<HomePage> {
     BuildContext context,
     ConnectionProvider connection,
   ) {
-    final hostController = TextEditingController(text: 'localhost');
-    final portController = TextEditingController(text: '8080');
+    final hostController = TextEditingController(
+      text: connection.isRemote ? (connection.remoteHost ?? '') : '',
+    );
+    final portController = TextEditingController(
+      text: connection.isRemote && connection.remotePort != null
+          ? '${connection.remotePort}'
+          : '',
+    );
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('连接到远程后端'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (connection.isConnected)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: Text(
-                  connection.connectionDetailText,
-                  style: const TextStyle(
-                    color: AppColors.textMuted,
-                    fontSize: 13,
-                    height: 1.35,
-                  ),
+        title: const Text('连接到远程服务端'),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                '注意：当前客户端需要和服务端处于同一内网下',
+                style: TextStyle(color: AppColors.textMuted, fontSize: 13),
+              ),
+              if (connection.remoteConnectionHistory.isNotEmpty) ...[
+                const SizedBox(height: 14),
+                const Text(
+                  '历史记录',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: connection.remoteConnectionHistory.map((record) {
+                    return ActionChip(
+                      label: Text(record.label),
+                      onPressed: () {
+                        hostController.text = record.host;
+                        portController.text = '${record.port}';
+                      },
+                    );
+                  }).toList(),
+                ),
+              ],
+              const SizedBox(height: 16),
+              TextField(
+                controller: hostController,
+                decoration: const InputDecoration(
+                  labelText: '服务端地址',
+                  hintText: '服务端连接信息中的任一本机IP',
                 ),
               ),
-            TextField(
-              controller: hostController,
-              decoration: const InputDecoration(
-                labelText: '服务器地址',
-                hintText: '192.168.1.100',
+              const SizedBox(height: 12),
+              TextField(
+                controller: portController,
+                decoration: const InputDecoration(
+                  labelText: '服务端端口号',
+                  hintText: '服务端连接信息中的端口号',
+                ),
+                keyboardType: TextInputType.number,
               ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: portController,
-              decoration: const InputDecoration(
-                labelText: '端口',
-                hintText: '8080',
-              ),
-              keyboardType: TextInputType.number,
-            ),
-          ],
+              if (connection.lastError != null &&
+                  connection.lastError!.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Text(
+                  connection.lastError!,
+                  style: const TextStyle(
+                    color: AppColors.error,
+                    fontSize: 12,
+                    height: 1.3,
+                  ),
+                ),
+              ],
+            ],
+          ),
         ),
         actions: [
           if (connection.isRemote)
@@ -1127,7 +1238,7 @@ mixin HomeLogic on State<HomePage> {
                 Navigator.pop(ctx);
                 await _disconnectRemoteAndRestoreLocal(connection);
               },
-              child: const Text('断开远程'),
+              child: const Text('断开服务端'),
             ),
           TextButton(
             onPressed: () => Navigator.pop(ctx),
@@ -1136,34 +1247,48 @@ mixin HomeLogic on State<HomePage> {
           ElevatedButton(
             onPressed: () async {
               final host = hostController.text.trim();
-              final port = int.tryParse(portController.text.trim()) ?? 8080;
+              final port = int.tryParse(portController.text.trim());
+              if (host.isEmpty || port == null || port <= 0) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('请输入有效的服务器地址和端口'),
+                    backgroundColor: AppColors.error,
+                  ),
+                );
+                return;
+              }
               Navigator.pop(ctx);
               if (!await _confirmLocalBackendShutdown(
                 context,
-                actionLabel: '切换到远程后端',
+                actionLabel: '切换服务端',
               )) {
                 return;
               }
+              if (!context.mounted) return;
+              final articleProvider = context.read<ArticleProvider>();
+              final folderProvider = context.read<FolderProvider>();
+              final messenger = ScaffoldMessenger.of(context);
               try {
                 await connection.connectToRemote(host, port);
                 if (mounted) {
-                  context.read<ArticleProvider>().loadArticles();
-                  context.read<FolderProvider>().loadFolders();
-                  ScaffoldMessenger.of(context).showSnackBar(
+                  articleProvider.loadArticles();
+                  folderProvider.loadFolders();
+                  messenger.showSnackBar(
                     SnackBar(
-                      content: Text('已连接到 $host:$port'),
+                      content: Text('已连接服务端 $host:$port'),
                       backgroundColor: AppColors.success,
                     ),
                   );
                 }
               } catch (e) {
-                if (mounted)
-                  ScaffoldMessenger.of(context).showSnackBar(
+                if (mounted) {
+                  messenger.showSnackBar(
                     SnackBar(
-                      content: Text('连接失败: $e'),
+                      content: Text('连接服务端失败: $e'),
                       backgroundColor: AppColors.error,
                     ),
                   );
+                }
               }
             },
             child: const Text('连接'),
@@ -1185,14 +1310,14 @@ mixin HomeLogic on State<HomePage> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('已启动并连接本地后端'),
+          content: Text('已启动本机服务'),
           backgroundColor: AppColors.success,
         ),
       );
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(connection.lastError ?? '本地后端连接失败'),
+          content: Text(connection.lastError ?? '本机服务连接失败'),
           backgroundColor: AppColors.error,
         ),
       );
@@ -1345,10 +1470,12 @@ mixin HomeLogic on State<HomePage> {
   // ─── 多客户端警告 ────────────────────────────────────
   Future<void> _checkMultiClientBeforeExit(BuildContext context) async {
     if (!mounted) return;
-    if (await _confirmLocalBackendShutdown(context, actionLabel: '退出主端') &&
-        mounted) {
-      Navigator.pop(context);
-    }
+    final shouldExit = await _confirmLocalBackendShutdown(
+      context,
+      actionLabel: '退出服务端',
+    );
+    if (!mounted || !context.mounted || !shouldExit) return;
+    Navigator.pop(context);
   }
 
   Future<bool> _confirmLocalBackendShutdown(
@@ -1371,7 +1498,7 @@ mixin HomeLogic on State<HomePage> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('检测到有外部设备正在连接到本机后端。继续操作会中断从端提词。'),
+                const Text('检测到有其他客户端连接到本机服务端。继续操作会中断客户端提词。'),
                 const SizedBox(height: 8),
                 Text(
                   '当前连接数: $clientCount',
@@ -1385,7 +1512,7 @@ mixin HomeLogic on State<HomePage> {
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('保留运行'),
+                child: const Text('继续运行'),
               ),
               TextButton(
                 onPressed: () => Navigator.pop(ctx, true),

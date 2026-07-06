@@ -27,7 +27,7 @@ class ArticleProvider with ChangeNotifier {
     _connectionListener = () {
       if (!connection.isConnected) {
         _articles = [];
-        _error = '后端未连接';
+        _error = '服务端未连接';
         notifyListeners();
       }
     };
@@ -210,7 +210,7 @@ class ArticleProvider with ChangeNotifier {
     bool forceRefresh = false,
   }) async {
     if (_connection == null || !_connection!.isConnected) {
-      _error = '后端未连接';
+      _error = '服务端未连接';
       notifyListeners();
       return null;
     }

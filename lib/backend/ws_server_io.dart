@@ -43,7 +43,11 @@ class WsServer {
     }
 
     try {
-      _server = await HttpServer.bind(InternetAddress.loopbackIPv4, port);
+      _server = await HttpServer.bind(
+        InternetAddress.anyIPv4,
+        port,
+        shared: true,
+      );
       _port = _server!.port;
 
       debugPrint('[WsServer] WebSocket 服务器已启动，端口: $_port');
@@ -98,6 +102,7 @@ class WsServer {
   /// 处理新客户端连接
   void _handleNewClient(WebSocket ws) {
     final clientId = 'client_${DateTime.now().microsecondsSinceEpoch}';
+    ws.pingInterval = const Duration(seconds: 10);
     _clients[clientId] = ws;
 
     debugPrint('[WsServer] 新客户端连接: $clientId (总数: ${_clients.length})');

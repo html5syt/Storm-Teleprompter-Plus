@@ -20,10 +20,14 @@ class TeleprompterSettingsPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final panelWidth = MediaQuery.sizeOf(context).width < 340
+        ? MediaQuery.sizeOf(context).width
+        : 340.0;
+
     return GestureDetector(
       onTap: () {},
       child: Container(
-        width: 340,
+        width: panelWidth,
         color: AppColors.surface,
         child: Consumer<SettingsProvider>(
           builder: (context, provider, _) {

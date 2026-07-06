@@ -60,8 +60,8 @@ mixin TeleprompterPageLogic<T extends StatefulWidget>
       windowManager.removeListener(_windowListener!);
     }
     // 退出时若为全屏则退出，但需避免在 dispose 中调用 setState
-    if (isFullScreen && mounted) {
-      exitFullScreen();
+    if (isFullScreen) {
+      unawaited(exitFullScreen(updateState: false));
     }
     // 保存稿件覆盖设置到稿件
     _saveArticleOverrides();
@@ -147,7 +147,7 @@ mixin TeleprompterPageLogic<T extends StatefulWidget>
 
   Future<void> enterFullScreen() async {
     if (isFullScreen) return;
-    setState(() => isFullScreen = true);
+    if (mounted) setState(() => isFullScreen = true);
 
     if (_isDesktop) {
       try {
@@ -166,18 +166,21 @@ mixin TeleprompterPageLogic<T extends StatefulWidget>
         } catch (_) {}
       }
     } else if (!kIsWeb) {
-      SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-      SystemChrome.setPreferredOrientations([
+      await SystemChrome.setPreferredOrientations([
         DeviceOrientation.landscapeLeft,
         DeviceOrientation.landscapeRight,
-        DeviceOrientation.portraitUp,
       ]);
+      await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     }
   }
 
-  Future<void> exitFullScreen() async {
-    if (!isFullScreen) return;
-    setState(() => isFullScreen = false);
+  Future<void> exitFullScreen({bool updateState = true}) async {
+    if (!isFullScreen && updateState) return;
+    if (updateState && mounted) {
+      setState(() => isFullScreen = false);
+    } else {
+      isFullScreen = false;
+    }
 
     if (_isDesktop) {
       try {
@@ -188,8 +191,11 @@ mixin TeleprompterPageLogic<T extends StatefulWidget>
         debugPrint('[FullScreen] 退出全屏失败: $e');
       }
     } else if (!kIsWeb) {
-      SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-      SystemChrome.setPreferredOrientations(DeviceOrientation.values);
+      await SystemChrome.setPreferredOrientations(DeviceOrientation.values);
+      await SystemChrome.setEnabledSystemUIMode(
+        SystemUiMode.manual,
+        overlays: SystemUiOverlay.values,
+      );
     }
   }
 

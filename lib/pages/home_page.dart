@@ -85,7 +85,7 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
   }
 
   Future<void> _handleWindowClose() async {
-    if (await _confirmLocalBackendShutdown(context, actionLabel: '关闭主端')) {
+    if (await _confirmLocalBackendShutdown(context, actionLabel: '关闭服务端')) {
       await windowManager.destroy();
     }
   }
@@ -182,38 +182,54 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
     BuildContext context,
     ConnectionProvider connection,
   ) {
+    final isNarrow = MediaQuery.sizeOf(context).width < 600;
+
     return AppBar(
       leadingWidth: 120,
-      leading: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          IconButton(
-            icon: const Icon(Icons.arrow_back, size: 18),
-            onPressed: _canGoBack ? _navigateBack : null,
-            tooltip: '后退',
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-          ),
-          IconButton(
-            icon: const Icon(Icons.arrow_forward, size: 18),
-            onPressed: _canGoForward ? _navigateForward : null,
-            tooltip: '前进',
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-          ),
-          IconButton(
-            icon: const Icon(Icons.arrow_upward, size: 18),
-            onPressed: _currentFolderId != null ? _navigateUp : null,
-            tooltip: '上级',
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-          ),
-        ],
+      leading: SizedBox(
+        width: 120,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              icon: const Icon(Icons.arrow_back, size: 18),
+              onPressed: _canGoBack ? _navigateBack : null,
+              tooltip: '后退',
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints.tightFor(width: 40, height: 40),
+              style: IconButton.styleFrom(
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.arrow_forward, size: 18),
+              onPressed: _canGoForward ? _navigateForward : null,
+              tooltip: '前进',
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints.tightFor(width: 40, height: 40),
+              style: IconButton.styleFrom(
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.arrow_upward, size: 18),
+              onPressed: _currentFolderId != null ? _navigateUp : null,
+              tooltip: '上级',
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints.tightFor(width: 40, height: 40),
+              style: IconButton.styleFrom(
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+            ),
+          ],
+        ),
       ),
-      title: const Text(
-        '飓风提词器',
-        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-      ),
+      title: isNarrow
+          ? null
+          : const Text(
+              '飓风提词器',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+            ),
       titleSpacing: 0,
       actions: [
         // 排序
@@ -234,6 +250,9 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
         ),
         // 连接状态
         PopupMenuButton<String>(
+          onOpened: () {
+            if (connection.isLocal) unawaited(connection.refreshLocalLanIps());
+          },
           icon: Icon(
             connection.isRemote
                 ? Icons.cloud_done
@@ -245,7 +264,7 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
                 ? (connection.isRemote ? AppColors.info : AppColors.success)
                 : AppColors.textMuted,
           ),
-          tooltip: '连接信息',
+          tooltip: '服务连接',
           onSelected: (value) async {
             if (value == 'remote') {
               _showRemoteConnectDialog(context, connection);
@@ -256,19 +275,22 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
           itemBuilder: (context) => [
             PopupMenuItem(
               enabled: false,
-              child: Text(
-                connection.connectionDetailText,
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: AppColors.textMuted,
-                  height: 1.35,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 300),
+                child: SelectableText(
+                  connection.connectionDetailText,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textMuted,
+                    height: 1.45,
+                  ),
                 ),
               ),
             ),
             const PopupMenuDivider(),
-            const PopupMenuItem(value: 'remote', child: Text('连接到远程后端')),
+            const PopupMenuItem(value: 'remote', child: Text('连接服务端')),
             if (connection.isRemote)
-              const PopupMenuItem(value: 'disconnect', child: Text('断开远程连接')),
+              const PopupMenuItem(value: 'disconnect', child: Text('断开服务端')),
           ],
         ),
         IconButton(
@@ -300,59 +322,74 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
           bottom: BorderSide(color: AppColors.border.withValues(alpha: 0.5)),
         ),
       ),
-      child: Row(
-        children: [
-          // 根目录入口
-          GestureDetector(
-            onTap: isRoot ? null : () => _navigateToFolder(null),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.home,
-                    size: 14,
-                    color: isRoot ? AppColors.primary : AppColors.textSecondary,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    '稿件',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: isRoot ? FontWeight.w600 : FontWeight.normal,
-                      color: isRoot
-                          ? AppColors.primary
-                          : AppColors.textSecondary,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          // 路径段
-          for (int i = 0; i < breadcrumb.length; i++) ...[
-            Icon(Icons.chevron_right, size: 14, color: AppColors.textDisabled),
-            GestureDetector(
-              onTap: () => _navigateToFolder(breadcrumb[i].id),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                child: Text(
-                  breadcrumb[i].name,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: i == breadcrumb.length - 1
-                        ? FontWeight.w600
-                        : FontWeight.normal,
-                    color: i == breadcrumb.length - 1
-                        ? AppColors.primary
-                        : AppColors.textSecondary,
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: SingleChildScrollView(
+          controller: _breadcrumbScrollController,
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: [
+              // 根目录入口
+              GestureDetector(
+                onTap: isRoot ? null : () => _navigateToFolder(null),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.home,
+                        size: 14,
+                        color: isRoot
+                            ? AppColors.primary
+                            : AppColors.textSecondary,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        '稿件',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: isRoot
+                              ? FontWeight.w600
+                              : FontWeight.normal,
+                          color: isRoot
+                              ? AppColors.primary
+                              : AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
-            ),
-          ],
-        ],
+              // 路径段
+              for (int i = 0; i < breadcrumb.length; i++) ...[
+                Icon(
+                  Icons.chevron_right,
+                  size: 14,
+                  color: AppColors.textDisabled,
+                ),
+                GestureDetector(
+                  onTap: () => _navigateToFolder(breadcrumb[i].id),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    child: Text(
+                      breadcrumb[i].name,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: i == breadcrumb.length - 1
+                            ? FontWeight.w600
+                            : FontWeight.normal,
+                        color: i == breadcrumb.length - 1
+                            ? AppColors.primary
+                            : AppColors.textSecondary,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -458,8 +495,9 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
         final sortedFolders = _sortFolders(subFolders);
         final sortedArticles = _sortArticles(allArticles);
 
-        if (sortedFolders.isEmpty && sortedArticles.isEmpty)
+        if (sortedFolders.isEmpty && sortedArticles.isEmpty) {
           return _buildEmptyState();
+        }
 
         final items = <_ContentItem>[
           ...sortedFolders.map((f) => _ContentItem.folder(f)),
@@ -475,89 +513,100 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
 
   Widget _buildEmptyState() {
     return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.folder_open,
-            size: 80,
-            color: AppColors.textMuted.withValues(alpha: 0.3),
-          ),
-          const SizedBox(height: 20),
-          Text(
-            searchQuery.isNotEmpty ? '没有找到匹配的项目' : '此文件夹为空',
-            style: const TextStyle(fontSize: 18, color: AppColors.textMuted),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            '点击工具栏新建稿件或文件夹',
-            style: TextStyle(fontSize: 13, color: AppColors.textDisabled),
-          ),
-        ],
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.folder_open,
+              size: 80,
+              color: AppColors.textMuted.withValues(alpha: 0.3),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              searchQuery.isNotEmpty ? '没有找到匹配的项目' : '此文件夹为空',
+              style: const TextStyle(fontSize: 18, color: AppColors.textMuted),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              '点击工具栏新建稿件或文件夹',
+              style: TextStyle(fontSize: 13, color: AppColors.textDisabled),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildRemotePlaceholder(ConnectionProvider connection) {
     return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.cloud_done,
-            size: 64,
-            color: AppColors.info.withValues(alpha: 0.7),
-          ),
-          const SizedBox(height: 16),
-          const Text(
-            '远程后端模式',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            connection.connectionDetailText,
-            textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 13, color: AppColors.textMuted),
-          ),
-          const SizedBox(height: 24),
-          ElevatedButton.icon(
-            onPressed: () => _disconnectRemoteAndRestoreLocal(connection),
-            icon: const Icon(Icons.cloud_off),
-            label: const Text('断开连接'),
-          ),
-        ],
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.cloud_done,
+              size: 64,
+              color: AppColors.info.withValues(alpha: 0.7),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              '已连接服务端',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              connection.connectionDetailText,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 13, color: AppColors.textMuted),
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton.icon(
+              onPressed: () => _disconnectRemoteAndRestoreLocal(connection),
+              icon: const Icon(Icons.cloud_off),
+              label: const Text('断开服务端'),
+            ),
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildDisconnectedPlaceholder(ConnectionProvider connection) {
     return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.cloud_off,
-            size: 64,
-            color: AppColors.warning.withValues(alpha: 0.75),
-          ),
-          const SizedBox(height: 16),
-          const Text(
-            '未连接到后端',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            connection.connectionDetailText,
-            textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 13, color: AppColors.textMuted),
-          ),
-          const SizedBox(height: 24),
-          ElevatedButton.icon(
-            onPressed: () => _restoreLocalBackend(connection),
-            icon: const Icon(Icons.restart_alt),
-            label: const Text('启动并连接本地后端'),
-          ),
-        ],
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.cloud_off,
+              size: 64,
+              color: AppColors.warning.withValues(alpha: 0.75),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              '未连接服务端',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              connection.connectionDetailText,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 13, color: AppColors.textMuted),
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton.icon(
+              onPressed: () => _restoreLocalBackend(connection),
+              icon: const Icon(Icons.restart_alt),
+              label: const Text('启动本机服务'),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -581,7 +630,7 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
                 padding * 2 -
                 (crossAxisCount - 1) * spacing) /
             crossAxisCount;
-        final itemHeight = compact ? 110.0 : itemWidth * 1.16;
+        final itemHeight = compact ? 118.0 : itemWidth * 1.16;
 
         return Listener(
           behavior: HitTestBehavior.translucent,
@@ -842,7 +891,7 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
               ? Border.all(color: AppColors.primary, width: 2)
               : Border.all(color: AppColors.border.withValues(alpha: 0.3)),
         ),
-        padding: EdgeInsets.all(compact ? 8 : 12),
+        padding: EdgeInsets.all(compact ? 6 : 12),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
@@ -901,7 +950,7 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
     return ListView.separated(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
       itemCount: items.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 1),
+      separatorBuilder: (_, _) => const SizedBox(height: 1),
       itemBuilder: (context, index) {
         final item = items[index];
         final isSelected = _selectedItems.contains(item.id);
@@ -1027,7 +1076,7 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
           child: ListView.separated(
             padding: const EdgeInsets.symmetric(horizontal: 8),
             itemCount: items.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 1),
+            separatorBuilder: (_, _) => const SizedBox(height: 1),
             itemBuilder: (context, index) {
               final item = items[index];
               final isSelected = _selectedItems.contains(item.id);
@@ -1126,68 +1175,70 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
     showModalBottomSheet(
       context: context,
       builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (!connection.isRemote) ...[
-              ListTile(
-                leading: const Icon(Icons.note_add),
-                title: const Text('新建稿件'),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _createArticle(context);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.create_new_folder),
-                title: const Text('新建文件夹'),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _createFolderDialog(context);
-                },
-              ),
-            ],
-            if (_selectedItems.isNotEmpty) ...[
-              const Divider(),
-              if (_selectedItems.length == 1)
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (!connection.isRemote) ...[
                 ListTile(
-                  leading: const Icon(Icons.edit),
-                  title: const Text('重命名'),
+                  leading: const Icon(Icons.note_add),
+                  title: const Text('新建稿件'),
                   onTap: () {
                     Navigator.pop(ctx);
-                    _renameSelected();
+                    _createArticle(context);
                   },
                 ),
-              ListTile(
-                leading: const Icon(Icons.delete, color: AppColors.error),
-                title: const Text(
-                  '删除',
-                  style: TextStyle(color: AppColors.error),
+                ListTile(
+                  leading: const Icon(Icons.create_new_folder),
+                  title: const Text('新建文件夹'),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _createFolderDialog(context);
+                  },
                 ),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _deleteSelected();
-                },
-              ),
-            ],
-            if (_clipboard.isNotEmpty) ...[
+              ],
+              if (_selectedItems.isNotEmpty) ...[
+                const Divider(),
+                if (_selectedItems.length == 1)
+                  ListTile(
+                    leading: const Icon(Icons.edit),
+                    title: const Text('重命名'),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _renameSelected();
+                    },
+                  ),
+                ListTile(
+                  leading: const Icon(Icons.delete, color: AppColors.error),
+                  title: const Text(
+                    '删除',
+                    style: TextStyle(color: AppColors.error),
+                  ),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _deleteSelected();
+                  },
+                ),
+              ],
+              if (_clipboard.isNotEmpty) ...[
+                const Divider(),
+                ListTile(
+                  leading: const Icon(Icons.content_paste),
+                  title: const Text('粘贴'),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _pasteItems();
+                  },
+                ),
+              ],
               const Divider(),
               ListTile(
-                leading: const Icon(Icons.content_paste),
-                title: const Text('粘贴'),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _pasteItems();
-                },
+                leading: const Icon(Icons.close),
+                title: const Text('取消'),
+                onTap: () => Navigator.pop(ctx),
               ),
             ],
-            const Divider(),
-            ListTile(
-              leading: const Icon(Icons.close),
-              title: const Text('取消'),
-              onTap: () => Navigator.pop(ctx),
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -1238,15 +1289,22 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
                   ),
                 ),
               ],
-              const Spacer(),
+              const SizedBox(width: 8),
               if (folderName.isNotEmpty)
-                Text(
-                  '正在查看: $folderName',
-                  style: const TextStyle(
-                    fontSize: 11,
-                    color: AppColors.textDisabled,
+                Expanded(
+                  child: Text(
+                    '正在查看: $folderName',
+                    textAlign: TextAlign.right,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: AppColors.textDisabled,
+                    ),
                   ),
-                ),
+                )
+              else
+                const Spacer(),
             ],
           ),
         );

@@ -150,21 +150,39 @@ class TeleprompterProvider with ChangeNotifier {
   }
 
   /// 同步当前状态到后端
-  void _syncToBackend() {
+  void _syncToBackend({bool reliable = false}) {
     if (_connection == null ||
         !_connection!.isConnected ||
         !_connection!.isLocal) {
       return;
     }
+    final data = {
+      'currentIndex': _currentIndex,
+      'isPlaying': isPlaying,
+      'articleId': _articleId,
+    };
+    if (reliable) {
+      unawaited(
+        _connection!
+            .request(
+              WsMessageType.teleprompterSync,
+              data: data,
+              timeout: const Duration(milliseconds: 900),
+            )
+            .then<void>(
+              (_) {},
+              onError: (Object error, StackTrace stackTrace) {
+                debugPrint('[TeleprompterProvider] 可靠同步失败: $error');
+                _connection!.send(
+                  WsMessage(type: WsMessageType.teleprompterSync, data: data),
+                );
+              },
+            ),
+      );
+      return;
+    }
     _connection!.send(
-      WsMessage(
-        type: WsMessageType.teleprompterSync,
-        data: {
-          'currentIndex': _currentIndex,
-          'isPlaying': isPlaying,
-          'articleId': _articleId,
-        },
-      ),
+      WsMessage(type: WsMessageType.teleprompterSync, data: data),
     );
   }
 
@@ -246,7 +264,7 @@ class TeleprompterProvider with ChangeNotifier {
     _startAutoScrollIfNeeded(settings);
     _startAsrIfNeeded(settings);
     _scheduleHideControls(settings);
-    _syncToBackend();
+    _syncToBackend(reliable: true);
     notifyListeners();
   }
 
@@ -261,7 +279,7 @@ class TeleprompterProvider with ChangeNotifier {
     _stopAsr();
     _cancelHideControls();
     _controlsVisible = true;
-    _syncToBackend();
+    _syncToBackend(reliable: true);
     notifyListeners();
   }
 
@@ -428,12 +446,13 @@ class TeleprompterProvider with ChangeNotifier {
                 .toInt();
 
         if (nextOrdinal >= _totalChars - 1) {
-          // 播完后回到开头并停止（与原版行为一致）
-          _currentIndex = -1;
-          _state = TeleprompterState.paused;
+          _currentIndex = _rawIndexAtOrdinal(_totalChars - 1);
+          if (_playStartTime != null) {
+            _elapsedBeforePause += DateTime.now().difference(_playStartTime!);
+          }
+          _state = TeleprompterState.completed;
           _stopAutoScroll();
           _playStartTime = null;
-          _elapsedBeforePause = Duration.zero;
           _syncToBackend();
           notifyListeners();
           return;

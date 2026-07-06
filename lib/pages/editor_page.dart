@@ -86,6 +86,10 @@ class _EditorPageState extends State<EditorPage> with EditorLogic {
         ),
         body: CallbackShortcuts(
           bindings: {
+            const SingleActivator(LogicalKeyboardKey.escape): () {
+              flushAutosave();
+              unawaited(Navigator.maybePop(context));
+            },
             const SingleActivator(
               LogicalKeyboardKey.keyS,
               control: true,

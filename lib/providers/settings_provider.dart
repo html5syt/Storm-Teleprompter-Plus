@@ -36,7 +36,7 @@ class SettingsProvider with ChangeNotifier {
     }
     _connection = connection;
     _connectionListener = () {
-      if (!connection.isConnected) {
+      if (!connection.isConnected && !connection.canRetryRemoteConnection) {
         _articleOverrides = {};
         _isLoading = false;
         notifyListeners();

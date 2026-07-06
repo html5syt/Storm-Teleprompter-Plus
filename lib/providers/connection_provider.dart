@@ -1,8 +1,11 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../backend/backend_server.dart';
 import '../backend/ws_protocol.dart';
 import '../frontend/ws_client.dart';
+import '../services/network_info_service.dart';
 
 /// 连接模式
 enum ConnectionMode {
@@ -22,6 +25,7 @@ enum ConnectionMode {
 /// 前端默认连接到程序自身创建的后端。
 /// 改连接到远程后端时，停止本机持有的后端实例。
 class ConnectionProvider with ChangeNotifier {
+  static const _historyPrefsKey = 'remote_connection_history';
   final WsClient client = WsClient();
 
   ConnectionMode _mode = ConnectionMode.disconnected;
@@ -29,12 +33,15 @@ class ConnectionProvider with ChangeNotifier {
   int? _remotePort;
   int _deviceCount = 0;
   List<String> _deviceIds = [];
+  List<String> _localLanIps = [];
+  List<RemoteConnectionRecord> _remoteConnectionHistory = [];
   String? _lastError;
   StreamSubscription? _messageSubscription;
   BackendServer? _localBackend;
 
   ConnectionProvider() {
     client.onDisconnected = _handleClientDisconnected;
+    unawaited(_loadRemoteConnectionHistory());
   }
 
   ConnectionMode get mode => _mode;
@@ -51,47 +58,130 @@ class ConnectionProvider with ChangeNotifier {
 
   String? get lastError => _lastError;
   String? get clientId => client.clientId;
+  String? get remoteHost => _remoteHost;
+  int? get remotePort => _remotePort;
+  List<String> get localLanIps => List.unmodifiable(_localLanIps);
+  List<RemoteConnectionRecord> get remoteConnectionHistory =>
+      List.unmodifiable(_remoteConnectionHistory);
+  List<String> get localServerUrls {
+    final port = _remotePort;
+    if (port == null || _localLanIps.isEmpty) return const [];
+    return _localLanIps.map((ip) => 'ws://$ip:$port').toList(growable: false);
+  }
+
+  String get roleText {
+    switch (_mode) {
+      case ConnectionMode.disconnected:
+        return '未连接';
+      case ConnectionMode.local:
+        return remoteDeviceIds.isEmpty ? '本机服务端 + 本机客户端' : '服务端 + 本机客户端';
+      case ConnectionMode.remote:
+        return '客户端（连接服务端）';
+    }
+  }
 
   void bindLocalBackend(BackendServer backend) {
     _localBackend = backend;
   }
 
-  /// 获取连接信息文本
-  String get connectionInfoText {
+  Future<void> refreshLocalLanIps() async {
+    await _loadLocalLanIps();
+    notifyListeners();
+  }
+
+  Future<void> _loadLocalLanIps() async {
+    try {
+      _localLanIps = await getLocalLanIPv4Addresses();
+    } catch (e) {
+      _localLanIps = [];
+      debugPrint('[ConnectionProvider] 获取局域网 IP 失败: $e');
+    }
+  }
+
+  String get connectionTypeText {
     switch (_mode) {
       case ConnectionMode.disconnected:
         return '未连接';
       case ConnectionMode.local:
-        return '本地后端 (端口: ${_remotePort ?? "?"})';
+        return '本地';
       case ConnectionMode.remote:
-        return '远程后端 ($_remoteHost:$_remotePort)';
+        return '远程';
     }
   }
 
+  /// 获取连接信息文本
+  String get connectionInfoText =>
+      connectionTypeText == '未连接' ? '未连接服务端' : '服务端连接信息';
+
   String get connectionDetailText {
     final lines = <String>[
-      connectionInfoText,
-      '状态: ${isConnected ? "已连接" : "未连接"}',
+      '服务端连接信息',
+      '连接类型：$connectionTypeText',
+      '本机IP：${_localLanIps.isEmpty ? "未检测到" : _localLanIps.join(", ")}',
+      '端口号：${_mode == ConnectionMode.local ? (_remotePort ?? "-") : "-"}',
     ];
-    if (_remoteHost != null && _remotePort != null) {
-      lines.add('地址: ws://$_remoteHost:$_remotePort');
-    }
-    if (clientId != null && clientId!.isNotEmpty) {
-      lines.add('客户端 ID: $clientId');
+    if (_mode == ConnectionMode.remote && _remoteHost != null) {
+      lines.add('远程IP：$_remoteHost');
+      lines.add('远程端口号：${_remotePort ?? "-"}');
     }
     if (_mode == ConnectionMode.local) {
-      lines.add('角色: 本地后端拥有者 / 主控客户端');
-      lines.add('远程客户端数: ${remoteDeviceIds.length}');
-      if (remoteDeviceIds.isNotEmpty) {
-        lines.add('传入连接 ID: ${remoteDeviceIds.join(", ")}');
-      }
-    } else if (_mode == ConnectionMode.remote) {
-      lines.add('角色: 远程子客户端');
+      lines.add('已连接客户端：$_deviceCount');
     }
     if (_lastError != null && _lastError!.isNotEmpty) {
-      lines.add('最近错误: $_lastError');
+      lines.add('最近错误：$_lastError');
     }
     return lines.join('\n');
+  }
+
+  bool get canRetryRemoteConnection =>
+      _mode == ConnectionMode.disconnected &&
+      _remoteHost != null &&
+      _remotePort != null;
+
+  Future<void> _loadRemoteConnectionHistory() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_historyPrefsKey);
+      if (raw == null || raw.isEmpty) return;
+      final list = jsonDecode(raw) as List<dynamic>;
+      _remoteConnectionHistory = list
+          .map(
+            (item) => RemoteConnectionRecord.fromJson(
+              Map<String, dynamic>.from(item as Map),
+            ),
+          )
+          .where((record) => record.host.isNotEmpty && record.port > 0)
+          .toList(growable: false);
+      notifyListeners();
+    } catch (e) {
+      debugPrint('[ConnectionProvider] 加载连接历史失败: $e');
+    }
+  }
+
+  Future<void> _saveRemoteConnectionHistory() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      _historyPrefsKey,
+      jsonEncode(
+        _remoteConnectionHistory.map((item) => item.toJson()).toList(),
+      ),
+    );
+  }
+
+  Future<void> _rememberRemoteConnection(String host, int port) async {
+    final normalizedHost = host.trim();
+    _remoteConnectionHistory = [
+      RemoteConnectionRecord(
+        host: normalizedHost,
+        port: port,
+        updatedAt: DateTime.now(),
+      ),
+      ..._remoteConnectionHistory.where(
+        (item) => item.host != normalizedHost || item.port != port,
+      ),
+    ].take(8).toList(growable: false);
+    notifyListeners();
+    await _saveRemoteConnectionHistory();
   }
 
   /// 初始化：连接到本地后端
@@ -105,9 +195,10 @@ class ConnectionProvider with ChangeNotifier {
       _lastError = null;
       _setupMessageListener();
       notifyListeners();
-      debugPrint('[ConnectionProvider] 已连接到本地后端，端口: $port');
+      unawaited(refreshLocalLanIps());
+      debugPrint('[ConnectionProvider] 已连接到本机服务端，端口: $port');
     } catch (e) {
-      _lastError = '连接本地后端失败: $e';
+      _lastError = '连接本机服务端失败: $e';
       notifyListeners();
     }
   }
@@ -116,7 +207,7 @@ class ConnectionProvider with ChangeNotifier {
     final backend = _localBackend;
     if (backend == null) {
       _mode = ConnectionMode.disconnected;
-      _lastError = '未绑定本地后端实例';
+      _lastError = '未绑定本机服务端实例';
       notifyListeners();
       return;
     }
@@ -128,7 +219,7 @@ class ConnectionProvider with ChangeNotifier {
       await connectToLocal(backend.port);
     } catch (e) {
       _mode = ConnectionMode.disconnected;
-      _lastError = '启动并连接本地后端失败: $e';
+      _lastError = '启动并连接本机服务端失败: $e';
       notifyListeners();
     }
   }
@@ -148,13 +239,15 @@ class ConnectionProvider with ChangeNotifier {
       _lastError = null;
       _setupMessageListener();
       notifyListeners();
-      debugPrint('[ConnectionProvider] 已连接到远程后端: $host:$port');
+      unawaited(refreshLocalLanIps());
+      unawaited(_rememberRemoteConnection(host, port));
+      debugPrint('[ConnectionProvider] 已连接到服务端: $host:$port');
     } catch (e) {
-      _lastError = '连接远程后端失败: $e';
+      _lastError = '连接服务端失败: $e';
       _mode = ConnectionMode.disconnected;
       if (hadLocalBackend) {
         await connectToBundledLocal();
-        _lastError = '连接远程后端失败，已恢复本地后端: $e';
+        _lastError = '连接服务端失败，已恢复本机服务端: $e';
       }
       notifyListeners();
       rethrow;
@@ -170,6 +263,7 @@ class ConnectionProvider with ChangeNotifier {
     _remotePort = null;
     _deviceCount = 0;
     _deviceIds = [];
+    _localLanIps = [];
     notifyListeners();
   }
 
@@ -204,7 +298,8 @@ class ConnectionProvider with ChangeNotifier {
     _mode = ConnectionMode.disconnected;
     _deviceCount = 0;
     _deviceIds = [];
-    _lastError ??= '后端连接已断开';
+    _localLanIps = [];
+    _lastError ??= '服务端连接已断开';
     notifyListeners();
   }
 
@@ -233,4 +328,36 @@ class ConnectionProvider with ChangeNotifier {
     client.dispose();
     super.dispose();
   }
+}
+
+class RemoteConnectionRecord {
+  final String host;
+  final int port;
+  final DateTime updatedAt;
+
+  const RemoteConnectionRecord({
+    required this.host,
+    required this.port,
+    required this.updatedAt,
+  });
+
+  factory RemoteConnectionRecord.fromJson(Map<String, dynamic> json) {
+    return RemoteConnectionRecord(
+      host: json['host'] as String? ?? '',
+      port: (json['port'] as num?)?.toInt() ?? 0,
+      updatedAt:
+          DateTime.tryParse(json['updatedAt'] as String? ?? '') ??
+          DateTime.fromMillisecondsSinceEpoch(0),
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'host': host,
+      'port': port,
+      'updatedAt': updatedAt.toIso8601String(),
+    };
+  }
+
+  String get label => '$host:$port';
 }

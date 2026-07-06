@@ -66,6 +66,7 @@ class TeleprompterTextLayer extends StatefulWidget {
   final bool mirrorMode;
   final double paddingX;
   final double readingLineOffset;
+  final bool autoFollow;
   final ScrollPhysics? physics;
   final void Function(int rawIndex)? onCharTap;
   final void Function(int rawIndex)? onReadingLineChanged;
@@ -86,6 +87,7 @@ class TeleprompterTextLayer extends StatefulWidget {
     required this.fontSize,
     required this.lineHeight,
     required this.mirrorMode,
+    this.autoFollow = false,
     this.paddingX = 5.0,
     this.readingLineOffset = 0.5,
     this.physics,
@@ -148,7 +150,11 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer> {
           metricsChanged) {
         _lastScrolledToIndex = widget.currentIndex;
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) _scrollToCurrentChar(animate: !metricsChanged);
+          if (mounted) {
+            _scrollToCurrentChar(
+              animate: !metricsChanged && !widget.autoFollow,
+            );
+          }
         });
       }
     }
@@ -426,6 +432,10 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer> {
     );
   }
 
+  void scrollToCurrentChar({bool animate = true}) {
+    _scrollToCurrentChar(animate: animate);
+  }
+
   void _animateToOffset(double targetOffset, Duration duration) {
     if (!widget.scrollController.hasClients) return;
 
@@ -497,7 +507,7 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer> {
             .toDouble();
 
     if (animate) {
-      _animateToOffset(targetOffset, const Duration(milliseconds: 120));
+      _animateToOffset(targetOffset, const Duration(milliseconds: 190));
     } else {
       _jumpToOffset(targetOffset);
     }

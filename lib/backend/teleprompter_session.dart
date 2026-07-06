@@ -23,6 +23,9 @@ class TeleprompterSession {
   /// 开始提词时的稿件快照，用于让从端避开旧缓存。
   Map<String, dynamic>? _articleSnapshot;
 
+  /// 会话消息顺序号。客户端用它丢弃晚到的旧同步，避免暂停被旧播放状态覆盖。
+  int _revision = 0;
+
   /// 状态变更控制器
   final StreamController<TeleprompterSessionState> _stateController =
       StreamController<TeleprompterSessionState>.broadcast();
@@ -69,6 +72,7 @@ class TeleprompterSession {
     _articleSnapshot = data['article'] == null
         ? null
         : Map<String, dynamic>.from(data['article'] as Map);
+    _revision++;
 
     debugPrint('[TeleprompterSession] 会话开始: $_activeArticleId');
 
@@ -79,7 +83,11 @@ class TeleprompterSession {
       WsMessage(
         type: WsMessageType.teleprompterStartSessionResponse,
         id: request.message.id,
-        data: {'success': true, 'articleId': _activeArticleId},
+        data: {
+          'success': true,
+          'articleId': _activeArticleId,
+          'revision': _revision,
+        },
       ),
     );
 
@@ -100,6 +108,7 @@ class TeleprompterSession {
     _isPlaying = false;
     _settingsOverride = {};
     _articleSnapshot = null;
+    _revision++;
 
     _emitState();
 
@@ -108,7 +117,7 @@ class TeleprompterSession {
       WsMessage(
         type: WsMessageType.teleprompterEndSessionResponse,
         id: request.message.id,
-        data: {'success': true},
+        data: {'success': true, 'revision': _revision},
       ),
     );
 
@@ -125,13 +134,26 @@ class TeleprompterSession {
     final data = request.message.data;
     _currentIndex = data['currentIndex'] as int? ?? _currentIndex;
     _isPlaying = data['isPlaying'] as bool? ?? _isPlaying;
+    _revision++;
 
     _emitState();
+    final sessionData = _sessionData();
+
+    if (request.message.id != null) {
+      server.respond(
+        request.clientId,
+        WsMessage(
+          type: WsMessageType.teleprompterSync,
+          id: request.message.id,
+          data: sessionData,
+        ),
+      );
+    }
 
     // 广播给其他客户端（排除发送者）
     server.broadcastExcept(
       request.clientId,
-      WsMessage(type: WsMessageType.teleprompterSync, data: _sessionData()),
+      WsMessage(type: WsMessageType.teleprompterSync, data: sessionData),
     );
   }
 
@@ -140,6 +162,7 @@ class TeleprompterSession {
     _settingsOverride = Map<String, dynamic>.from(
       data['settings'] as Map? ?? {},
     );
+    _revision++;
 
     _emitState();
 
@@ -159,6 +182,7 @@ class TeleprompterSession {
       'currentIndex': _currentIndex,
       'isPlaying': _isPlaying,
       'settings': _settingsOverride,
+      'revision': _revision,
       if (_articleSnapshot != null) 'article': _articleSnapshot,
     };
   }
@@ -180,6 +204,7 @@ class TeleprompterSession {
     _isPlaying = false;
     _settingsOverride = {};
     _articleSnapshot = null;
+    _revision = 0;
   }
 
   void dispose() {

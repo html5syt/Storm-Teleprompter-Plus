@@ -23,67 +23,67 @@ class SettingsPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return KeyboardListener(
-      focusNode: FocusNode(),
-      autofocus: true,
-      onKeyEvent: (event) {
-        if (event is KeyDownEvent &&
-            event.logicalKey == LogicalKeyboardKey.escape) {
-          Navigator.pop(context);
-        }
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.escape): () {
+          Navigator.maybePop(context);
+        },
       },
-      child: Scaffold(
-        appBar: AppBar(title: const Text('应用设置')),
-        body: Consumer2<SettingsProvider, ConnectionProvider>(
-          builder: (context, provider, connection, _) {
-            final settings = provider.settings;
-            return ListView(
-              padding: const EdgeInsets.all(20),
-              children: [
-                // ── 应用主题 ──
-                _buildSectionHeader(context, '应用主题'),
-                const SizedBox(height: 12),
-                _buildThemeColorTile(context, provider, settings),
-
-                const SizedBox(height: 24),
-
-                // ── 应用字体 ──
-                _buildSectionHeader(context, '应用字体'),
-                const SizedBox(height: 12),
-                _buildFontFamilyTile(context, provider, settings),
-
-                const SizedBox(height: 24),
-
-                // ── 下载 ASR 模型（仅本地模式） ──
-                if (!connection.isRemote) ...[
-                  _buildSectionHeader(context, '语音识别模型'),
+      child: Focus(
+        autofocus: true,
+        child: Scaffold(
+          appBar: AppBar(title: const Text('应用设置')),
+          body: Consumer2<SettingsProvider, ConnectionProvider>(
+            builder: (context, provider, connection, _) {
+              final settings = provider.settings;
+              return ListView(
+                padding: const EdgeInsets.all(20),
+                children: [
+                  // ── 应用主题 ──
+                  _buildSectionHeader(context, '应用主题'),
                   const SizedBox(height: 12),
-                  _buildAsrSection(context, provider, settings),
-                  const SizedBox(height: 24),
-                ],
+                  _buildThemeColorTile(context, provider, settings),
 
-                // ── 后端共享配置（仅本地模式） ──
-                if (!connection.isRemote) ...[
-                  _buildSectionHeader(context, '后端共享配置'),
+                  const SizedBox(height: 24),
+
+                  // ── 应用字体 ──
+                  _buildSectionHeader(context, '应用字体'),
                   const SizedBox(height: 12),
-                  _buildBackendSection(context, connection),
+                  _buildFontFamilyTile(context, provider, settings),
+
                   const SizedBox(height: 24),
+
+                  // ── 下载 ASR 模型（仅本地模式） ──
+                  if (!connection.isRemote) ...[
+                    _buildSectionHeader(context, '语音识别模型'),
+                    const SizedBox(height: 12),
+                    _buildAsrSection(context, provider, settings),
+                    const SizedBox(height: 24),
+                  ],
+
+                  // ── 服务连接（仅本机服务端模式） ──
+                  if (!connection.isRemote) ...[
+                    _buildSectionHeader(context, '服务连接'),
+                    const SizedBox(height: 12),
+                    _buildBackendSection(context, connection),
+                    const SizedBox(height: 24),
+                  ],
+
+                  // ── 重置所有设置 ──
+                  _buildSectionHeader(context, '重置'),
+                  const SizedBox(height: 12),
+                  _buildResetSection(context, provider),
+
+                  const SizedBox(height: 24),
+
+                  // ── 关于 ──
+                  _buildSectionHeader(context, '关于'),
+                  const SizedBox(height: 12),
+                  _buildAboutSection(context),
                 ],
-
-                // ── 重置所有设置 ──
-                _buildSectionHeader(context, '重置'),
-                const SizedBox(height: 12),
-                _buildResetSection(context, provider),
-
-                const SizedBox(height: 24),
-
-                // ── 关于 ──
-                _buildSectionHeader(context, '关于'),
-                const SizedBox(height: 12),
-                _buildAboutSection(context),
-              ],
-            );
-          },
+              );
+            },
+          ),
         ),
       ),
     );
@@ -481,7 +481,7 @@ class SettingsPage extends StatelessWidget {
   }
 
   // ═══════════════════════════════════════════════════════
-  // 后端共享配置
+  // 服务连接
   // ═══════════════════════════════════════════════════════
 
   Widget _buildBackendSection(
@@ -492,12 +492,13 @@ class SettingsPage extends StatelessWidget {
       builder: (context, settingsProvider, _) {
         return Column(
           children: [
-            // 公开到局域网
             SwitchListTile(
               secondary: const Icon(Icons.wifi),
-              title: const Text('公开到局域网'),
+              title: const Text('允许局域网连接'),
               subtitle: Text(
-                settingsProvider.settings.isLanPublished ? '服务运行中' : '已关闭',
+                settingsProvider.settings.isLanPublished
+                    ? '服务端可被局域网访问'
+                    : '仅本机使用',
               ),
               value: settingsProvider.settings.isLanPublished,
               onChanged: (value) {
@@ -505,19 +506,17 @@ class SettingsPage extends StatelessWidget {
               },
             ),
 
-            // 连接信息查看
             ListTile(
               leading: const Icon(Icons.info_outline),
-              title: const Text('连接信息'),
+              title: const Text('服务端连接信息'),
               subtitle: Text(connection.connectionInfoText),
               trailing: const Icon(Icons.chevron_right),
               onTap: () => _showConnectionInfoDialog(context, connection),
             ),
 
-            // 已连接设备查看
             ListTile(
               leading: const Icon(Icons.devices),
-              title: const Text('已连接设备'),
+              title: const Text('已连接客户端'),
               trailing: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -558,20 +557,13 @@ class SettingsPage extends StatelessWidget {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('连接信息'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _infoRow('状态', connection.isConnected ? '已连接' : '未连接'),
-            _infoRow('模式', connection.isRemote ? '远程后端' : '本地后端'),
-            _infoRow('连接详情', connection.connectionInfoText),
-            if (connection.clientId != null)
-              _infoRow('客户端 ID', connection.clientId!),
-            _infoRow('已连接设备数', '${connection.deviceCount}'),
-            if (connection.remoteDeviceIds.isNotEmpty)
-              _infoRow('传入连接 ID', connection.remoteDeviceIds.join('\n')),
-          ],
+        title: const Text('服务端连接信息'),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 360),
+          child: SelectableText(
+            connection.connectionDetailText,
+            style: const TextStyle(height: 1.45),
+          ),
         ),
         actions: [
           TextButton(
@@ -589,7 +581,7 @@ class SettingsPage extends StatelessWidget {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('已连接设备'),
+        title: const Text('已连接客户端'),
         content: SizedBox(
           width: 300,
           child: connection.deviceCount == 0
@@ -597,7 +589,7 @@ class SettingsPage extends StatelessWidget {
                   padding: EdgeInsets.all(20),
                   child: Center(
                     child: Text(
-                      '暂无其他设备连接',
+                      '暂无其他客户端连接',
                       style: TextStyle(color: AppColors.textMuted),
                     ),
                   ),
@@ -609,7 +601,7 @@ class SettingsPage extends StatelessWidget {
                     ListTile(
                       leading: const Icon(Icons.computer, size: 20),
                       title: Text('本机 (${connection.clientId ?? "未知"})'),
-                      subtitle: const Text('当前客户端 / 主控端'),
+                      subtitle: const Text('本机客户端'),
                       dense: true,
                     ),
                     if (remoteDeviceIds.isNotEmpty) const Divider(),
@@ -617,7 +609,7 @@ class SettingsPage extends StatelessWidget {
                       (deviceId) => ListTile(
                         leading: const Icon(Icons.devices_other, size: 20),
                         title: Text(deviceId),
-                        subtitle: const Text('传入远程连接'),
+                        subtitle: const Text('客户端'),
                         dense: true,
                       ),
                     ),
@@ -731,25 +723,6 @@ class SettingsPage extends StatelessWidget {
         fontWeight: FontWeight.w600,
         color: primary,
         letterSpacing: 0.5,
-      ),
-    );
-  }
-
-  static Widget _infoRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 90,
-            child: Text(
-              label,
-              style: const TextStyle(color: AppColors.textMuted, fontSize: 13),
-            ),
-          ),
-          Expanded(child: Text(value, style: const TextStyle(fontSize: 13))),
-        ],
       ),
     );
   }

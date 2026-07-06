@@ -40,18 +40,17 @@ class WsClient {
     if (_isConnected) {
       debugPrint('[WsClient] 已连接，先断开');
       await disconnect();
+    } else if (_channel != null) {
+      try {
+        await _channel!.sink.close();
+      } catch (_) {}
+      _channel = null;
     }
 
     final uri = Uri.parse('ws://$host:$port');
 
     try {
       _channel = WebSocketChannel.connect(uri);
-      await _channel!.ready;
-
-      _isConnected = true;
-      debugPrint('[WsClient] 已连接到 $uri');
-
-      // 监听消息
       _channel!.stream.listen(
         (dynamic data) {
           try {
@@ -88,6 +87,11 @@ class WsClient {
           _rejectPendingRequests('连接错误: $error');
         },
       );
+
+      await _channel!.ready;
+
+      _isConnected = true;
+      debugPrint('[WsClient] 已连接到 $uri');
 
       onConnected?.call();
     } catch (e) {

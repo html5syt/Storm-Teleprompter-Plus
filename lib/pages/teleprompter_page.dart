@@ -43,13 +43,28 @@ class TeleprompterPage extends StatefulWidget {
 class _TeleprompterPageState extends State<TeleprompterPage>
     with WidgetsBindingObserver, TeleprompterPageLogic {
   bool _showSettings = false;
+  bool _wasRemoteClient = false;
+  bool _remoteRetrying = false;
+  Timer? _remoteRetryTimer;
+
+  @override
+  void dispose() {
+    _remoteRetryTimer?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Consumer2<TeleprompterProvider, SettingsProvider>(
       builder: (context, teleprompter, settingsProvider, _) {
         final settings = settingsProvider.mergedSettings;
-        final isRemoteClient = context.watch<ConnectionProvider>().isRemote;
+        final connection = context.watch<ConnectionProvider>();
+        if (connection.isRemote) _wasRemoteClient = true;
+        final remoteConnectionLost =
+            _wasRemoteClient && connection.canRetryRemoteConnection;
+        final isRemoteControlLocked =
+            connection.isRemote || remoteConnectionLost;
+        _updateRemoteReconnectLoop(connection, remoteConnectionLost);
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
           teleprompter.refreshAutoScrollSettings(
@@ -92,7 +107,12 @@ class _TeleprompterPageState extends State<TeleprompterPage>
 
                     // ── 4. 顶部导航栏（浮动、可隐藏） ──
                     if (teleprompter.controlsVisible)
-                      _buildTopNavBar(context, teleprompter, settings),
+                      _buildTopNavBar(
+                        context,
+                        teleprompter,
+                        settings,
+                        hideExitButton: connection.isRemote,
+                      ),
 
                     // ── 5. 底部浮动工具栏（可隐藏） ──
                     if (teleprompter.controlsVisible)
@@ -100,7 +120,7 @@ class _TeleprompterPageState extends State<TeleprompterPage>
                         context,
                         teleprompter,
                         settingsProvider,
-                        isRemoteClient: isRemoteClient,
+                        isRemoteClient: isRemoteControlLocked,
                       ),
 
                     // ── 6. ASR 音量指示器 ──
@@ -118,6 +138,9 @@ class _TeleprompterPageState extends State<TeleprompterPage>
                           onClose: () => setState(() => _showSettings = false),
                         ),
                       ),
+
+                    if (remoteConnectionLost)
+                      _buildRemoteReconnectOverlay(context, connection),
                   ],
                 ),
               ),
@@ -136,7 +159,24 @@ class _TeleprompterPageState extends State<TeleprompterPage>
     final key = event.logicalKey;
     final settings = context.read<SettingsProvider>().mergedSettings;
     final teleprompter = context.read<TeleprompterProvider>();
-    final isRemoteClient = context.read<ConnectionProvider>().isRemote;
+    final connection = context.read<ConnectionProvider>();
+    final isRemoteClient =
+        connection.isRemote ||
+        (_wasRemoteClient && connection.canRetryRemoteConnection);
+
+    if (_isTextInputFocused()) {
+      return KeyEventResult.ignored;
+    }
+
+    if (isRemoteClient &&
+        (key == LogicalKeyboardKey.escape ||
+            key == LogicalKeyboardKey.space ||
+            key == LogicalKeyboardKey.arrowUp ||
+            key == LogicalKeyboardKey.arrowDown ||
+            key == LogicalKeyboardKey.arrowLeft ||
+            key == LogicalKeyboardKey.arrowRight)) {
+      return KeyEventResult.handled;
+    }
 
     if (key == LogicalKeyboardKey.f11 ||
         (key == LogicalKeyboardKey.keyF &&
@@ -146,13 +186,6 @@ class _TeleprompterPageState extends State<TeleprompterPage>
       toggleFullScreen();
     } else if (key == LogicalKeyboardKey.escape) {
       unawaited(_exitTeleprompter(context));
-    } else if (isRemoteClient &&
-        (key == LogicalKeyboardKey.space ||
-            key == LogicalKeyboardKey.arrowUp ||
-            key == LogicalKeyboardKey.arrowDown ||
-            key == LogicalKeyboardKey.arrowLeft ||
-            key == LogicalKeyboardKey.arrowRight)) {
-      return KeyEventResult.handled;
     } else if (key == LogicalKeyboardKey.space) {
       teleprompter.togglePlayPause(settings);
     } else if (key == LogicalKeyboardKey.arrowUp) {
@@ -168,6 +201,16 @@ class _TeleprompterPageState extends State<TeleprompterPage>
     }
 
     return KeyEventResult.handled;
+  }
+
+  bool _isTextInputFocused() {
+    var node = FocusManager.instance.primaryFocus;
+    while (node != null) {
+      final widget = node.context?.widget;
+      if (widget is EditableText) return true;
+      node = node.parent;
+    }
+    return false;
   }
 
   // ─── 动态颜色辅助 ──────────────────────────────────────
@@ -301,11 +344,19 @@ class _TeleprompterPageState extends State<TeleprompterPage>
                 // 右侧信息（自动根据文本宽度调整）
                 Positioned(
                   top: 0,
-                  right: 12,
+                  left: 8,
+                  right: 8,
                   bottom: 0,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: infoChildren,
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerRight,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: infoChildren,
+                      ),
+                    ),
                   ),
                 ),
               ],
@@ -328,8 +379,9 @@ class _TeleprompterPageState extends State<TeleprompterPage>
   Widget _buildTopNavBar(
     BuildContext context,
     TeleprompterProvider teleprompter,
-    AppSettings settings,
-  ) {
+    AppSettings settings, {
+    required bool hideExitButton,
+  }) {
     return AnimatedPositioned(
       duration: const Duration(milliseconds: 300),
       curve: Curves.easeOutCubic,
@@ -352,20 +404,25 @@ class _TeleprompterPageState extends State<TeleprompterPage>
           ),
           child: Row(
             children: [
-              // 返回按钮（先退出全屏再返回）
-              IconButton(
-                icon: const Icon(
-                  Icons.arrow_back,
-                  color: AppColors.textPrimary,
-                  size: 22,
+              // 返回按钮（客户端播放由服务端结束）
+              if (!hideExitButton) ...[
+                IconButton(
+                  icon: const Icon(
+                    Icons.arrow_back,
+                    color: AppColors.textPrimary,
+                    size: 22,
+                  ),
+                  onPressed: () async {
+                    await _exitTeleprompter(context);
+                  },
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(
+                    minWidth: 36,
+                    minHeight: 36,
+                  ),
                 ),
-                onPressed: () async {
-                  await _exitTeleprompter(context);
-                },
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-              ),
-              const SizedBox(width: 4),
+                const SizedBox(width: 4),
+              ],
               // 稿件标题
               Expanded(
                 child: Text(
@@ -398,6 +455,97 @@ class _TeleprompterPageState extends State<TeleprompterPage>
     );
   }
 
+  Widget _buildRemoteReconnectOverlay(
+    BuildContext context,
+    ConnectionProvider connection,
+  ) {
+    return Positioned(
+      left: 20,
+      right: 20,
+      bottom: MediaQuery.of(context).padding.bottom + 96,
+      child: Center(
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 420),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: AppColors.surface.withValues(alpha: 0.94),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: AppColors.warning.withValues(alpha: 0.5)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.28),
+                blurRadius: 18,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  _remoteRetrying ? '服务端连接已断开，正在重试...' : '服务端连接已断开，等待重试...',
+                  style: const TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              TextButton(
+                onPressed: () => _exitTeleprompter(context),
+                child: const Text('退出'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _updateRemoteReconnectLoop(
+    ConnectionProvider connection,
+    bool remoteConnectionLost,
+  ) {
+    if (!remoteConnectionLost) {
+      _remoteRetryTimer?.cancel();
+      _remoteRetryTimer = null;
+      _remoteRetrying = false;
+      return;
+    }
+    if (_remoteRetryTimer != null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _tryReconnectRemote(connection);
+    });
+    _remoteRetryTimer = Timer.periodic(
+      const Duration(seconds: 2),
+      (_) => _tryReconnectRemote(connection),
+    );
+  }
+
+  Future<void> _tryReconnectRemote(ConnectionProvider connection) async {
+    if (_remoteRetrying || !mounted || !connection.canRetryRemoteConnection) {
+      return;
+    }
+    final host = connection.remoteHost;
+    final port = connection.remotePort;
+    if (host == null || port == null) return;
+    setState(() => _remoteRetrying = true);
+    try {
+      await connection.connectToRemote(host, port);
+    } catch (_) {
+      // 无限重试由定时器负责，错误信息保留在 ConnectionProvider。
+    } finally {
+      if (mounted) setState(() => _remoteRetrying = false);
+    }
+  }
+
   // ─── 底部浮动工具栏 ──────────────────────────────────
 
   Widget _buildBottomToolbar(
@@ -407,70 +555,90 @@ class _TeleprompterPageState extends State<TeleprompterPage>
     required bool isRemoteClient,
   }) {
     final settings = settingsProvider.mergedSettings;
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final isCompact = screenWidth < 600;
+    final horizontalInset = isCompact ? 8.0 : 32.0;
 
     return AnimatedPositioned(
       duration: const Duration(milliseconds: 300),
       curve: Curves.easeOutCubic,
-      bottom: MediaQuery.of(context).padding.bottom + 16,
-      left: 32,
-      right: 32,
+      bottom: MediaQuery.of(context).padding.bottom + (isCompact ? 8 : 16),
+      left: horizontalInset,
+      right: horizontalInset,
       child: GestureDetector(
         onTap: () {}, // 拦截点击
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          decoration: BoxDecoration(
-            color: _bgFromSettings(settings).withValues(alpha: 0.85),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: AppColors.border.withValues(alpha: 0.3),
-              width: 0.5,
+        child: Align(
+          alignment: Alignment.bottomCenter,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: screenWidth - horizontalInset * 2,
             ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.3),
-                blurRadius: 16,
-                offset: const Offset(0, 4),
+            child: Container(
+              padding: EdgeInsets.symmetric(
+                horizontal: isCompact ? 10 : 16,
+                vertical: isCompact ? 8 : 10,
               ),
-            ],
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              // ── 模式选择 ──
-              if (!isRemoteClient) ...[
-                _buildModeSelector(settings, settingsProvider),
-                const SizedBox(width: 12),
-              ],
-
-              // ── 播放控制 ──
-              if (!isRemoteClient)
-                _buildCompactPlaybackControls(teleprompter, settings),
-
-              // ── 速度/信息 ──
-              if (settings.scrollMode != ScrollMode.asr) ...[
-                if (!isRemoteClient) const SizedBox(width: 12),
-                _buildSpeedDisplay(
-                  settings,
-                  settingsProvider,
-                  readOnly: isRemoteClient,
+              decoration: BoxDecoration(
+                color: _bgFromSettings(settings).withValues(alpha: 0.85),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: AppColors.border.withValues(alpha: 0.3),
+                  width: 0.5,
                 ),
-              ],
-
-              // ── 设置齿轮 ──
-              const SizedBox(width: 8),
-              IconButton(
-                icon: Icon(
-                  Icons.settings,
-                  color: AppColors.textSecondary,
-                  size: 22,
-                ),
-                onPressed: () => setState(() => _showSettings = true),
-                tooltip: '设置',
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.3),
+                    blurRadius: 16,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
               ),
-            ],
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    // ── 模式选择 ──
+                    if (!isRemoteClient) ...[
+                      _buildModeSelector(settings, settingsProvider),
+                      SizedBox(width: isCompact ? 8 : 12),
+                    ],
+
+                    // ── 播放控制 ──
+                    if (!isRemoteClient)
+                      _buildCompactPlaybackControls(teleprompter, settings),
+
+                    // ── 速度/信息 ──
+                    if (settings.scrollMode != ScrollMode.asr) ...[
+                      if (!isRemoteClient) SizedBox(width: isCompact ? 8 : 12),
+                      _buildSpeedDisplay(
+                        settings,
+                        settingsProvider,
+                        readOnly: isRemoteClient,
+                      ),
+                    ],
+
+                    // ── 设置齿轮 ──
+                    const SizedBox(width: 8),
+                    IconButton(
+                      icon: Icon(
+                        Icons.settings,
+                        color: AppColors.textSecondary,
+                        size: 22,
+                      ),
+                      onPressed: () => setState(() => _showSettings = true),
+                      tooltip: '设置',
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(
+                        minWidth: 36,
+                        minHeight: 36,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ),
         ),
       ),
@@ -612,64 +780,76 @@ class _TeleprompterPageState extends State<TeleprompterPage>
         final presets = [60, 80, 100, 120, 150, 180, 200, 250, 300, 400];
         final controller = TextEditingController(text: '$currentWpm');
         return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Padding(
-                padding: EdgeInsets.all(16),
-                child: Text(
-                  '选择速度',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                ),
-              ),
-              const Divider(height: 1),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: controller,
-                        keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(
-                          labelText: '自定义速度',
-                          suffixText: '字/分',
-                          isDense: true,
-                        ),
-                        onSubmitted: (value) {
-                          final wpm = int.tryParse(value.trim());
-                          if (wpm != null) {
-                            settingsProvider.setWpm(wpm < 0 ? 0 : wpm);
-                            Navigator.pop(ctx);
-                          }
-                        },
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.sizeOf(ctx).height * 0.85,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Text(
+                      '选择速度',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    FilledButton(
-                      onPressed: () {
-                        final wpm = int.tryParse(controller.text.trim());
-                        if (wpm != null) {
-                          settingsProvider.setWpm(wpm < 0 ? 0 : wpm);
-                          Navigator.pop(ctx);
-                        }
-                      },
-                      child: const Text('应用'),
+                  ),
+                  const Divider(height: 1),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: controller,
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(
+                              labelText: '自定义速度',
+                              suffixText: '字/分',
+                              isDense: true,
+                            ),
+                            onSubmitted: (value) {
+                              final wpm = int.tryParse(value.trim());
+                              if (wpm != null) {
+                                settingsProvider.setWpm(wpm < 0 ? 0 : wpm);
+                                Navigator.pop(ctx);
+                              }
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        FilledButton(
+                          onPressed: () {
+                            final wpm = int.tryParse(controller.text.trim());
+                            if (wpm != null) {
+                              settingsProvider.setWpm(wpm < 0 ? 0 : wpm);
+                              Navigator.pop(ctx);
+                            }
+                          },
+                          child: const Text('应用'),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
+                  ),
+                  ...presets.map(
+                    (wpm) => ListTile(
+                      title: Text('$wpm 字/分'),
+                      trailing: wpm == currentWpm
+                          ? const Icon(Icons.check)
+                          : null,
+                      onTap: () {
+                        settingsProvider.setWpm(wpm);
+                        Navigator.pop(ctx);
+                      },
+                    ),
+                  ),
+                ],
               ),
-              ...presets.map(
-                (wpm) => ListTile(
-                  title: Text('$wpm 字/分'),
-                  trailing: wpm == currentWpm ? const Icon(Icons.check) : null,
-                  onTap: () {
-                    settingsProvider.setWpm(wpm);
-                    Navigator.pop(ctx);
-                  },
-                ),
-              ),
-            ],
+            ),
           ),
         );
       },
@@ -798,6 +978,7 @@ class _TeleprompterPageState extends State<TeleprompterPage>
     );
     if (visualTarget != null) {
       teleprompter.setCurrentIndex(visualTarget);
+      _animateTextLayerToCurrentChar();
       return;
     }
 
@@ -821,10 +1002,18 @@ class _TeleprompterPageState extends State<TeleprompterPage>
       if (targetChars.isNotEmpty) {
         final newOffset = inLineOffset.clamp(0, targetChars.length - 1).toInt();
         teleprompter.setCurrentIndex(targetChars[newOffset].rawIndex);
+        _animateTextLayerToCurrentChar();
         return;
       }
       targetLine += step;
     }
+  }
+
+  void _animateTextLayerToCurrentChar() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      textLayerKey.currentState?.scrollToCurrentChar();
+    });
   }
 
   /// 处理左右键：移动当前字到前后n个字
@@ -863,14 +1052,19 @@ class _TeleprompterPageState extends State<TeleprompterPage>
     AppSettings settings,
   ) {
     // 自动滚动播放中阻止滚轮手动滚动
-    final isRemoteClient = context.read<ConnectionProvider>().isRemote;
+    final connection = context.read<ConnectionProvider>();
+    final isRemoteClient =
+        connection.isRemote ||
+        (_wasRemoteClient && connection.canRetryRemoteConnection);
     final bool blockScroll =
         settings.scrollMode == ScrollMode.auto &&
         teleprompter.isPlaying &&
         settings.wpm > 0;
-    final ScrollPhysics? physics = blockScroll
+    final ScrollPhysics physics = blockScroll
         ? const NeverScrollableScrollPhysics()
-        : null;
+        : LineSnapScrollPhysics(
+            lineHeight: settings.fontSize * settings.lineHeight + 4,
+          );
 
     return Positioned.fill(
       child: TeleprompterTextLayer(
@@ -881,6 +1075,7 @@ class _TeleprompterPageState extends State<TeleprompterPage>
         fontSize: settings.fontSize,
         lineHeight: settings.lineHeight,
         mirrorMode: settings.mirrorMode,
+        autoFollow: blockScroll,
         paddingX: settings.paddingX,
         readingLineOffset: settings.readingLineOffset,
         physics: physics,

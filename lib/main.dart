@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_quill/flutter_quill.dart' as quill;
 import 'package:provider/provider.dart';
 import 'backend/backend_server.dart';
@@ -23,6 +24,13 @@ late BackendServer globalBackendServer;
 /// 3. 启动 Flutter UI
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  if (!kIsWeb) {
+    await SystemChrome.setPreferredOrientations(DeviceOrientation.values);
+    await SystemChrome.setEnabledSystemUIMode(
+      SystemUiMode.manual,
+      overlays: SystemUiOverlay.values,
+    );
+  }
 
   // ── 1. 启动后端服务 ──
   globalBackendServer = BackendServer();
