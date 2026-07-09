@@ -58,10 +58,14 @@ jobs:
       - name: Build Android debug artifacts
         run: |
           flutter pub get
-          flutter build apk --debug
+          flutter build apk --debug --split-per-abi
           flutter build appbundle --debug
           mkdir -p artifacts
-          cp build/app/outputs/flutter-apk/app-debug.apk artifacts/${APP_NAME}-android.apk
+          for apk in build/app/outputs/flutter-apk/*-debug.apk; do
+            abi="$(basename "$apk" -debug.apk)"
+            abi="${abi#app-}"
+            cp "$apk" "artifacts/${APP_NAME}-android-${abi}.apk"
+          done
           cp build/app/outputs/bundle/debug/app-debug.aab artifacts/${APP_NAME}-android.aab
 
       - uses: actions/upload-artifact@v4
@@ -180,4 +184,3 @@ jobs:
         with:
           name: apple
           path: artifacts/*
-

@@ -14,6 +14,7 @@ import '../providers/connection_provider.dart';
 import '../providers/teleprompter_provider.dart';
 import '../providers/settings_provider.dart';
 import '../theme/app_colors.dart';
+import '../theme/app_theme.dart';
 import '../utils/constants.dart';
 import '../widgets/teleprompter_text_layer.dart';
 import '../widgets/teleprompter_settings_panel.dart';
@@ -45,12 +46,45 @@ class _TeleprompterPageState extends State<TeleprompterPage>
   bool _showSettings = false;
   bool _wasRemoteClient = false;
   bool _remoteRetrying = false;
+  bool _isExiting = false;
+  bool _pauseShortcutPressed = false;
+  DateTime? _lastPauseShortcutAt;
+  int _lastAutoFollowIndex = -2;
   Timer? _remoteRetryTimer;
+  final FocusNode _pageFocusNode = FocusNode(debugLabel: 'TeleprompterPage');
+
+  @override
+  void initState() {
+    super.initState();
+    HardwareKeyboard.instance.addHandler(_handleGlobalShortcutKey);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _isTextInputFocused()) return;
+      _pageFocusNode.requestFocus();
+    });
+  }
 
   @override
   void dispose() {
+    HardwareKeyboard.instance.removeHandler(_handleGlobalShortcutKey);
     _remoteRetryTimer?.cancel();
+    _pageFocusNode.dispose();
     super.dispose();
+  }
+
+  bool _handleGlobalShortcutKey(KeyEvent event) {
+    if (!mounted || _isTextInputFocused()) {
+      return false;
+    }
+
+    final key = event.logicalKey;
+    if (event is KeyDownEvent && key == LogicalKeyboardKey.escape) {
+      final connection = context.read<ConnectionProvider>();
+      if (connection.isRemote) return true;
+      unawaited(_exitTeleprompter(context));
+      return true;
+    }
+
+    return _handlePauseShortcutEvent(event);
   }
 
   @override
@@ -72,76 +106,128 @@ class _TeleprompterPageState extends State<TeleprompterPage>
           );
         });
 
-        return Scaffold(
-          backgroundColor: AppColors.teleprompterBgFromSettings(
-            settings.teleprompterBgColor,
-          ),
-          body: Focus(
-            autofocus: true,
-            onKeyEvent: _handleTeleprompterKeyEvent,
-            child: Listener(
-              onPointerSignal: _showSettings ? null : handlePointerSignal,
-              child: GestureDetector(
-                behavior: HitTestBehavior.translucent,
-                onTap: () {
-                  // 任何模式下点击空白区域都切换控制面板
-                  if (teleprompter.controlsVisible) {
-                    teleprompter.toggleControls();
-                  } else {
-                    teleprompter.showControls(settings);
-                  }
-                },
-                child: Stack(
-                  children: [
-                    // ── 1. 文本层（占据全屏，可滚动） ──
-                    _buildTextLayer(context, teleprompter, settings),
+        final shouldAutoFollow =
+            settings.scrollMode == ScrollMode.auto &&
+            teleprompter.isPlaying &&
+            settings.wpm > 0;
+        if (shouldAutoFollow &&
+            teleprompter.currentIndex != _lastAutoFollowIndex) {
+          _lastAutoFollowIndex = teleprompter.currentIndex;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            textLayerKey.currentState?.scrollToCurrentChar();
+          });
+        } else if (!shouldAutoFollow) {
+          _lastAutoFollowIndex = -2;
+        }
 
-                    // ── 2. 阅读线指示器 ──
-                    _buildReadingLine(context, settings),
+        final promptTheme = AppTheme.fromColorAndFont(
+          AppColors.primaryFromSettings(settings.uiPrimaryColor),
+          fontFamily: settings.appFontFamily,
+        );
 
-                    // ── 3. 顶部进度条（全幅 + 右侧信息） ──
-                    if (teleprompter.isPlaying ||
-                        (settings.scrollMode == ScrollMode.auto &&
-                            teleprompter.state == TeleprompterState.paused))
-                      _buildTopProgressBar(context, teleprompter, settings),
+        return Theme(
+          data: promptTheme,
+          child: CallbackShortcuts(
+            bindings: {
+              const SingleActivator(LogicalKeyboardKey.escape): () {
+                if (_isTextInputFocused()) return;
+                final connection = context.read<ConnectionProvider>();
+                if (connection.isRemote) return;
+                unawaited(_exitTeleprompter(context));
+              },
+            },
+            child: PopScope(
+              canPop: _isExiting,
+              onPopInvokedWithResult: (didPop, _) {
+                if (didPop) return;
+                if (connection.isRemote) return;
+                unawaited(_exitTeleprompter(context));
+              },
+              child: Scaffold(
+                backgroundColor: AppColors.teleprompterBgFromSettings(
+                  settings.teleprompterBgColor,
+                ),
+                body: Focus(
+                  focusNode: _pageFocusNode,
+                  autofocus: true,
+                  descendantsAreFocusable: _showSettings,
+                  descendantsAreTraversable: _showSettings,
+                  onKeyEvent: _handleTeleprompterKeyEvent,
+                  child: Listener(
+                    onPointerSignal: _showSettings ? null : handlePointerSignal,
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.translucent,
+                      onTap: () {
+                        if (!_showSettings && !_isTextInputFocused()) {
+                          _pageFocusNode.requestFocus();
+                        }
+                        // 任何模式下点击空白区域都切换控制面板
+                        if (teleprompter.controlsVisible) {
+                          teleprompter.toggleControls();
+                        } else {
+                          teleprompter.showControls(settings);
+                        }
+                      },
+                      child: Stack(
+                        children: [
+                          // ── 1. 文本层（占据全屏，可滚动） ──
+                          _buildTextLayer(context, teleprompter, settings),
 
-                    // ── 4. 顶部导航栏（浮动、可隐藏） ──
-                    if (teleprompter.controlsVisible)
-                      _buildTopNavBar(
-                        context,
-                        teleprompter,
-                        settings,
-                        hideExitButton: connection.isRemote,
+                          // ── 2. 阅读线指示器 ──
+                          _buildReadingLine(context, settings),
+
+                          // ── 3. 顶部进度条（全幅 + 右侧信息） ──
+                          if (teleprompter.isPlaying ||
+                              (settings.scrollMode == ScrollMode.auto &&
+                                  teleprompter.state ==
+                                      TeleprompterState.paused))
+                            _buildTopProgressBar(
+                              context,
+                              teleprompter,
+                              settings,
+                            ),
+
+                          // ── 4. 顶部导航栏（浮动、可隐藏） ──
+                          if (teleprompter.controlsVisible)
+                            _buildTopNavBar(
+                              context,
+                              teleprompter,
+                              settings,
+                              hideExitButton: connection.isRemote,
+                            ),
+
+                          // ── 5. 底部浮动工具栏（可隐藏） ──
+                          if (teleprompter.controlsVisible)
+                            _buildBottomToolbar(
+                              context,
+                              teleprompter,
+                              settingsProvider,
+                              isRemoteClient: isRemoteControlLocked,
+                            ),
+
+                          // ── 6. ASR 音量指示器 ──
+                          if (settings.scrollMode == ScrollMode.asr &&
+                              teleprompter.isPlaying)
+                            _buildRmsMeter(teleprompter, settings),
+
+                          // ── 7. 设置抽屉面板 ──
+                          if (_showSettings)
+                            Positioned(
+                              top: 0,
+                              right: 0,
+                              bottom: 0,
+                              child: TeleprompterSettingsPanel(
+                                onClose: _closeSettingsPanel,
+                              ),
+                            ),
+
+                          if (remoteConnectionLost)
+                            _buildRemoteReconnectOverlay(context, connection),
+                        ],
                       ),
-
-                    // ── 5. 底部浮动工具栏（可隐藏） ──
-                    if (teleprompter.controlsVisible)
-                      _buildBottomToolbar(
-                        context,
-                        teleprompter,
-                        settingsProvider,
-                        isRemoteClient: isRemoteControlLocked,
-                      ),
-
-                    // ── 6. ASR 音量指示器 ──
-                    if (settings.scrollMode == ScrollMode.asr &&
-                        teleprompter.isPlaying)
-                      _buildRmsMeter(teleprompter, settings),
-
-                    // ── 7. 设置抽屉面板 ──
-                    if (_showSettings)
-                      Positioned(
-                        top: 0,
-                        right: 0,
-                        bottom: 0,
-                        child: TeleprompterSettingsPanel(
-                          onClose: () => setState(() => _showSettings = false),
-                        ),
-                      ),
-
-                    if (remoteConnectionLost)
-                      _buildRemoteReconnectOverlay(context, connection),
-                  ],
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -152,7 +238,9 @@ class _TeleprompterPageState extends State<TeleprompterPage>
   }
 
   KeyEventResult _handleTeleprompterKeyEvent(FocusNode node, KeyEvent event) {
-    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+    if (event is! KeyDownEvent &&
+        event is! KeyRepeatEvent &&
+        event is! KeyUpEvent) {
       return KeyEventResult.ignored;
     }
 
@@ -160,22 +248,33 @@ class _TeleprompterPageState extends State<TeleprompterPage>
     final settings = context.read<SettingsProvider>().mergedSettings;
     final teleprompter = context.read<TeleprompterProvider>();
     final connection = context.read<ConnectionProvider>();
-    final isRemoteClient =
-        connection.isRemote ||
-        (_wasRemoteClient && connection.canRetryRemoteConnection);
+    final remoteConnectionLost =
+        _wasRemoteClient && connection.canRetryRemoteConnection;
+    final isRemoteClient = connection.isRemote || remoteConnectionLost;
 
     if (_isTextInputFocused()) {
       return KeyEventResult.ignored;
     }
 
+    if (_handlePauseShortcutEvent(event)) {
+      return KeyEventResult.handled;
+    }
+
     if (isRemoteClient &&
-        (key == LogicalKeyboardKey.escape ||
-            key == LogicalKeyboardKey.space ||
+        ((key == LogicalKeyboardKey.escape && connection.isRemote) ||
             key == LogicalKeyboardKey.arrowUp ||
             key == LogicalKeyboardKey.arrowDown ||
             key == LogicalKeyboardKey.arrowLeft ||
-            key == LogicalKeyboardKey.arrowRight)) {
+            key == LogicalKeyboardKey.arrowRight ||
+            key == LogicalKeyboardKey.home ||
+            key == LogicalKeyboardKey.end ||
+            key == LogicalKeyboardKey.pageUp ||
+            key == LogicalKeyboardKey.pageDown)) {
       return KeyEventResult.handled;
+    }
+
+    if (event is KeyUpEvent) {
+      return KeyEventResult.ignored;
     }
 
     if (key == LogicalKeyboardKey.f11 ||
@@ -186,8 +285,14 @@ class _TeleprompterPageState extends State<TeleprompterPage>
       toggleFullScreen();
     } else if (key == LogicalKeyboardKey.escape) {
       unawaited(_exitTeleprompter(context));
-    } else if (key == LogicalKeyboardKey.space) {
-      teleprompter.togglePlayPause(settings);
+    } else if (key == LogicalKeyboardKey.home) {
+      _jumpToStart(teleprompter);
+    } else if (key == LogicalKeyboardKey.end) {
+      _jumpToEnd(teleprompter);
+    } else if (key == LogicalKeyboardKey.pageUp) {
+      _handlePageMove(context, settings, -1);
+    } else if (key == LogicalKeyboardKey.pageDown) {
+      _handlePageMove(context, settings, 1);
     } else if (key == LogicalKeyboardKey.arrowUp) {
       _handleVerticalMove(context, settings, -1);
     } else if (key == LogicalKeyboardKey.arrowDown) {
@@ -203,6 +308,19 @@ class _TeleprompterPageState extends State<TeleprompterPage>
     return KeyEventResult.handled;
   }
 
+  void _openSettingsPanel() {
+    setState(() => _showSettings = true);
+  }
+
+  void _closeSettingsPanel() {
+    FocusManager.instance.primaryFocus?.unfocus();
+    setState(() => _showSettings = false);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _pageFocusNode.requestFocus();
+    });
+  }
+
   bool _isTextInputFocused() {
     var node = FocusManager.instance.primaryFocus;
     while (node != null) {
@@ -211,6 +329,41 @@ class _TeleprompterPageState extends State<TeleprompterPage>
       node = node.parent;
     }
     return false;
+  }
+
+  bool _isPauseShortcut(KeyEvent event) {
+    return event.logicalKey == LogicalKeyboardKey.space ||
+        event.physicalKey == PhysicalKeyboardKey.space ||
+        event.character == ' ';
+  }
+
+  bool _handlePauseShortcutEvent(KeyEvent event) {
+    if (!_isPauseShortcut(event)) return false;
+
+    if (event is KeyUpEvent) {
+      _pauseShortcutPressed = false;
+      return true;
+    }
+
+    if (event is KeyRepeatEvent) return true;
+    if (event is! KeyDownEvent) return true;
+    if (_pauseShortcutPressed) return true;
+    _pauseShortcutPressed = true;
+
+    final now = DateTime.now();
+    final lastToggleAt = _lastPauseShortcutAt;
+    if (lastToggleAt != null &&
+        now.difference(lastToggleAt) < const Duration(milliseconds: 180)) {
+      return true;
+    }
+    _lastPauseShortcutAt = now;
+
+    final connection = context.read<ConnectionProvider>();
+    if (connection.isRemote || connection.canRetryRemoteConnection) return true;
+    context.read<TeleprompterProvider>().togglePlayPause(
+      context.read<SettingsProvider>().mergedSettings,
+    );
+    return true;
   }
 
   // ─── 动态颜色辅助 ──────────────────────────────────────
@@ -627,7 +780,7 @@ class _TeleprompterPageState extends State<TeleprompterPage>
                         color: AppColors.textSecondary,
                         size: 22,
                       ),
-                      onPressed: () => setState(() => _showSettings = true),
+                      onPressed: _openSettingsPanel,
                       tooltip: '设置',
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints(
@@ -658,9 +811,7 @@ class _TeleprompterPageState extends State<TeleprompterPage>
           message: '后退一个字；长按回到开头',
           child: GestureDetector(
             onTap: () => teleprompter.rewind(settings),
-            onLongPress: () {
-              teleprompter.resetToStart();
-            },
+            onLongPress: () => _jumpToStart(teleprompter),
             child: Container(
               padding: const EdgeInsets.all(8),
               child: const Icon(
@@ -721,6 +872,18 @@ class _TeleprompterPageState extends State<TeleprompterPage>
     );
   }
 
+  void _jumpToStart(TeleprompterProvider teleprompter) {
+    teleprompter.resetToStart();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !scrollController.hasClients) return;
+      scrollController.animateTo(
+        0,
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+      );
+    });
+  }
+
   void _jumpToEnd(TeleprompterProvider teleprompter) {
     teleprompter.resetToEnd();
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -774,11 +937,11 @@ class _TeleprompterPageState extends State<TeleprompterPage>
 
   /// 显示速度预设菜单
   void _showSpeedPresets(SettingsProvider settingsProvider, int currentWpm) {
+    final controller = TextEditingController(text: '$currentWpm');
     showModalBottomSheet(
       context: context,
       builder: (ctx) {
         final presets = [60, 80, 100, 120, 150, 180, 200, 250, 300, 400];
-        final controller = TextEditingController(text: '$currentWpm');
         return SafeArea(
           child: ConstrainedBox(
             constraints: BoxConstraints(
@@ -873,7 +1036,7 @@ class _TeleprompterPageState extends State<TeleprompterPage>
           _buildModeChip(
             icon: Icons.menu_book,
             label: '自动',
-            mode: ScrollMode.auto, // 合并手动/自动为"自动"模式
+            mode: ScrollMode.auto,
             settings: settings,
             settingsProvider: settingsProvider,
           ),
@@ -896,11 +1059,7 @@ class _TeleprompterPageState extends State<TeleprompterPage>
     required AppSettings settings,
     required SettingsProvider settingsProvider,
   }) {
-    // "阅读"模式包含 manual 和 auto
-    final isSelected = mode == ScrollMode.auto
-        ? (settings.scrollMode == ScrollMode.auto ||
-              settings.scrollMode == ScrollMode.manual)
-        : settings.scrollMode == mode;
+    final isSelected = settings.scrollMode == mode;
     return GestureDetector(
       onTap: () {
         if (!isSelected) {
@@ -1009,6 +1168,30 @@ class _TeleprompterPageState extends State<TeleprompterPage>
     }
   }
 
+  void _handlePageMove(
+    BuildContext context,
+    AppSettings settings,
+    int direction,
+  ) {
+    if (direction == 0) return;
+    final teleprompter = context.read<TeleprompterProvider>();
+    final viewportHeight = scrollController.hasClients
+        ? scrollController.position.viewportDimension
+        : MediaQuery.sizeOf(context).height;
+    final rowHeight = (settings.fontSize * settings.lineHeight + 4).clamp(
+      1.0,
+      viewportHeight,
+    );
+    final visibleRows = (viewportHeight / rowHeight).floor().clamp(1, 80);
+    final visualTarget = textLayerKey.currentState?.rawIndexForVisualLineMove(
+      direction * visibleRows,
+    );
+    if (visualTarget != null) {
+      teleprompter.setCurrentIndex(visualTarget);
+      _animateTextLayerToCurrentChar();
+    }
+  }
+
   void _animateTextLayerToCurrentChar() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -1037,6 +1220,12 @@ class _TeleprompterPageState extends State<TeleprompterPage>
 
   /// 退出提词器（Esc 键）
   Future<void> _exitTeleprompter(BuildContext context) async {
+    if (_isExiting) return;
+    if (mounted) {
+      setState(() => _isExiting = true);
+    } else {
+      _isExiting = true;
+    }
     if (isFullScreen) {
       await exitFullScreen();
     }
@@ -1062,9 +1251,7 @@ class _TeleprompterPageState extends State<TeleprompterPage>
         settings.wpm > 0;
     final ScrollPhysics physics = blockScroll
         ? const NeverScrollableScrollPhysics()
-        : LineSnapScrollPhysics(
-            lineHeight: settings.fontSize * settings.lineHeight + 4,
-          );
+        : const ClampingScrollPhysics();
 
     return Positioned.fill(
       child: TeleprompterTextLayer(

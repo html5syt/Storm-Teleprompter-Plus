@@ -46,13 +46,20 @@ class SettingsProvider with ChangeNotifier {
   }
 
   /// 加载稿件覆盖设置
-  void loadArticleOverrides(Map<String, dynamic>? overrides) {
-    _articleOverrides = overrides ?? {};
-    notifyListeners();
+  void loadArticleOverrides(
+    Map<String, dynamic>? overrides, {
+    bool notify = true,
+  }) {
+    final next = Map<String, dynamic>.from(overrides ?? const {});
+    if (_mapEquals(_articleOverrides, next)) return;
+    _articleOverrides = next;
+    if (notify) notifyListeners();
   }
 
   void applyRemoteTeleprompterSettings(Map<String, dynamic> settings) {
-    _articleOverrides = Map<String, dynamic>.from(settings);
+    final next = Map<String, dynamic>.from(settings);
+    if (_mapEquals(_articleOverrides, next)) return;
+    _articleOverrides = next;
     notifyListeners();
   }
 
@@ -60,13 +67,26 @@ class SettingsProvider with ChangeNotifier {
     if (settings.containsKey('wpm')) {
       final value = settings['wpm'];
       if (value is num) {
-        _articleOverrides['wpm'] = value.toInt();
+        final next = value.toInt();
+        if (_articleOverrides['wpm'] == next) return;
+        _articleOverrides['wpm'] = next;
       }
       notifyListeners();
     }
   }
 
   /// 清除稿件覆盖设置
+  bool _mapEquals(Map<String, dynamic> a, Map<String, dynamic> b) {
+    if (identical(a, b)) return true;
+    if (a.length != b.length) return false;
+    for (final entry in a.entries) {
+      if (!b.containsKey(entry.key) || b[entry.key] != entry.value) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   void clearArticleOverrides() {
     if (_articleOverrides.isNotEmpty) {
       _articleOverrides = {};
@@ -188,6 +208,12 @@ class SettingsProvider with ChangeNotifier {
         updated = updated.copyWith(
           progressShowCurrentTime:
               overrideData['progressShowCurrentTime'] as bool,
+        );
+      }
+      if (overrideData.containsKey('appBrightnessMode')) {
+        updated = updated.copyWith(
+          appBrightnessMode:
+              overrideData['appBrightnessMode'] as AppBrightnessMode,
         );
       }
       _settings = updated;
@@ -447,6 +473,12 @@ class SettingsProvider with ChangeNotifier {
   /// 设置局域网发布状态
   Future<void> setLanPublished(bool value) async {
     _settings = _settings.copyWith(isLanPublished: value);
+    notifyListeners();
+    await _saveSettings();
+  }
+
+  Future<void> setAppBrightnessMode(AppBrightnessMode mode) async {
+    _settings = _settings.copyWith(appBrightnessMode: mode);
     notifyListeners();
     await _saveSettings();
   }

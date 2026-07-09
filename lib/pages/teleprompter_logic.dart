@@ -12,8 +12,12 @@ mixin TeleprompterPageLogic<T extends StatefulWidget>
 
   TeleprompterProvider? _teleprompterProvider;
   SettingsProvider? _settingsProvider;
+  ConnectionProvider? _connectionProvider;
+  ArticleProvider? _articleProvider;
   _WindowEventListener? _windowListener;
   bool _remoteSessionEndSent = false;
+  bool _viewportProgressUpdateScheduled = false;
+  double? _pendingViewportProgress;
 
   @override
   void initState() {
@@ -21,11 +25,16 @@ mixin TeleprompterPageLogic<T extends StatefulWidget>
     WidgetsBinding.instance.addObserver(this);
     _teleprompterProvider = context.read<TeleprompterProvider>();
     _settingsProvider = context.read<SettingsProvider>();
+    _connectionProvider = context.read<ConnectionProvider>();
+    _articleProvider = context.read<ArticleProvider>();
     _setupScrollListener();
 
     // 加载稿件特有的提词器设置覆盖
     final article = (widget as TeleprompterPage).article;
-    _settingsProvider!.loadArticleOverrides(article.teleprompterSettings);
+    _settingsProvider!.loadArticleOverrides(
+      article.teleprompterSettings,
+      notify: false,
+    );
 
     // 监听窗口最大化/还原事件，确保标题栏正确显示
     if (_isDesktop) {
@@ -76,14 +85,15 @@ mixin TeleprompterPageLogic<T extends StatefulWidget>
 
   /// 将稿件覆盖设置保存回稿件
   void _saveArticleOverrides() {
-    final connection = context.read<ConnectionProvider>();
+    final connection = _connectionProvider;
+    if (connection == null) return;
     if (connection.isRemote) return;
 
     final overrides = _settingsProvider?.articleOverrides;
     if (overrides != null && overrides.isNotEmpty) {
       try {
         final article = (widget as TeleprompterPage).article;
-        context.read<ArticleProvider>().updateArticleTeleprompterSettings(
+        _articleProvider?.updateArticleTeleprompterSettings(
           article.id,
           Map<String, dynamic>.from(overrides),
         );
@@ -104,7 +114,8 @@ mixin TeleprompterPageLogic<T extends StatefulWidget>
   }
 
   void _sendRemoteSessionEndIfMaster() {
-    final connection = context.read<ConnectionProvider>();
+    final connection = _connectionProvider;
+    if (connection == null) return;
     if (!_canEndRemoteSession(connection)) return;
     _remoteSessionEndSent = true;
     connection.send(
@@ -116,7 +127,8 @@ mixin TeleprompterPageLogic<T extends StatefulWidget>
   }
 
   Future<void> _endRemoteSessionIfMaster() async {
-    final connection = context.read<ConnectionProvider>();
+    final connection = _connectionProvider;
+    if (connection == null) return;
     if (!_canEndRemoteSession(connection)) return;
     _remoteSessionEndSent = true;
     try {
@@ -232,6 +244,15 @@ mixin TeleprompterPageLogic<T extends StatefulWidget>
     if (settings.scrollMode == ScrollMode.auto &&
         teleprompter.isPlaying &&
         settings.wpm <= 0) {
+      if (_speedModifierPressed()) {
+        teleprompter.adjustSpeedByWheel(
+          event.scrollDelta.dy,
+          settingsProvider,
+          stepMultiplier: _speedStepMultiplier(),
+        );
+        return;
+      }
+
       final direction = event.scrollDelta.dy > 0 ? 1 : -1;
       final visualTarget = textLayerKey.currentState?.rawIndexForVisualLineMove(
         direction,
@@ -252,6 +273,11 @@ mixin TeleprompterPageLogic<T extends StatefulWidget>
     return 1;
   }
 
+  bool _speedModifierPressed() {
+    final keyboard = HardwareKeyboard.instance;
+    return keyboard.isControlPressed || keyboard.isShiftPressed;
+  }
+
   // ─── 手动滚动进度更新 ──────────────────────────────────
 
   void _setupScrollListener() {
@@ -269,7 +295,7 @@ mixin TeleprompterPageLogic<T extends StatefulWidget>
     final bottomPad = screenHeight * (AppConstants.bottomPaddingVh / 100);
     final contentExtent = maxScroll - topPad - bottomPad;
     if (contentExtent <= 0) {
-      context.read<TeleprompterProvider>().setManualProgress(0.0);
+      _scheduleViewportProgressUpdate(0.0);
       return;
     }
     final contentOffset = (scrollController.offset - topPad).clamp(
@@ -277,7 +303,21 @@ mixin TeleprompterPageLogic<T extends StatefulWidget>
       contentExtent,
     );
     final progress = (contentOffset / contentExtent).clamp(0.0, 1.0);
-    context.read<TeleprompterProvider>().setManualProgress(progress);
+    _scheduleViewportProgressUpdate(progress);
+  }
+
+  void _scheduleViewportProgressUpdate(double progress) {
+    _pendingViewportProgress = progress;
+    if (_viewportProgressUpdateScheduled) return;
+    _viewportProgressUpdateScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _viewportProgressUpdateScheduled = false;
+      if (!mounted) return;
+      final value = _pendingViewportProgress;
+      _pendingViewportProgress = null;
+      if (value == null) return;
+      context.read<TeleprompterProvider>().setViewportProgress(value);
+    });
   }
 
   // ─── 格式化工具 ────────────────────────────────────────

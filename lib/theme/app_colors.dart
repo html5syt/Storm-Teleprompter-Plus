@@ -44,4 +44,34 @@ class AppColors {
 
   /// 根据用户设置获取提词器背景色
   static Color teleprompterBgFromSettings(int hexColor) => Color(hexColor);
+
+  static bool isLight(BuildContext context) =>
+      Theme.of(context).brightness == Brightness.light;
+
+  static Color backgroundFor(BuildContext context) =>
+      isLight(context) ? const Color(0xFFF5F6F8) : background;
+
+  static Color surfaceFor(BuildContext context) =>
+      isLight(context) ? const Color(0xFFFFFFFF) : surface;
+
+  static Color surfaceElevatedFor(BuildContext context) =>
+      isLight(context) ? const Color(0xFFFFFFFF) : surfaceElevated;
+
+  static Color textPrimaryFor(BuildContext context) =>
+      isLight(context) ? const Color(0xFF202124) : textPrimary;
+
+  static Color textSecondaryFor(BuildContext context) =>
+      isLight(context) ? const Color(0xFF5F6670) : textSecondary;
+
+  static Color textMutedFor(BuildContext context) =>
+      isLight(context) ? const Color(0xFF7A808A) : textMuted;
+
+  static Color textDisabledFor(BuildContext context) =>
+      isLight(context) ? const Color(0xFFA5ABB3) : textDisabled;
+
+  static Color borderFor(BuildContext context) =>
+      isLight(context) ? const Color(0xFFD7D9DE) : border;
+
+  static Color borderLightFor(BuildContext context) =>
+      isLight(context) ? const Color(0xFFE7E9EE) : borderLight;
 }

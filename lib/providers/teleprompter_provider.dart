@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter/scheduler.dart';
 import '../backend/ws_protocol.dart';
 import '../models/app_settings.dart';
 import '../models/script_character.dart';
@@ -41,8 +40,9 @@ class TeleprompterProvider with ChangeNotifier {
   int _totalChars = 0;
   final List<int> _charRawIndices = <int>[];
   double _accumulator = 0.0; // 时间累加器（毫秒）
-  double _lastFrameTime = 0.0; // 上一帧时间戳（毫秒）
-  Ticker? _ticker;
+  Timer? _autoScrollTimer;
+  DateTime? _lastAutoTickAt;
+  DateTime? _lastElapsedNotifyAt;
   int? _activeAutoWpm;
   ScrollMode? _activeAutoMode;
 
@@ -61,6 +61,7 @@ class TeleprompterProvider with ChangeNotifier {
 
   // ─── WebSocket 同步 ─────────────────────────────────────
   ConnectionProvider? _connection;
+  int _lastRealtimeSyncMs = 0;
 
   // ─── Getters ────────────────────────────────────────────
   TeleprompterState get state => _state;
@@ -90,17 +91,19 @@ class TeleprompterProvider with ChangeNotifier {
     if (ordinal >= 0 && _totalChars > 0) {
       return (ordinal + 1) / _totalChars;
     }
-    return _manualProgress;
+    return _viewportProgress;
   }
 
-  // ─── 手动滚动进度跟踪 ─────────────────────────────────
-  double _manualProgress = 0.0;
+  // ─── 视口滚动进度跟踪 ─────────────────────────────────
+  double _viewportProgress = 0.0;
 
-  double get manualProgress => _manualProgress;
+  double get viewportProgress => _viewportProgress;
 
-  /// 设置手动滚动进度（仅 manual 模式使用）
-  void setManualProgress(double value) {
-    _manualProgress = value.clamp(0.0, 1.0);
+  /// 设置视口滚动进度，用于当前字尚未映射时的进度回退。
+  void setViewportProgress(double value) {
+    final next = value.clamp(0.0, 1.0).toDouble();
+    if ((_viewportProgress - next).abs() < 0.0005) return;
+    _viewportProgress = next;
     notifyListeners();
   }
 
@@ -156,34 +159,53 @@ class TeleprompterProvider with ChangeNotifier {
         !_connection!.isLocal) {
       return;
     }
+    if (!reliable && _connection!.remoteDeviceIds.isEmpty) {
+      return;
+    }
     final data = {
       'currentIndex': _currentIndex,
       'isPlaying': isPlaying,
       'articleId': _articleId,
     };
     if (reliable) {
-      unawaited(
-        _connection!
-            .request(
-              WsMessageType.teleprompterSync,
-              data: data,
-              timeout: const Duration(milliseconds: 900),
-            )
-            .then<void>(
-              (_) {},
-              onError: (Object error, StackTrace stackTrace) {
-                debugPrint('[TeleprompterProvider] 可靠同步失败: $error');
-                _connection!.send(
-                  WsMessage(type: WsMessageType.teleprompterSync, data: data),
-                );
-              },
-            ),
-      );
+      _lastRealtimeSyncMs = DateTime.now().millisecondsSinceEpoch;
+      try {
+        unawaited(
+          _connection!
+              .request(
+                WsMessageType.teleprompterSync,
+                data: data,
+                timeout: const Duration(milliseconds: 900),
+              )
+              .then<void>(
+                (_) {},
+                onError: (Object error, StackTrace stackTrace) {
+                  debugPrint('[TeleprompterProvider] 可靠同步失败: $error');
+                  _sendSyncMessage(data);
+                },
+              ),
+        );
+      } catch (error) {
+        debugPrint('[TeleprompterProvider] 启动可靠同步失败: $error');
+      }
       return;
     }
-    _connection!.send(
-      WsMessage(type: WsMessageType.teleprompterSync, data: data),
-    );
+
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    if (nowMs - _lastRealtimeSyncMs < 50) return;
+    _lastRealtimeSyncMs = nowMs;
+
+    _sendSyncMessage(data);
+  }
+
+  void _sendSyncMessage(Map<String, dynamic> data) {
+    try {
+      _connection?.send(
+        WsMessage(type: WsMessageType.teleprompterSync, data: data),
+      );
+    } catch (error) {
+      debugPrint('[TeleprompterProvider] 同步发送失败: $error');
+    }
   }
 
   void _rebuildRawIndexMap() {
@@ -228,6 +250,8 @@ class TeleprompterProvider with ChangeNotifier {
 
   /// 加载稿件内容
   void loadScript(String articleId, String content) {
+    _stopAutoScroll();
+    _stopAsr();
     _articleId = articleId;
 
     // 解析文本为行
@@ -397,12 +421,12 @@ class TeleprompterProvider with ChangeNotifier {
     }
 
     if (settings.scrollMode != ScrollMode.auto) {
-      if (_ticker != null) _stopAutoScroll();
+      if (_autoScrollTimer != null) _stopAutoScroll();
       _rememberAutoScrollSettings(settings);
       return;
     }
 
-    if (changed || _ticker == null) {
+    if (changed || _autoScrollTimer == null) {
       _startAutoScrollIfNeeded(settings);
     }
   }
@@ -415,64 +439,81 @@ class TeleprompterProvider with ChangeNotifier {
     _stopAutoScroll();
 
     _accumulator = 0.0;
-    _lastFrameTime = 0.0;
+    _lastAutoTickAt = null;
+    _lastElapsedNotifyAt = DateTime.now();
 
-    _ticker = Ticker((elapsed) {
-      if (_state != TeleprompterState.playing) return;
-
-      final currentTime = elapsed.inMilliseconds.toDouble();
-
-      if (_lastFrameTime == 0.0) {
-        _lastFrameTime = currentTime;
+    _autoScrollTimer = Timer.periodic(const Duration(milliseconds: 16), (_) {
+      if (_state != TeleprompterState.playing) {
+        _stopAutoScroll();
         return;
       }
 
-      final deltaTime = currentTime - _lastFrameTime;
-      _lastFrameTime = currentTime;
+      final now = DateTime.now();
+      final lastTick = _lastAutoTickAt;
+      _lastAutoTickAt = now;
+
+      if (lastTick == null) return;
+      var shouldNotify = false;
+      var shouldSync = false;
 
       // 每字符间隔 = 60000ms / WPM
-      if (settings.wpm <= 0) return;
-      final msPerChar = 60000.0 / settings.wpm;
-      _accumulator += deltaTime;
+      if (settings.wpm > 0) {
+        final deltaTime = now.difference(lastTick).inMicroseconds / 1000.0;
+        final msPerChar = 60000.0 / settings.wpm;
+        _accumulator += deltaTime;
 
-      if (_accumulator >= msPerChar) {
-        final charsToAdvance = (_accumulator / msPerChar).floor();
-        _accumulator %= msPerChar;
+        if (_accumulator >= msPerChar) {
+          final charsToAdvance = (_accumulator / msPerChar).floor();
+          _accumulator %= msPerChar;
 
-        final currentOrdinal = _ordinalForRawIndex(_currentIndex);
-        final nextOrdinal =
-            ((currentOrdinal < 0 ? -1 : currentOrdinal) + charsToAdvance)
-                .clamp(0, _totalChars - 1)
-                .toInt();
+          final currentOrdinal = _ordinalForRawIndex(_currentIndex);
+          final nextOrdinal =
+              ((currentOrdinal < 0 ? -1 : currentOrdinal) + charsToAdvance)
+                  .clamp(0, _totalChars - 1)
+                  .toInt();
 
-        if (nextOrdinal >= _totalChars - 1) {
-          _currentIndex = _rawIndexAtOrdinal(_totalChars - 1);
-          if (_playStartTime != null) {
-            _elapsedBeforePause += DateTime.now().difference(_playStartTime!);
+          if (nextOrdinal >= _totalChars - 1) {
+            _currentIndex = _rawIndexAtOrdinal(_totalChars - 1);
+            if (_playStartTime != null) {
+              _elapsedBeforePause += now.difference(_playStartTime!);
+            }
+            _state = TeleprompterState.completed;
+            _stopAutoScroll();
+            _playStartTime = null;
+            notifyListeners();
+            _syncToBackend();
+            return;
           }
-          _state = TeleprompterState.completed;
-          _stopAutoScroll();
-          _playStartTime = null;
-          _syncToBackend();
-          notifyListeners();
-          return;
-        }
 
-        _currentIndex = _rawIndexAtOrdinal(nextOrdinal);
-        _syncToBackend();
+          _currentIndex = _rawIndexAtOrdinal(nextOrdinal);
+          shouldNotify = true;
+          shouldSync = true;
+        }
+      }
+
+      final lastElapsedNotify = _lastElapsedNotifyAt;
+      if (!shouldNotify &&
+          lastElapsedNotify != null &&
+          now.difference(lastElapsedNotify) >= const Duration(seconds: 1)) {
+        shouldNotify = true;
+      }
+
+      if (shouldNotify) {
+        _lastElapsedNotifyAt = now;
         notifyListeners();
       }
+      if (shouldSync) {
+        _syncToBackend();
+      }
     });
-
-    _ticker!.start();
   }
 
   void _stopAutoScroll() {
-    _ticker?.stop();
-    _ticker?.dispose();
-    _ticker = null;
+    _autoScrollTimer?.cancel();
+    _autoScrollTimer = null;
     _accumulator = 0.0;
-    _lastFrameTime = 0.0;
+    _lastAutoTickAt = null;
+    _lastElapsedNotifyAt = null;
   }
 
   void _rememberAutoScrollSettings(AppSettings settings) {

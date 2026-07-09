@@ -3,8 +3,11 @@ part of 'editor_page.dart';
 mixin EditorLogic on State<EditorPage> {
   late final TextEditingController titleController;
   late final TextEditingController contentController;
+  late final TextEditingController findController;
+  late final TextEditingController replaceController;
   late final quill.QuillController quillController;
   late final FocusNode editorFocusNode;
+  late final FocusNode findFocusNode;
   late ArticleProvider _articleProvider;
 
   Article? _savedArticle;
@@ -14,6 +17,9 @@ mixin EditorLogic on State<EditorPage> {
 
   bool isDirty = false;
   bool isSaving = false;
+  bool isFindReplaceVisible = false;
+  bool isReplaceMode = false;
+  String findReplaceStatus = '';
 
   Article? get currentArticle => _savedArticle;
 
@@ -36,7 +42,10 @@ mixin EditorLogic on State<EditorPage> {
     contentController = TextEditingController(
       text: widget.article?.content ?? '',
     );
+    findController = TextEditingController();
+    replaceController = TextEditingController();
     editorFocusNode = FocusNode(debugLabel: 'ArticleEditor');
+    findFocusNode = FocusNode(debugLabel: 'FindReplace');
     quillController = quill.QuillController(
       document: quill.Document.fromDelta(
         _contentToDelta(widget.article?.content ?? ''),
@@ -67,7 +76,10 @@ mixin EditorLogic on State<EditorPage> {
     _autosaveTimer?.cancel();
     titleController.dispose();
     contentController.dispose();
+    findController.dispose();
+    replaceController.dispose();
     editorFocusNode.dispose();
+    findFocusNode.dispose();
     quillController.dispose();
     super.dispose();
   }
@@ -253,6 +265,105 @@ mixin EditorLogic on State<EditorPage> {
       quill.Attribute.fromKeyValue(quill.Attribute.size.key, parsed)!,
     );
     _onQuillContentChanged();
+  }
+
+  void showFindReplaceDialog({required bool replaceMode}) {
+    setState(() {
+      isFindReplaceVisible = true;
+      isReplaceMode = replaceMode;
+      findReplaceStatus = '';
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) findFocusNode.requestFocus();
+    });
+  }
+
+  void closeFindReplaceBar() {
+    setState(() {
+      isFindReplaceVisible = false;
+      findReplaceStatus = '';
+    });
+    editorFocusNode.requestFocus();
+  }
+
+  void findNextMatch() {
+    final index = _findNext(findController.text);
+    setState(() {
+      findReplaceStatus = index >= 0 ? '已定位到匹配项' : '没有找到匹配项';
+    });
+  }
+
+  void replaceCurrentMatch() {
+    final replaced = _replaceCurrent(
+      findController.text,
+      replaceController.text,
+    );
+    setState(() {
+      findReplaceStatus = replaced ? '已替换当前匹配项' : '没有可替换的匹配项';
+    });
+  }
+
+  void replaceAllMatches() {
+    final count = _replaceAll(findController.text, replaceController.text);
+    setState(() {
+      findReplaceStatus = count > 0 ? '已替换 $count 处' : '没有可替换的匹配项';
+    });
+  }
+
+  int _findNext(String query) {
+    if (query.isEmpty) return -1;
+    final text = quillController.document.toPlainText();
+    final selection = quillController.selection;
+    final start = selection.isValid ? selection.extentOffset : 0;
+    var index = text.indexOf(query, start.clamp(0, text.length));
+    if (index < 0 && start > 0) index = text.indexOf(query);
+    if (index >= 0) {
+      quillController.updateSelection(
+        TextSelection(baseOffset: index, extentOffset: index + query.length),
+        quill.ChangeSource.local,
+      );
+      editorFocusNode.requestFocus();
+    }
+    return index;
+  }
+
+  bool _replaceCurrent(String query, String replacement) {
+    if (query.isEmpty) return false;
+    final selection = quillController.selection;
+    final text = quillController.document.toPlainText();
+    final selected = selection.isValid && !selection.isCollapsed
+        ? text.substring(
+            selection.start.clamp(0, text.length),
+            selection.end.clamp(0, text.length),
+          )
+        : '';
+    if (selected != query && _findNext(query) < 0) return false;
+    final current = quillController.selection;
+    quillController.replaceText(
+      current.start,
+      current.end - current.start,
+      replacement,
+      TextSelection.collapsed(offset: current.start + replacement.length),
+    );
+    _onQuillContentChanged();
+    return true;
+  }
+
+  int _replaceAll(String query, String replacement) {
+    if (query.isEmpty) return 0;
+    final text = quillController.document.toPlainText();
+    final matches = query.allMatches(text).toList(growable: false);
+    if (matches.isEmpty) return 0;
+    for (final match in matches.reversed) {
+      quillController.replaceText(
+        match.start,
+        match.end - match.start,
+        replacement,
+        TextSelection.collapsed(offset: match.start + replacement.length),
+      );
+    }
+    _onQuillContentChanged();
+    return matches.length;
   }
 
   void _replaceEditorHtml(String html) {

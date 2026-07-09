@@ -13,10 +13,39 @@ import '../theme/app_colors.dart';
 /// 1. 进度条提示文字设置（对齐、显示项、字号）
 /// 2. 正文显示设置（字间距/行距、加粗、强调效果）
 /// 3. 阅读区域框设置（边框粗细、屏幕位置）
-class TeleprompterSettingsPanel extends StatelessWidget {
+class TeleprompterSettingsPanel extends StatefulWidget {
   final VoidCallback onClose;
 
   const TeleprompterSettingsPanel({super.key, required this.onClose});
+
+  @override
+  State<TeleprompterSettingsPanel> createState() =>
+      _TeleprompterSettingsPanelState();
+}
+
+class _TeleprompterSettingsPanelState extends State<TeleprompterSettingsPanel> {
+  late final TextEditingController _scrollSpeedController;
+  late final TextEditingController _bodyFontSizeController;
+  late final FocusNode _scrollSpeedFocusNode;
+  late final FocusNode _bodyFontSizeFocusNode;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollSpeedController = TextEditingController();
+    _bodyFontSizeController = TextEditingController();
+    _scrollSpeedFocusNode = FocusNode();
+    _bodyFontSizeFocusNode = FocusNode();
+  }
+
+  @override
+  void dispose() {
+    _scrollSpeedController.dispose();
+    _bodyFontSizeController.dispose();
+    _scrollSpeedFocusNode.dispose();
+    _bodyFontSizeFocusNode.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -110,7 +139,7 @@ class TeleprompterSettingsPanel extends StatelessWidget {
           IconButton(
             icon: const Icon(Icons.close, size: 20),
             color: AppColors.textSecondary,
-            onPressed: onClose,
+            onPressed: widget.onClose,
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
           ),
@@ -161,7 +190,11 @@ class TeleprompterSettingsPanel extends StatelessWidget {
     SettingsProvider provider,
     AppSettings settings,
   ) {
-    final controller = TextEditingController(text: '${settings.wpm}');
+    _syncTextController(
+      _scrollSpeedController,
+      _scrollSpeedFocusNode,
+      '${settings.wpm}',
+    );
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
@@ -177,7 +210,8 @@ class TeleprompterSettingsPanel extends StatelessWidget {
           ),
           Expanded(
             child: TextField(
-              controller: controller,
+              controller: _scrollSpeedController,
+              focusNode: _scrollSpeedFocusNode,
               keyboardType: TextInputType.number,
               decoration: const InputDecoration(
                 suffixText: '字/分',
@@ -197,7 +231,7 @@ class TeleprompterSettingsPanel extends StatelessWidget {
             tooltip: '应用速度',
             icon: const Icon(Icons.check, size: 18),
             onPressed: () {
-              final parsed = int.tryParse(controller.text.trim());
+              final parsed = int.tryParse(_scrollSpeedController.text.trim());
               if (parsed != null) provider.setWpm(parsed < 0 ? 0 : parsed);
             },
           ),
@@ -423,8 +457,10 @@ class TeleprompterSettingsPanel extends StatelessWidget {
     SettingsProvider provider,
     AppSettings settings,
   ) {
-    final controller = TextEditingController(
-      text: settings.fontSize.toStringAsFixed(
+    _syncTextController(
+      _bodyFontSizeController,
+      _bodyFontSizeFocusNode,
+      settings.fontSize.toStringAsFixed(
         settings.fontSize.truncateToDouble() == settings.fontSize ? 0 : 1,
       ),
     );
@@ -447,7 +483,8 @@ class TeleprompterSettingsPanel extends StatelessWidget {
           ),
           Expanded(
             child: TextField(
-              controller: controller,
+              controller: _bodyFontSizeController,
+              focusNode: _bodyFontSizeFocusNode,
               keyboardType: const TextInputType.numberWithOptions(
                 decimal: true,
               ),
@@ -471,7 +508,9 @@ class TeleprompterSettingsPanel extends StatelessWidget {
             tooltip: '应用字号',
             icon: const Icon(Icons.check, size: 18),
             onPressed: () {
-              final parsed = double.tryParse(controller.text.trim());
+              final parsed = double.tryParse(
+                _bodyFontSizeController.text.trim(),
+              );
               if (parsed != null && parsed > 0) {
                 provider.setFontSize(parsed);
               }
@@ -733,6 +772,18 @@ class TeleprompterSettingsPanel extends StatelessWidget {
             ),
         ],
       ),
+    );
+  }
+
+  void _syncTextController(
+    TextEditingController controller,
+    FocusNode focusNode,
+    String text,
+  ) {
+    if (focusNode.hasFocus || controller.text == text) return;
+    controller.value = TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
     );
   }
 }

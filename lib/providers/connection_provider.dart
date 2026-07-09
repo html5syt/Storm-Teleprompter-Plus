@@ -26,6 +26,7 @@ enum ConnectionMode {
 /// 改连接到远程后端时，停止本机持有的后端实例。
 class ConnectionProvider with ChangeNotifier {
   static const _historyPrefsKey = 'remote_connection_history';
+  static const _maxRemoteConnectionHistory = 5;
   final WsClient client = WsClient();
 
   ConnectionMode _mode = ConnectionMode.disconnected;
@@ -133,6 +134,12 @@ class ConnectionProvider with ChangeNotifier {
     return lines.join('\n');
   }
 
+  String get connectionDetailBodyText {
+    final lines = connectionDetailText.split('\n');
+    if (lines.length <= 1) return '';
+    return lines.skip(1).join('\n');
+  }
+
   bool get canRetryRemoteConnection =>
       _mode == ConnectionMode.disconnected &&
       _remoteHost != null &&
@@ -151,6 +158,7 @@ class ConnectionProvider with ChangeNotifier {
             ),
           )
           .where((record) => record.host.isNotEmpty && record.port > 0)
+          .take(_maxRemoteConnectionHistory)
           .toList(growable: false);
       notifyListeners();
     } catch (e) {
@@ -179,15 +187,19 @@ class ConnectionProvider with ChangeNotifier {
       ..._remoteConnectionHistory.where(
         (item) => item.host != normalizedHost || item.port != port,
       ),
-    ].take(8).toList(growable: false);
+    ].take(_maxRemoteConnectionHistory).toList(growable: false);
     notifyListeners();
     await _saveRemoteConnectionHistory();
   }
 
   /// 初始化：连接到本地后端
   Future<void> connectToLocal(int port) async {
+    if (client.isConnected || canRetryRemoteConnection) {
+      await client.disconnect();
+    }
     _remoteHost = 'localhost';
     _remotePort = port;
+    _lastError = null;
 
     try {
       await client.connect(host: 'localhost', port: port);

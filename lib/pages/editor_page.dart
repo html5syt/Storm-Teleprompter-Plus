@@ -17,6 +17,7 @@ import '../providers/settings_provider.dart';
 import '../providers/teleprompter_provider.dart';
 import '../services/text_parser.dart';
 import '../theme/app_colors.dart';
+import '../theme/app_theme.dart';
 import 'teleprompter_page.dart';
 
 part 'editor_logic.dart';
@@ -40,6 +41,8 @@ class _EditorPageState extends State<EditorPage> with EditorLogic {
       canPop: true,
       onPopInvokedWithResult: (_, _) => flushAutosave(),
       child: Scaffold(
+        resizeToAvoidBottomInset: false,
+        backgroundColor: AppColors.backgroundFor(context),
         appBar: AppBar(
           title: Text(isEditing ? '编辑稿件' : '新建稿件'),
           actions: [
@@ -48,8 +51,8 @@ class _EditorPageState extends State<EditorPage> with EditorLogic {
                 padding: const EdgeInsets.only(right: 12),
                 child: Text(
                   '$plainTextLength 字',
-                  style: const TextStyle(
-                    color: AppColors.textMuted,
+                  style: TextStyle(
+                    color: AppColors.textMutedFor(context),
                     fontSize: 13,
                   ),
                 ),
@@ -64,7 +67,7 @@ class _EditorPageState extends State<EditorPage> with EditorLogic {
                     color: isSaving
                         ? AppColors.warning
                         : isDirty
-                        ? AppColors.textMuted
+                        ? AppColors.textMutedFor(context)
                         : AppColors.success,
                     fontSize: 12,
                   ),
@@ -87,8 +90,12 @@ class _EditorPageState extends State<EditorPage> with EditorLogic {
         body: CallbackShortcuts(
           bindings: {
             const SingleActivator(LogicalKeyboardKey.escape): () {
-              flushAutosave();
-              unawaited(Navigator.maybePop(context));
+              if (isFindReplaceVisible) {
+                closeFindReplaceBar();
+              } else {
+                flushAutosave();
+                unawaited(Navigator.maybePop(context));
+              }
             },
             const SingleActivator(
               LogicalKeyboardKey.keyS,
@@ -96,41 +103,58 @@ class _EditorPageState extends State<EditorPage> with EditorLogic {
               alt: true,
             ): () =>
                 unawaited(quickStartTeleprompter()),
+            const SingleActivator(LogicalKeyboardKey.keyF, control: true): () =>
+                showFindReplaceDialog(replaceMode: false),
+            const SingleActivator(LogicalKeyboardKey.keyH, control: true): () =>
+                showFindReplaceDialog(replaceMode: true),
           },
           child: Focus(
             autofocus: true,
-            child: Column(
+            child: Stack(
               children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(18, 8, 18, 4),
-                  child: TextField(
-                    controller: titleController,
-                    style: const TextStyle(
-                      fontSize: 21,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.textPrimary,
+                Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(18, 8, 18, 4),
+                      child: TextField(
+                        controller: titleController,
+                        style: TextStyle(
+                          fontSize: 21,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.textPrimaryFor(context),
+                        ),
+                        decoration: const InputDecoration(
+                          hintText: '稿件标题',
+                          border: InputBorder.none,
+                          enabledBorder: InputBorder.none,
+                          focusedBorder: InputBorder.none,
+                          fillColor: Colors.transparent,
+                          filled: true,
+                          isDense: true,
+                          contentPadding: EdgeInsets.symmetric(vertical: 8),
+                        ),
+                        maxLines: 1,
+                        textInputAction: TextInputAction.next,
+                      ),
                     ),
-                    decoration: const InputDecoration(
-                      hintText: '稿件标题',
-                      border: InputBorder.none,
-                      enabledBorder: InputBorder.none,
-                      focusedBorder: InputBorder.none,
-                      fillColor: Colors.transparent,
-                      filled: true,
-                      isDense: true,
-                      contentPadding: EdgeInsets.symmetric(vertical: 8),
+                    Divider(
+                      height: 1,
+                      color: AppColors.borderLightFor(context),
                     ),
-                    maxLines: 1,
-                    textInputAction: TextInputAction.next,
-                  ),
+                    Expanded(
+                      child: Padding(
+                        padding: EdgeInsets.fromLTRB(
+                          12,
+                          8,
+                          12,
+                          isFindReplaceVisible ? 92 : 12,
+                        ),
+                        child: _buildQuillEditor(),
+                      ),
+                    ),
+                  ],
                 ),
-                const Divider(height: 1, color: AppColors.borderLight),
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-                    child: _buildQuillEditor(),
-                  ),
-                ),
+                if (isFindReplaceVisible) _buildFindReplaceBar(),
               ],
             ),
           ),
@@ -243,20 +267,36 @@ class _EditorPageState extends State<EditorPage> with EditorLogic {
         children: [
           SizedBox(
             height: 44,
-            child: Padding(
+            child: ListView(
+              scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  _buildFormatTools(),
-                  const SizedBox(width: 8),
-                  _buildFontSizeInput(),
-                  const SizedBox(width: 8),
-                  Container(width: 1, height: 26, color: AppColors.borderLight),
-                  const SizedBox(width: 6),
-                  Expanded(child: toolbar),
-                ],
-              ),
+              children: [
+                Center(child: _buildFormatTools()),
+                const SizedBox(width: 8),
+                Center(child: _buildFontSizeInput()),
+                const SizedBox(width: 8),
+                Center(child: _buildFindButton()),
+                Center(child: _buildReplaceButton()),
+                const SizedBox(width: 8),
+                Center(
+                  child: Container(
+                    width: 1,
+                    height: 26,
+                    color: AppColors.borderLight,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                SizedBox(
+                  width: 620,
+                  child: Theme(
+                    data: AppTheme.fromColorAndFont(
+                      AppColors.primaryFromSettings(settings.uiPrimaryColor),
+                      fontFamily: settings.appFontFamily,
+                    ),
+                    child: toolbar,
+                  ),
+                ),
+              ],
             ),
           ),
           const Divider(height: 1, color: AppColors.borderLight),
@@ -326,6 +366,145 @@ class _EditorPageState extends State<EditorPage> with EditorLogic {
           onSubmitted: applyFontSize,
         ),
       ),
+    );
+  }
+
+  Widget _buildFindButton() {
+    return _buildFormatButton(
+      Icons.search,
+      '查找 (Ctrl+F)',
+      () => showFindReplaceDialog(replaceMode: false),
+    );
+  }
+
+  Widget _buildReplaceButton() {
+    return _buildFormatButton(
+      Icons.find_replace,
+      '替换 (Ctrl+H)',
+      () => showFindReplaceDialog(replaceMode: true),
+    );
+  }
+
+  Widget _buildFindReplaceBar() {
+    final width = MediaQuery.sizeOf(context).width;
+    final isNarrow = width < (isReplaceMode ? 980 : 760);
+    final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
+    final bar = Material(
+      elevation: 10,
+      color: AppColors.surfaceElevatedFor(context),
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.all(8),
+        child: isNarrow ? _buildFindReplaceCompact() : _buildFindReplaceWide(),
+      ),
+    );
+
+    return Positioned(
+      left: 12,
+      right: 12,
+      bottom: bottomInset + 12,
+      child: bar,
+    );
+  }
+
+  Widget _buildFindReplaceCompact() {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          children: [
+            Expanded(child: _buildFindField()),
+            IconButton(
+              tooltip: '关闭',
+              onPressed: closeFindReplaceBar,
+              icon: const Icon(Icons.close),
+            ),
+          ],
+        ),
+        if (isReplaceMode) ...[const SizedBox(height: 6), _buildReplaceField()],
+        const SizedBox(height: 6),
+        Row(
+          children: [
+            Expanded(child: _buildFindReplaceStatus()),
+            _buildFindReplaceActions(),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFindReplaceWide() {
+    return Row(
+      children: [
+        SizedBox(width: 280, child: _buildFindField()),
+        if (isReplaceMode) ...[
+          const SizedBox(width: 8),
+          SizedBox(width: 320, child: _buildReplaceField()),
+        ],
+        const SizedBox(width: 8),
+        Expanded(child: _buildFindReplaceStatus()),
+        _buildFindReplaceActions(),
+        IconButton(
+          tooltip: '关闭',
+          onPressed: closeFindReplaceBar,
+          icon: const Icon(Icons.close),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFindField() {
+    return TextField(
+      controller: findController,
+      focusNode: findFocusNode,
+      decoration: const InputDecoration(
+        prefixIcon: Icon(Icons.search),
+        labelText: '查找',
+        isDense: true,
+      ),
+      onSubmitted: (_) => findNextMatch(),
+    );
+  }
+
+  Widget _buildReplaceField() {
+    return TextField(
+      controller: replaceController,
+      decoration: const InputDecoration(
+        prefixIcon: Icon(Icons.find_replace),
+        labelText: '替换为',
+        isDense: true,
+      ),
+      onSubmitted: (_) => replaceCurrentMatch(),
+    );
+  }
+
+  Widget _buildFindReplaceStatus() {
+    return Text(
+      findReplaceStatus,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: TextStyle(fontSize: 12, color: AppColors.textMutedFor(context)),
+    );
+  }
+
+  Widget _buildFindReplaceActions() {
+    return Wrap(
+      spacing: 4,
+      children: [
+        IconButton(
+          tooltip: '查找下一个',
+          onPressed: findNextMatch,
+          icon: const Icon(Icons.keyboard_arrow_down),
+        ),
+        if (isReplaceMode)
+          IconButton(
+            tooltip: '替换',
+            onPressed: replaceCurrentMatch,
+            icon: const Icon(Icons.find_replace),
+          ),
+        if (isReplaceMode)
+          TextButton(onPressed: replaceAllMatches, child: const Text('全部替换')),
+      ],
     );
   }
 }

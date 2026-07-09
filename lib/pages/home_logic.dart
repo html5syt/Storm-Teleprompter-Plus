@@ -5,6 +5,7 @@ class _ContentItem {
   final String id;
   final String name;
   final bool isFolder;
+  final DateTime createdAt;
   final DateTime updatedAt;
   final Folder? folder;
   final Article? article;
@@ -13,6 +14,7 @@ class _ContentItem {
     : id = folder!.id,
       name = folder.name,
       isFolder = true,
+      createdAt = folder.createdAt,
       updatedAt = folder.createdAt,
       article = null;
 
@@ -20,6 +22,7 @@ class _ContentItem {
     : id = article!.id,
       name = article.title.isEmpty ? '无标题' : article.title,
       isFolder = false,
+      createdAt = article.createdAt,
       updatedAt = article.updatedAt,
       folder = null;
 }
@@ -29,10 +32,13 @@ enum _ClipboardOp { cut, copy }
 
 /// 首页逻辑 mixin
 mixin HomeLogic on State<HomePage> {
+  void _showFabMenu(BuildContext context, ConnectionProvider connection);
+
   // ─── 搜索 ─────────────────────────────────────────────
   final TextEditingController searchController = TextEditingController();
   String searchQuery = '';
   final ImportService _importService = ImportService();
+  final ExportService _exportService = ExportService();
   bool _isDraggingImport = false;
   bool _isImporting = false;
 
@@ -400,6 +406,33 @@ mixin HomeLogic on State<HomePage> {
     }
   }
 
+  Future<void> _importFromMenu() async {
+    final files = await openFiles(
+      acceptedTypeGroups: const [
+        XTypeGroup(label: '稿件文件', extensions: ['txt', 'docx']),
+      ],
+    );
+    if (files.isEmpty) return;
+    await _importDroppedFiles(files.map((file) => file.path).toList());
+  }
+
+  Future<void> _exportSelectedItems() async {
+    if (_selectedItems.isEmpty) {
+      _showImportSnackBar('请选择要导出的稿件');
+      return;
+    }
+    final articleProvider = context.read<ArticleProvider>();
+    final selectedArticles = articleProvider.articles
+        .where((article) => _selectedItems.contains(article.id))
+        .toList();
+    final result = await _exportService.exportArticles(selectedArticles);
+    if (result.message != null) {
+      _showImportSnackBar(result.message!);
+    } else if (result.count > 0) {
+      _showImportSnackBar('已导出 ${result.count} 篇稿件');
+    }
+  }
+
   String _fileName(String path) => path.split(RegExp(r'[\\/]')).last;
 
   void _showImportSnackBar(String message) {
@@ -419,7 +452,7 @@ mixin HomeLogic on State<HomePage> {
             constraints: const BoxConstraints(maxWidth: 360),
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
             decoration: BoxDecoration(
-              color: AppColors.surface.withValues(alpha: 0.96),
+              color: AppColors.surfaceFor(context).withValues(alpha: 0.96),
               borderRadius: BorderRadius.circular(8),
               border: Border.all(
                 color: AppColors.primary.withValues(alpha: 0.45),
@@ -755,6 +788,7 @@ mixin HomeLogic on State<HomePage> {
           const PopupMenuDivider(),
           const PopupMenuItem<String>(value: 'cut', child: Text('剪切')),
           const PopupMenuItem<String>(value: 'copy', child: Text('复制')),
+          const PopupMenuItem<String>(value: 'properties', child: Text('属性')),
           const PopupMenuDivider(),
           const PopupMenuItem<String>(value: 'delete', child: Text('删除')),
         ] else ...[
@@ -764,6 +798,7 @@ mixin HomeLogic on State<HomePage> {
           const PopupMenuDivider(),
           const PopupMenuItem<String>(value: 'cut', child: Text('剪切')),
           const PopupMenuItem<String>(value: 'copy', child: Text('复制')),
+          const PopupMenuItem<String>(value: 'properties', child: Text('属性')),
           const PopupMenuDivider(),
           const PopupMenuItem<String>(
             value: 'moveToFolder',
@@ -797,6 +832,9 @@ mixin HomeLogic on State<HomePage> {
         _clipboardOp = _ClipboardOp.copy;
         _clipboard.clear();
         _clipboard.add(item);
+        break;
+      case 'properties':
+        _showItemPropertiesDialog(item);
         break;
       case 'delete':
         _deleteItemDialog(item);
@@ -1174,9 +1212,12 @@ mixin HomeLogic on State<HomePage> {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text(
+              Text(
                 '注意：当前客户端需要和服务端处于同一内网下',
-                style: TextStyle(color: AppColors.textMuted, fontSize: 13),
+                style: TextStyle(
+                  color: AppColors.textMutedFor(context),
+                  fontSize: 13,
+                ),
               ),
               if (connection.remoteConnectionHistory.isNotEmpty) ...[
                 const SizedBox(height: 14),
@@ -1341,6 +1382,8 @@ mixin HomeLogic on State<HomePage> {
   // ─── 键盘快捷键 ──────────────────────────────────────
   KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    if (_isTextInputFocused()) return KeyEventResult.ignored;
+
     final key = event.logicalKey;
     final ctrl = HardwareKeyboard.instance.isControlPressed;
     final shift = HardwareKeyboard.instance.isShiftPressed;
@@ -1348,10 +1391,22 @@ mixin HomeLogic on State<HomePage> {
 
     if (key == LogicalKeyboardKey.escape) {
       if (_selectedItems.isNotEmpty) setState(() => _selectedItems.clear());
+    } else if (!ctrl &&
+        !shift &&
+        !alt &&
+        key == LogicalKeyboardKey.backspace &&
+        _currentFolderId != null) {
+      _navigateUp();
     } else if (key == LogicalKeyboardKey.delete) {
       _deleteSelected();
     } else if (key == LogicalKeyboardKey.f2) {
       _renameSelected();
+    } else if (!ctrl &&
+        !shift &&
+        !alt &&
+        key == LogicalKeyboardKey.enter &&
+        _selectedItems.isNotEmpty) {
+      _handleEnterOnSelection();
     } else if (ctrl && key == LogicalKeyboardKey.keyA) {
       _selectAll();
     } else if (ctrl && key == LogicalKeyboardKey.keyN && shift) {
@@ -1391,6 +1446,32 @@ mixin HomeLogic on State<HomePage> {
       return KeyEventResult.ignored;
     }
     return KeyEventResult.handled;
+  }
+
+  bool _isTextInputFocused() {
+    var node = FocusManager.instance.primaryFocus;
+    while (node != null) {
+      final widget = node.context?.widget;
+      if (widget is EditableText) return true;
+      node = node.parent;
+    }
+    return false;
+  }
+
+  void _handleEnterOnSelection() {
+    if (_selectedItems.isEmpty) return;
+    if (_selectedItems.length > 1) {
+      _showFabMenu(context, context.read<ConnectionProvider>());
+      return;
+    }
+
+    final item = _getContentItemsByIds(_selectedItems).firstOrNull;
+    if (item == null) return;
+    if (item.isFolder) {
+      _navigateToFolder(item.id);
+    } else if (item.article != null) {
+      _openTeleprompter(context, item.article!);
+    }
   }
 
   void _selectAll() {
@@ -1502,9 +1583,9 @@ mixin HomeLogic on State<HomePage> {
                 const SizedBox(height: 8),
                 Text(
                   '当前连接数: $clientCount',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 13,
-                    color: AppColors.textMuted,
+                    color: AppColors.textMutedFor(ctx),
                   ),
                 ),
               ],
@@ -1526,6 +1607,103 @@ mixin HomeLogic on State<HomePage> {
   }
 
   // ─── 工具 ─────────────────────────────────────────────
+  String _itemTooltip(_ContentItem item) {
+    return '${item.name}\n修改时间：${_formatDateTime(item.updatedAt)}';
+  }
+
+  void _showItemPropertiesDialog(_ContentItem item) {
+    final parentFolderId = item.isFolder
+        ? item.folder?.parentId
+        : item.article?.folderId;
+    final rows = <(String, String)>[
+      ('名称', item.name),
+      ('类型', item.isFolder ? '文件夹' : '稿件'),
+      ('位置', _folderLocationLabel(parentFolderId)),
+      ('创建时间', _formatDateTime(item.createdAt)),
+      ('修改时间', _formatDateTime(item.updatedAt)),
+    ];
+    if (item.article != null) {
+      final plainText = _articlePlainText(item.article!);
+      rows.add(('字数', '${plainText.length}'));
+      rows.add(('稿件 ID', item.id));
+    } else {
+      rows.add(('文件夹 ID', item.id));
+    }
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('属性'),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: rows
+                .map(
+                  (row) => Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        SizedBox(
+                          width: 72,
+                          child: Text(
+                            row.$1,
+                            style: TextStyle(
+                              color: AppColors.textMutedFor(ctx),
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                        Expanded(
+                          child: SelectableText(
+                            row.$2,
+                            style: TextStyle(
+                              color: AppColors.textPrimaryFor(ctx),
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+                .toList(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('关闭'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _articlePlainText(Article article) {
+    return article.content
+        .replaceAll(RegExp(r'<[^>]*>'), ' ')
+        .replaceAll(RegExp(r'&nbsp;'), ' ')
+        .replaceAll(RegExp(r'\s+'), '')
+        .trim();
+  }
+
+  String _folderLocationLabel(String? folderId) {
+    final breadcrumb = context.read<FolderProvider>().getBreadcrumbFrom(
+      folderId,
+    );
+    if (breadcrumb.isEmpty) return '根目录';
+    return breadcrumb.map((folder) => folder.name).join(' / ');
+  }
+
+  String _formatDateTime(DateTime date) {
+    String two(int value) => value.toString().padLeft(2, '0');
+    return '${date.year}-${two(date.month)}-${two(date.day)} '
+        '${two(date.hour)}:${two(date.minute)}:${two(date.second)}';
+  }
+
   String _formatDate(DateTime date) {
     final now = DateTime.now();
     final diff = now.difference(date);

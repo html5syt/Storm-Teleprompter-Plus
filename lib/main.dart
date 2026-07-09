@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_quill/flutter_quill.dart' as quill;
 import 'package:provider/provider.dart';
 import 'backend/backend_server.dart';
+import 'models/app_settings.dart';
 import 'providers/article_provider.dart';
 import 'providers/folder_provider.dart';
 import 'providers/settings_provider.dart';
@@ -109,15 +110,23 @@ class StormTeleprompterApp extends StatelessWidget {
             settingsProvider.settings.uiPrimaryColor,
           );
           final appFont = settingsProvider.settings.appFontFamily;
+          final themeMode =
+              switch (settingsProvider.settings.appBrightnessMode) {
+                AppBrightnessMode.system => ThemeMode.system,
+                AppBrightnessMode.light => ThemeMode.light,
+                AppBrightnessMode.dark => ThemeMode.dark,
+              };
           return MaterialApp(
             title: '飓风提词器 Plus',
             debugShowCheckedModeBanner: false,
             localizationsDelegates:
                 quill.FlutterQuillLocalizations.localizationsDelegates,
             supportedLocales: quill.FlutterQuillLocalizations.supportedLocales,
-            theme: AppTheme.fromColorAndFont(primary, fontFamily: appFont),
             darkTheme: AppTheme.fromColorAndFont(primary, fontFamily: appFont),
-            themeMode: ThemeMode.dark,
+            theme: AppTheme.lightFromColorAndFont(primary, fontFamily: appFont),
+            themeMode: themeMode,
+            themeAnimationDuration: const Duration(milliseconds: 260),
+            themeAnimationCurve: Curves.easeOutCubic,
             home: const HomePage(),
           );
         },

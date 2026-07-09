@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import '../models/script_character.dart';
 import '../theme/app_colors.dart';
 import '../utils/constants.dart';
@@ -151,9 +152,12 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer> {
         _lastScrolledToIndex = widget.currentIndex;
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) {
-            _scrollToCurrentChar(
-              animate: !metricsChanged && !widget.autoFollow,
-            );
+            _scrollToCurrentChar(animate: true);
+            if (metricsChanged) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) _scrollToCurrentChar(animate: true);
+              });
+            }
           }
         });
       }
@@ -506,8 +510,17 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer> {
             .clamp(0.0, maxScroll)
             .toDouble();
 
-    if (animate) {
-      _animateToOffset(targetOffset, const Duration(milliseconds: 190));
+    final currentOffset = pos.pixels;
+    final offsetDelta = (targetOffset - currentOffset).abs();
+    if (offsetDelta <= 0.5) return;
+
+    final shouldAnimate = animate || (widget.autoFollow && offsetDelta > 1.0);
+
+    if (shouldAnimate) {
+      _animateToOffset(
+        targetOffset,
+        Duration(milliseconds: widget.autoFollow ? 150 : 190),
+      );
     } else {
       _jumpToOffset(targetOffset);
     }
@@ -540,14 +553,29 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer> {
       0,
     );
 
+    final isScrollEnd =
+        notification is ScrollEndNotification ||
+        (notification is UserScrollNotification &&
+            notification.direction == ScrollDirection.idle);
+    if (rawIndex == null) return false;
+
     if (lineIndex == _lastReportedReadingLine &&
-        rawIndex == widget.currentIndex) {
+        rawIndex == widget.currentIndex &&
+        !isScrollEnd) {
       return false;
     }
-    if (rawIndex == null || rawIndex == widget.currentIndex) return false;
+
+    if (rawIndex == widget.currentIndex) {
+      if (isScrollEnd) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _scrollToCurrentChar();
+        });
+      }
+      return false;
+    }
 
     _lastReportedReadingLine = lineIndex;
-    _lastScrolledToIndex = rawIndex;
+    _lastScrolledToIndex = isScrollEnd ? -2 : rawIndex;
     _scrollRequestId++;
     _isProgrammaticScroll = false;
     widget.onReadingLineChanged?.call(rawIndex);

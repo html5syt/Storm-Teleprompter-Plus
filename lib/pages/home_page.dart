@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:desktop_drop/desktop_drop.dart';
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -12,8 +13,10 @@ import '../providers/folder_provider.dart';
 import '../providers/settings_provider.dart';
 import '../providers/teleprompter_provider.dart';
 import '../providers/connection_provider.dart';
+import '../services/export_service.dart';
 import '../services/import_service.dart';
 import '../models/article.dart';
+import '../models/app_settings.dart';
 import '../models/folder.dart';
 import '../theme/app_colors.dart';
 import '../main.dart';
@@ -38,6 +41,8 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
+  bool _isClosingWindow = false;
+
   IconData get _viewModeIcon {
     switch (_viewMode) {
       case ViewMode.largeIcons:
@@ -85,9 +90,39 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
   }
 
   Future<void> _handleWindowClose() async {
-    if (await _confirmLocalBackendShutdown(context, actionLabel: '关闭服务端')) {
-      await windowManager.destroy();
-    }
+    if (_isClosingWindow) return;
+    final shouldClose = await _confirmLocalBackendShutdown(
+      context,
+      actionLabel: '关闭服务端',
+    );
+    if (!shouldClose || !mounted) return;
+
+    _isClosingWindow = true;
+    unawaited(
+      showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => const PopScope(
+          canPop: false,
+          child: AlertDialog(
+            title: Text('正在退出'),
+            content: Row(
+              children: [
+                SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                SizedBox(width: 14),
+                Expanded(child: Text('正在关闭服务并退出应用...')),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 80));
+    await windowManager.destroy();
   }
 
   String get _viewModeTooltip {
@@ -144,6 +179,7 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
                 }
               },
               child: Scaffold(
+                backgroundColor: AppColors.backgroundFor(context),
                 appBar: _buildCommandBar(context, connection),
                 body: connection.isLocal && connection.isConnected
                     ? DropTarget(
@@ -232,6 +268,31 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
             ),
       titleSpacing: 0,
       actions: [
+        Consumer<SettingsProvider>(
+          builder: (context, settingsProvider, _) {
+            final mode = settingsProvider.settings.appBrightnessMode;
+            final nextMode = _nextBrightnessMode(mode);
+            return IconButton(
+              tooltip:
+                  '${_brightnessModeLabel(mode)}，点击切换为${_brightnessModeLabel(nextMode)}',
+              onPressed: () => settingsProvider.setAppBrightnessMode(nextMode),
+              icon: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 220),
+                switchInCurve: Curves.easeOutCubic,
+                switchOutCurve: Curves.easeInCubic,
+                transitionBuilder: (child, animation) => RotationTransition(
+                  turns: Tween<double>(begin: -0.12, end: 0).animate(animation),
+                  child: FadeTransition(opacity: animation, child: child),
+                ),
+                child: Icon(
+                  _brightnessModeIcon(mode),
+                  key: ValueKey(mode),
+                  size: 20,
+                ),
+              ),
+            );
+          },
+        ),
         // 排序
         PopupMenuButton<SortBy>(
           icon: const Icon(Icons.sort, size: 20),
@@ -262,7 +323,7 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
             size: 20,
             color: connection.isConnected
                 ? (connection.isRemote ? AppColors.info : AppColors.success)
-                : AppColors.textMuted,
+                : AppColors.textMutedFor(context),
           ),
           tooltip: '服务连接',
           onSelected: (value) async {
@@ -277,13 +338,28 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
               enabled: false,
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 300),
-                child: SelectableText(
-                  connection.connectionDetailText,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: AppColors.textMuted,
-                    height: 1.45,
-                  ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      '服务端连接信息',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.textPrimaryFor(context),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    SelectableText(
+                      connection.connectionDetailBodyText,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: AppColors.textMutedFor(context),
+                        height: 1.45,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -305,6 +381,30 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
     );
   }
 
+  IconData _brightnessModeIcon(AppBrightnessMode mode) {
+    return switch (mode) {
+      AppBrightnessMode.system => Icons.brightness_auto_outlined,
+      AppBrightnessMode.light => Icons.light_mode_outlined,
+      AppBrightnessMode.dark => Icons.dark_mode_outlined,
+    };
+  }
+
+  AppBrightnessMode _nextBrightnessMode(AppBrightnessMode mode) {
+    return switch (mode) {
+      AppBrightnessMode.light => AppBrightnessMode.dark,
+      AppBrightnessMode.dark => AppBrightnessMode.system,
+      AppBrightnessMode.system => AppBrightnessMode.light,
+    };
+  }
+
+  String _brightnessModeLabel(AppBrightnessMode mode) {
+    return switch (mode) {
+      AppBrightnessMode.light => '白天模式',
+      AppBrightnessMode.dark => '夜间模式',
+      AppBrightnessMode.system => '自动模式',
+    };
+  }
+
   // ─── 面包屑导航栏 ─────────────────────────────────────
   Widget _buildBreadcrumbBar() {
     // 直接使用 _currentFolderId（State 变量）而非 FolderProvider，
@@ -317,9 +417,11 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
       height: 36,
       padding: const EdgeInsets.symmetric(horizontal: 8),
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: AppColors.surfaceFor(context),
         border: Border(
-          bottom: BorderSide(color: AppColors.border.withValues(alpha: 0.5)),
+          bottom: BorderSide(
+            color: AppColors.borderFor(context).withValues(alpha: 0.5),
+          ),
         ),
       ),
       child: Align(
@@ -342,7 +444,7 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
                         size: 14,
                         color: isRoot
                             ? AppColors.primary
-                            : AppColors.textSecondary,
+                            : AppColors.textSecondaryFor(context),
                       ),
                       const SizedBox(width: 4),
                       Text(
@@ -354,7 +456,7 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
                               : FontWeight.normal,
                           color: isRoot
                               ? AppColors.primary
-                              : AppColors.textSecondary,
+                              : AppColors.textSecondaryFor(context),
                         ),
                       ),
                     ],
@@ -366,7 +468,7 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
                 Icon(
                   Icons.chevron_right,
                   size: 14,
-                  color: AppColors.textDisabled,
+                  color: AppColors.textDisabledFor(context),
                 ),
                 GestureDetector(
                   onTap: () => _navigateToFolder(breadcrumb[i].id),
@@ -381,7 +483,7 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
                             : FontWeight.normal,
                         color: i == breadcrumb.length - 1
                             ? AppColors.primary
-                            : AppColors.textSecondary,
+                            : AppColors.textSecondaryFor(context),
                       ),
                     ),
                   ),
@@ -400,7 +502,9 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
         border: Border(
-          bottom: BorderSide(color: AppColors.border.withValues(alpha: 0.5)),
+          bottom: BorderSide(
+            color: AppColors.borderFor(context).withValues(alpha: 0.5),
+          ),
         ),
       ),
       child: SizedBox(
@@ -424,18 +528,18 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
             ),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(6),
-              borderSide: const BorderSide(color: AppColors.border),
+              borderSide: BorderSide(color: AppColors.borderFor(context)),
             ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(6),
-              borderSide: const BorderSide(color: AppColors.border),
+              borderSide: BorderSide(color: AppColors.borderFor(context)),
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(6),
               borderSide: const BorderSide(color: AppColors.primary),
             ),
             isDense: true,
-            fillColor: AppColors.surface,
+            fillColor: AppColors.surfaceFor(context),
             filled: true,
           ),
           onChanged: onSearchChanged,
@@ -521,18 +625,24 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
             Icon(
               Icons.folder_open,
               size: 80,
-              color: AppColors.textMuted.withValues(alpha: 0.3),
+              color: AppColors.textMutedFor(context).withValues(alpha: 0.3),
             ),
             const SizedBox(height: 20),
             Text(
               searchQuery.isNotEmpty ? '没有找到匹配的项目' : '此文件夹为空',
-              style: const TextStyle(fontSize: 18, color: AppColors.textMuted),
+              style: TextStyle(
+                fontSize: 18,
+                color: AppColors.textMutedFor(context),
+              ),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 8),
-            const Text(
+            Text(
               '点击工具栏新建稿件或文件夹',
-              style: TextStyle(fontSize: 13, color: AppColors.textDisabled),
+              style: TextStyle(
+                fontSize: 13,
+                color: AppColors.textDisabledFor(context),
+              ),
               textAlign: TextAlign.center,
             ),
           ],
@@ -554,15 +664,22 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
               color: AppColors.info.withValues(alpha: 0.7),
             ),
             const SizedBox(height: 16),
-            const Text(
+            Text(
               '已连接服务端',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textPrimaryFor(context),
+              ),
             ),
             const SizedBox(height: 8),
             Text(
               connection.connectionDetailText,
               textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 13, color: AppColors.textMuted),
+              style: TextStyle(
+                fontSize: 13,
+                color: AppColors.textMutedFor(context),
+              ),
             ),
             const SizedBox(height: 24),
             ElevatedButton.icon(
@@ -589,15 +706,22 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
               color: AppColors.warning.withValues(alpha: 0.75),
             ),
             const SizedBox(height: 16),
-            const Text(
+            Text(
               '未连接服务端',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textPrimaryFor(context),
+              ),
             ),
             const SizedBox(height: 8),
             Text(
               connection.connectionDetailText,
               textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 13, color: AppColors.textMuted),
+              style: TextStyle(
+                fontSize: 13,
+                color: AppColors.textMutedFor(context),
+              ),
             ),
             const SizedBox(height: 24),
             ElevatedButton.icon(
@@ -790,6 +914,12 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
       );
     }
 
+    final tooltipChild = Tooltip(
+      message: _itemTooltip(item),
+      waitDuration: const Duration(milliseconds: 450),
+      child: targetChild,
+    );
+
     return Listener(
       behavior: HitTestBehavior.translucent,
       onPointerDown: (event) {
@@ -819,7 +949,9 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
             constraints: const BoxConstraints(maxWidth: 180),
             child: DecoratedBox(
               decoration: BoxDecoration(
-                color: AppColors.surfaceElevated.withValues(alpha: 0.96),
+                color: AppColors.surfaceElevatedFor(
+                  context,
+                ).withValues(alpha: 0.96),
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(color: AppColors.primary),
                 boxShadow: [
@@ -843,7 +975,7 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
                       size: 18,
                       color: item.isFolder
                           ? AppColors.primary
-                          : AppColors.textSecondary,
+                          : AppColors.textSecondaryFor(context),
                     ),
                     const SizedBox(width: 8),
                     Flexible(
@@ -854,8 +986,8 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
                             : item.name,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: AppColors.textPrimary,
+                        style: TextStyle(
+                          color: AppColors.textPrimaryFor(context),
                           fontSize: 12,
                         ),
                       ),
@@ -867,7 +999,7 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
           ),
         ),
         childWhenDragging: Opacity(opacity: 0.45, child: targetChild),
-        child: targetChild,
+        child: tooltipChild,
       ),
     );
   }
@@ -889,7 +1021,9 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
           borderRadius: BorderRadius.circular(8),
           border: isSelected
               ? Border.all(color: AppColors.primary, width: 2)
-              : Border.all(color: AppColors.border.withValues(alpha: 0.3)),
+              : Border.all(
+                  color: AppColors.borderFor(context).withValues(alpha: 0.3),
+                ),
         ),
         padding: EdgeInsets.all(compact ? 6 : 12),
         child: Column(
@@ -900,7 +1034,7 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
               size: compact ? 28 : 48,
               color: item.isFolder
                   ? AppColors.primary
-                  : AppColors.textSecondary,
+                  : AppColors.textSecondaryFor(context),
             ),
             SizedBox(height: compact ? 4 : 8),
             Text(
@@ -908,7 +1042,9 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-                color: isSelected ? AppColors.primary : AppColors.textPrimary,
+                color: isSelected
+                    ? AppColors.primary
+                    : AppColors.textPrimaryFor(context),
               ),
               textAlign: TextAlign.center,
               maxLines: 2,
@@ -919,10 +1055,10 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
               Expanded(
                 child: Text(
                   _articlePreview(item.article!),
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 11,
                     height: 1.35,
-                    color: AppColors.textMuted,
+                    color: AppColors.textMutedFor(context),
                   ),
                   textAlign: TextAlign.center,
                   maxLines: 4,
@@ -980,7 +1116,7 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
                         size: 20,
                         color: item.isFolder
                             ? AppColors.primary
-                            : AppColors.textSecondary,
+                            : AppColors.textSecondaryFor(context),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
@@ -989,9 +1125,10 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
                           children: [
                             Text(
                               item.name,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w500,
+                                color: AppColors.textPrimaryFor(context),
                               ),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
@@ -1000,9 +1137,9 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
                               item.isFolder
                                   ? '文件夹'
                                   : _formatDate(item.updatedAt),
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 11,
-                                color: AppColors.textMuted,
+                                color: AppColors.textMutedFor(context),
                               ),
                             ),
                           ],
@@ -1027,45 +1164,45 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
           padding: const EdgeInsets.symmetric(horizontal: 16),
           height: 36,
           decoration: BoxDecoration(
-            color: AppColors.surface,
+            color: AppColors.surfaceFor(context),
             border: Border(
               bottom: BorderSide(
-                color: AppColors.border.withValues(alpha: 0.5),
+                color: AppColors.borderFor(context).withValues(alpha: 0.5),
               ),
             ),
           ),
           child: Row(
             children: [
-              const Expanded(
+              Expanded(
                 flex: 3,
                 child: Text(
                   '名称',
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
-                    color: AppColors.textMuted,
+                    color: AppColors.textMutedFor(context),
                   ),
                 ),
               ),
-              const Expanded(
+              Expanded(
                 flex: 1,
                 child: Text(
                   '类型',
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
-                    color: AppColors.textMuted,
+                    color: AppColors.textMutedFor(context),
                   ),
                 ),
               ),
-              const Expanded(
+              Expanded(
                 flex: 2,
                 child: Text(
                   '修改日期',
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
-                    color: AppColors.textMuted,
+                    color: AppColors.textMutedFor(context),
                   ),
                 ),
               ),
@@ -1113,13 +1250,18 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
                                     size: 18,
                                     color: item.isFolder
                                         ? AppColors.primary
-                                        : AppColors.textSecondary,
+                                        : AppColors.textSecondaryFor(context),
                                   ),
                                   const SizedBox(width: 8),
                                   Expanded(
                                     child: Text(
                                       item.name,
-                                      style: const TextStyle(fontSize: 13),
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        color: AppColors.textPrimaryFor(
+                                          context,
+                                        ),
+                                      ),
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                     ),
@@ -1131,9 +1273,9 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
                               flex: 1,
                               child: Text(
                                 item.isFolder ? '文件夹' : '稿件',
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 12,
-                                  color: AppColors.textMuted,
+                                  color: AppColors.textMutedFor(context),
                                 ),
                               ),
                             ),
@@ -1141,9 +1283,9 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
                               flex: 2,
                               child: Text(
                                 _formatDate(item.updatedAt),
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 12,
-                                  color: AppColors.textMuted,
+                                  color: AppColors.textMutedFor(context),
                                 ),
                               ),
                             ),
@@ -1166,11 +1308,12 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
     return FloatingActionButton(
       onPressed: () => _showFabMenu(context, connection),
       backgroundColor: AppColors.primary,
-      foregroundColor: AppColors.background,
+      foregroundColor: Colors.white,
       child: const Icon(Icons.add),
     );
   }
 
+  @override
   void _showFabMenu(BuildContext context, ConnectionProvider connection) {
     showModalBottomSheet(
       context: context,
@@ -1179,6 +1322,14 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              ListTile(
+                leading: const Icon(Icons.upload_file),
+                title: const Text('导入稿件'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  unawaited(_importFromMenu());
+                },
+              ),
               if (!connection.isRemote) ...[
                 ListTile(
                   leading: const Icon(Icons.note_add),
@@ -1199,6 +1350,14 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
               ],
               if (_selectedItems.isNotEmpty) ...[
                 const Divider(),
+                ListTile(
+                  leading: const Icon(Icons.download),
+                  title: const Text('导出所选'),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    unawaited(_exportSelectedItems());
+                  },
+                ),
                 if (_selectedItems.length == 1)
                   ListTile(
                     leading: const Icon(Icons.edit),
@@ -1265,18 +1424,20 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
           height: 28,
           padding: const EdgeInsets.symmetric(horizontal: 12),
           decoration: BoxDecoration(
-            color: AppColors.surface,
+            color: AppColors.surfaceFor(context),
             border: Border(
-              top: BorderSide(color: AppColors.border.withValues(alpha: 0.5)),
+              top: BorderSide(
+                color: AppColors.borderFor(context).withValues(alpha: 0.5),
+              ),
             ),
           ),
           child: Row(
             children: [
               Text(
                 '$total 个项目',
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 12,
-                  color: AppColors.textMuted,
+                  color: AppColors.textMutedFor(context),
                 ),
               ),
               if (selected > 0) ...[
@@ -1297,9 +1458,9 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
                     textAlign: TextAlign.right,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 11,
-                      color: AppColors.textDisabled,
+                      color: AppColors.textDisabledFor(context),
                     ),
                   ),
                 )

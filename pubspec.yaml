@@ -49,6 +49,7 @@ dependencies:
   dart_quill_delta: ^10.8.3
   flutter_quill_delta_from_html: ^1.5.3
   desktop_drop: ^0.7.1
+  file_selector: ^1.0.3
   xml: ^7.0.1
 
 dev_dependencies:

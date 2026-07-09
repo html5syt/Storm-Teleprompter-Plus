@@ -32,6 +32,7 @@ class SettingsPage extends StatelessWidget {
       child: Focus(
         autofocus: true,
         child: Scaffold(
+          backgroundColor: AppColors.backgroundFor(context),
           appBar: AppBar(title: const Text('应用设置')),
           body: Consumer2<SettingsProvider, ConnectionProvider>(
             builder: (context, provider, connection, _) {
@@ -43,6 +44,7 @@ class SettingsPage extends StatelessWidget {
                   _buildSectionHeader(context, '应用主题'),
                   const SizedBox(height: 12),
                   _buildThemeColorTile(context, provider, settings),
+                  _buildBrightnessModeTile(context, provider, settings),
 
                   const SizedBox(height: 24),
 
@@ -105,13 +107,13 @@ class SettingsPage extends StatelessWidget {
         decoration: BoxDecoration(
           color: AppColors.primaryFromSettings(settings.uiPrimaryColor),
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: AppColors.border),
+          border: Border.all(color: AppColors.borderFor(context)),
         ),
       ),
       title: const Text('主题色'),
       subtitle: Text(
         '#${settings.uiPrimaryColor.toRadixString(16).padLeft(8, '0').toUpperCase()}',
-        style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
+        style: TextStyle(fontSize: 12, color: AppColors.textMutedFor(context)),
       ),
       trailing: const Icon(Icons.chevron_right),
       onTap: () => _showColorPicker(
@@ -120,6 +122,78 @@ class SettingsPage extends StatelessWidget {
         onColorSelected: (color) =>
             provider.setUiPrimaryColor(color.toARGB32()),
       ),
+    );
+  }
+
+  Widget _buildBrightnessModeTile(
+    BuildContext context,
+    SettingsProvider provider,
+    AppSettings settings,
+  ) {
+    final label = switch (settings.appBrightnessMode) {
+      AppBrightnessMode.system => '自动',
+      AppBrightnessMode.light => '白天',
+      AppBrightnessMode.dark => '夜间',
+    };
+    return ListTile(
+      leading: const Icon(Icons.brightness_6_outlined),
+      title: const Text('亮暗模式'),
+      subtitle: Text(label),
+      trailing: const Icon(Icons.chevron_right),
+      onTap: () {
+        showModalBottomSheet<void>(
+          context: context,
+          builder: (ctx) => SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildBrightnessOption(
+                  ctx,
+                  provider,
+                  settings,
+                  AppBrightnessMode.system,
+                  '自动',
+                  subtitle: '跟随系统',
+                ),
+                _buildBrightnessOption(
+                  ctx,
+                  provider,
+                  settings,
+                  AppBrightnessMode.light,
+                  '白天',
+                ),
+                _buildBrightnessOption(
+                  ctx,
+                  provider,
+                  settings,
+                  AppBrightnessMode.dark,
+                  '夜间',
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildBrightnessOption(
+    BuildContext context,
+    SettingsProvider provider,
+    AppSettings settings,
+    AppBrightnessMode mode,
+    String title, {
+    String? subtitle,
+  }) {
+    final selected = settings.appBrightnessMode == mode;
+    return ListTile(
+      title: Text(title),
+      subtitle: subtitle == null ? null : Text(subtitle),
+      trailing: selected ? const Icon(Icons.check) : null,
+      onTap: () {
+        provider.setAppBrightnessMode(mode);
+        Navigator.pop(context);
+      },
     );
   }
 
@@ -210,7 +284,7 @@ class SettingsPage extends StatelessWidget {
           ],
         ),
       ),
-    ).whenComplete(hexController.dispose);
+    );
   }
 
   // ═══════════════════════════════════════════════════════
@@ -418,9 +492,9 @@ class SettingsPage extends StatelessWidget {
                           Text(model.description),
                           Text(
                             '约 ${model.approximateSizeMB} MB',
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 12,
-                              color: AppColors.textMuted,
+                              color: AppColors.textMutedFor(ctx),
                             ),
                           ),
                           if (progress.isDownloading)
@@ -508,7 +582,10 @@ class SettingsPage extends StatelessWidget {
 
             ListTile(
               leading: const Icon(Icons.info_outline),
-              title: const Text('服务端连接信息'),
+              title: const Text(
+                '服务端连接信息',
+                style: TextStyle(fontWeight: FontWeight.w800),
+              ),
               subtitle: Text(connection.connectionInfoText),
               trailing: const Icon(Icons.chevron_right),
               onTap: () => _showConnectionInfoDialog(context, connection),
@@ -557,11 +634,14 @@ class SettingsPage extends StatelessWidget {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('服务端连接信息'),
+        title: const Text(
+          '服务端连接信息',
+          style: TextStyle(fontWeight: FontWeight.w800),
+        ),
         content: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 360),
           child: SelectableText(
-            connection.connectionDetailText,
+            connection.connectionDetailBodyText,
             style: const TextStyle(height: 1.45),
           ),
         ),
@@ -585,12 +665,12 @@ class SettingsPage extends StatelessWidget {
         content: SizedBox(
           width: 300,
           child: connection.deviceCount == 0
-              ? const Padding(
+              ? Padding(
                   padding: EdgeInsets.all(20),
                   child: Center(
                     child: Text(
                       '暂无其他客户端连接',
-                      style: TextStyle(color: AppColors.textMuted),
+                      style: TextStyle(color: AppColors.textMutedFor(ctx)),
                     ),
                   ),
                 )

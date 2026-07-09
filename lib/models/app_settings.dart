@@ -1,14 +1,12 @@
-/// 滚动模式枚举
 enum ScrollMode {
-  /// 手动滚动
-  manual,
-
   /// 自动匀速滚动
   auto,
 
   /// ASR 语音跟随
   asr,
 }
+
+enum AppBrightnessMode { system, light, dark }
 
 /// 提词器应用设置
 ///
@@ -104,10 +102,13 @@ class AppSettings {
   /// 是否公开到局域网
   final bool isLanPublished;
 
+  /// 应用亮暗模式（不影响提词器播放页和编辑器页）
+  final AppBrightnessMode appBrightnessMode;
+
   const AppSettings({
     this.fontSize = 64,
     this.lineHeight = 1.5,
-    this.scrollMode = ScrollMode.manual,
+    this.scrollMode = ScrollMode.auto,
     this.wpm = 150,
     this.mirrorMode = false,
     this.fullScreenMode = true,
@@ -135,6 +136,7 @@ class AppSettings {
     this.progressShowSpeed = true,
     this.progressShowCurrentTime = true,
     this.isLanPublished = false,
+    this.appBrightnessMode = AppBrightnessMode.dark,
   });
 
   /// 从 JSON 反序列化
@@ -144,7 +146,7 @@ class AppSettings {
       lineHeight: (json['lineHeight'] as num?)?.toDouble() ?? 1.5,
       scrollMode: ScrollMode.values.firstWhere(
         (e) => e.name == json['scrollMode'],
-        orElse: () => ScrollMode.manual,
+        orElse: () => ScrollMode.auto,
       ),
       wpm: json['wpm'] as int? ?? 150,
       mirrorMode: json['mirrorMode'] as bool? ?? false,
@@ -176,6 +178,10 @@ class AppSettings {
       progressShowSpeed: json['progressShowSpeed'] as bool? ?? true,
       progressShowCurrentTime: json['progressShowCurrentTime'] as bool? ?? true,
       isLanPublished: json['isLanPublished'] as bool? ?? false,
+      appBrightnessMode: AppBrightnessMode.values.firstWhere(
+        (e) => e.name == json['appBrightnessMode'],
+        orElse: () => AppBrightnessMode.dark,
+      ),
     );
   }
 
@@ -212,6 +218,7 @@ class AppSettings {
       'progressShowSpeed': progressShowSpeed,
       'progressShowCurrentTime': progressShowCurrentTime,
       'isLanPublished': isLanPublished,
+      'appBrightnessMode': appBrightnessMode.name,
     };
   }
 
@@ -247,6 +254,7 @@ class AppSettings {
     bool? progressShowSpeed,
     bool? progressShowCurrentTime,
     bool? isLanPublished,
+    AppBrightnessMode? appBrightnessMode,
   }) {
     return AppSettings(
       fontSize: fontSize ?? this.fontSize,
@@ -284,6 +292,7 @@ class AppSettings {
       progressShowCurrentTime:
           progressShowCurrentTime ?? this.progressShowCurrentTime,
       isLanPublished: isLanPublished ?? this.isLanPublished,
+      appBrightnessMode: appBrightnessMode ?? this.appBrightnessMode,
     );
   }
 
@@ -347,6 +356,7 @@ class AppSettings {
           overrides['progressShowCurrentTime'] as bool? ??
           progressShowCurrentTime,
       isLanPublished: isLanPublished,
+      appBrightnessMode: appBrightnessMode,
     );
   }
 
