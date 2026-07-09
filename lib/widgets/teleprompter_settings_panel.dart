@@ -1,18 +1,18 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:provider/provider.dart';
 import '../models/app_settings.dart';
 import '../providers/connection_provider.dart';
 import '../providers/settings_provider.dart';
+import '../providers/teleprompter_provider.dart';
 import '../services/font_service.dart';
 import '../theme/app_colors.dart';
 
 /// 提词器设置面板（抽屉形式）
 ///
 /// 从右侧滑入，覆盖在提词器界面之上。
-/// 严格按思维导图分组：
-/// 1. 进度条提示文字设置（对齐、显示项、字号）
-/// 2. 正文显示设置（字间距/行距、加粗、强调效果）
-/// 3. 阅读区域框设置（边框粗细、屏幕位置）
+/// 按播放与进度、正文外观、排版、阅读区域分组。
 class TeleprompterSettingsPanel extends StatefulWidget {
   final VoidCallback onClose;
 
@@ -55,62 +55,102 @@ class _TeleprompterSettingsPanelState extends State<TeleprompterSettingsPanel> {
 
     return GestureDetector(
       onTap: () {},
-      child: Container(
-        width: panelWidth,
+      child: Material(
         color: AppColors.surface,
-        child: Consumer<SettingsProvider>(
-          builder: (context, provider, _) {
-            final settings = provider.mergedSettings;
-            final isRemoteClient = context.watch<ConnectionProvider>().isRemote;
-            return Column(
-              children: [
-                _buildTitleBar(context),
-                Expanded(
-                  child: ListView(
-                    padding: const EdgeInsets.all(16),
-                    children: [
-                      // ── 1. 进度条提示文字设置 ──
-                      _buildSectionTitle(context, '进度条提示文字'),
-                      const SizedBox(height: 8),
-                      _buildProgressFontSizeSlider(context, provider, settings),
-                      if (!isRemoteClient)
-                        _buildScrollSpeedInput(context, provider, settings),
-                      _buildProgressDisplayItems(context, provider, settings),
-                      const Divider(height: 24),
+        child: SizedBox(
+          width: panelWidth,
+          child: Consumer<SettingsProvider>(
+            builder: (context, provider, _) {
+              final settings = provider.mergedSettings;
+              final isRemoteClient = context
+                  .watch<ConnectionProvider>()
+                  .isRemote;
+              final isPlaying = context.watch<TeleprompterProvider>().isPlaying;
+              return Column(
+                children: [
+                  _buildTitleBar(context),
+                  Expanded(
+                    child: ListView(
+                      padding: const EdgeInsets.all(16),
+                      children: [
+                        // ── 1. 播放与进度 ──
+                        _buildSectionTitle(context, '播放与进度'),
+                        const SizedBox(height: 8),
+                        if (!isRemoteClient)
+                          _buildScrollSpeedInput(context, provider, settings),
+                        _buildProgressDisplayItems(context, provider, settings),
+                        _buildProgressFontSizeSlider(
+                          context,
+                          provider,
+                          settings,
+                        ),
+                        const Divider(height: 24),
 
-                      // ── 2. 正文显示设置 ──
-                      _buildSectionTitle(context, '正文显示'),
-                      const SizedBox(height: 8),
-                      _buildTeleprompterFontTile(context, provider, settings),
-                      _buildBodyFontSizeInput(context, provider, settings),
-                      _buildMirrorTextSwitch(context, provider, settings),
-                      _buildLetterSpacingSlider(context, provider, settings),
-                      _buildLineHeightSlider(context, provider, settings),
-                      _buildExtraBoldSlider(context, provider, settings),
-                      const SizedBox(height: 4),
-                      _buildEmphasisSection(context, provider, settings),
-                      const Divider(height: 24),
+                        // ── 2. 正文外观 ──
+                        _buildSectionTitle(context, '正文外观'),
+                        const SizedBox(height: 8),
+                        _buildTeleprompterFontTile(context, provider, settings),
+                        _buildBodyFontSizeInput(context, provider, settings),
+                        _buildTeleprompterBgColorTile(
+                          context,
+                          provider,
+                          settings,
+                        ),
+                        _buildMirrorTextSwitch(context, provider, settings),
+                        _buildExtraBoldSlider(context, provider, settings),
+                        const SizedBox(height: 4),
+                        _buildEmphasisSection(context, provider, settings),
+                        const Divider(height: 24),
 
-                      // ── 3. 阅读区域框设置 ──
-                      _buildSectionTitle(context, '阅读区域框'),
-                      const SizedBox(height: 8),
-                      _buildReadingAreaBorderSlider(
-                        context,
-                        provider,
-                        settings,
-                      ),
-                      _buildReadingAreaPositionSlider(
-                        context,
-                        provider,
-                        settings,
-                      ),
-                      _buildTextPaddingSlider(context, provider, settings),
-                    ],
+                        // ── 3. 排版 ──
+                        _buildSectionTitle(context, '排版'),
+                        const SizedBox(height: 8),
+                        _buildLetterSpacingSlider(
+                          context,
+                          provider,
+                          settings,
+                          enabled: !isPlaying,
+                        ),
+                        _buildLineHeightSlider(
+                          context,
+                          provider,
+                          settings,
+                          enabled: !isPlaying,
+                        ),
+                        if (isPlaying)
+                          const Padding(
+                            padding: EdgeInsets.only(left: 4, bottom: 4),
+                            child: Text(
+                              '播放中已锁定字间距和行距，暂停后可调整',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: AppColors.textMuted,
+                              ),
+                            ),
+                          ),
+                        _buildTextPaddingSlider(context, provider, settings),
+                        const Divider(height: 24),
+
+                        // ── 4. 阅读区域框设置 ──
+                        _buildSectionTitle(context, '阅读区域框'),
+                        const SizedBox(height: 8),
+                        _buildReadingAreaPositionSlider(
+                          context,
+                          provider,
+                          settings,
+                        ),
+                        _buildReadingAreaBorderSlider(
+                          context,
+                          provider,
+                          settings,
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              ],
-            );
-          },
+                ],
+              );
+            },
+          ),
         ),
       ),
     );
@@ -330,15 +370,14 @@ class _TeleprompterSettingsPanelState extends State<TeleprompterSettingsPanel> {
   ) {
     final fontService = FontService();
 
-    return ListTile(
-      dense: true,
-      leading: const Icon(Icons.font_download, size: 20),
-      title: const Text('正文字体', style: TextStyle(fontSize: 14)),
-      subtitle: Text(
-        settings.teleprompterFontFamily,
-        style: const TextStyle(fontSize: 12),
+    return _buildValueItem(
+      leading: const Icon(
+        Icons.font_download,
+        size: 18,
+        color: AppColors.textSecondary,
       ),
-      trailing: const Icon(Icons.chevron_right, size: 18),
+      title: '正文字体',
+      value: settings.teleprompterFontFamily,
       onTap: () {
         List<String> allFonts = [];
         List<String> filteredFonts = [];
@@ -349,6 +388,7 @@ class _TeleprompterSettingsPanelState extends State<TeleprompterSettingsPanel> {
             builder: (context, dialogSetState) {
               if (allFonts.isEmpty) {
                 fontService.getAvailableFonts().then((fonts) {
+                  if (!context.mounted) return;
                   dialogSetState(() {
                     allFonts = fonts;
                     filteredFonts = fonts;
@@ -374,6 +414,7 @@ class _TeleprompterSettingsPanelState extends State<TeleprompterSettingsPanel> {
                           ),
                           onChanged: (value) {
                             fontService.searchFonts(value).then((fonts) {
+                              if (!context.mounted) return;
                               dialogSetState(() => filteredFonts = fonts);
                             });
                           },
@@ -436,8 +477,9 @@ class _TeleprompterSettingsPanelState extends State<TeleprompterSettingsPanel> {
   Widget _buildLetterSpacingSlider(
     BuildContext context,
     SettingsProvider provider,
-    AppSettings settings,
-  ) {
+    AppSettings settings, {
+    bool enabled = true,
+  }) {
     return _buildSlider(
       context,
       icon: Icons.space_bar,
@@ -447,8 +489,83 @@ class _TeleprompterSettingsPanelState extends State<TeleprompterSettingsPanel> {
       max: 10,
       divisions: 12,
       displayFormatter: (v) => '${v.toStringAsFixed(1)}px',
-      onChanged: (v) => provider.setLetterSpacing(v),
-      onReset: () => provider.setLetterSpacing(0),
+      onChanged: enabled ? (v) => provider.setLetterSpacing(v) : null,
+      onReset: enabled ? () => provider.setLetterSpacing(0) : null,
+    );
+  }
+
+  Widget _buildTeleprompterBgColorTile(
+    BuildContext context,
+    SettingsProvider provider,
+    AppSettings settings,
+  ) {
+    final color = Color(settings.teleprompterBgColor);
+    return _buildValueItem(
+      leading: Container(
+        width: 18,
+        height: 18,
+        decoration: BoxDecoration(
+          color: color,
+          borderRadius: BorderRadius.circular(5),
+          border: Border.all(color: AppColors.border),
+        ),
+      ),
+      title: '背景色',
+      value: _formatHex(color),
+      onTap: () => _showColorPicker(
+        context,
+        currentColor: color,
+        onColorSelected: (selected) =>
+            provider.setTeleprompterBgColor(selected.toARGB32()),
+      ),
+    );
+  }
+
+  Widget _buildValueItem({
+    required Widget leading,
+    required String title,
+    required String value,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Row(
+          children: [
+            SizedBox(width: 18, height: 18, child: Center(child: leading)),
+            const SizedBox(width: 8),
+            SizedBox(
+              width: 72,
+              child: Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 13,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+            ),
+            Expanded(
+              child: Text(
+                value,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: AppColors.textMuted,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            const Icon(
+              Icons.chevron_right,
+              size: 18,
+              color: AppColors.textMuted,
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -529,8 +646,9 @@ class _TeleprompterSettingsPanelState extends State<TeleprompterSettingsPanel> {
   Widget _buildLineHeightSlider(
     BuildContext context,
     SettingsProvider provider,
-    AppSettings settings,
-  ) {
+    AppSettings settings, {
+    bool enabled = true,
+  }) {
     return _buildSlider(
       context,
       icon: Icons.format_line_spacing,
@@ -540,9 +658,10 @@ class _TeleprompterSettingsPanelState extends State<TeleprompterSettingsPanel> {
       max: 2.5,
       divisions: 15,
       displayFormatter: (v) => '${v.toStringAsFixed(1)}x',
-      onChanged: (v) =>
-          provider.setLineHeight(double.parse(v.toStringAsFixed(1))),
-      onReset: () => provider.setLineHeight(1.5),
+      onChanged: enabled
+          ? (v) => provider.setLineHeight(double.parse(v.toStringAsFixed(1)))
+          : null,
+      onReset: enabled ? () => provider.setLineHeight(1.5) : null,
     );
   }
 
@@ -711,7 +830,7 @@ class _TeleprompterSettingsPanelState extends State<TeleprompterSettingsPanel> {
     required double min,
     required double max,
     required int divisions,
-    required ValueChanged<double> onChanged,
+    required ValueChanged<double>? onChanged,
     String Function(double)? displayFormatter,
     VoidCallback? onReset,
   }) {
@@ -775,6 +894,23 @@ class _TeleprompterSettingsPanelState extends State<TeleprompterSettingsPanel> {
     );
   }
 
+  void _showColorPicker(
+    BuildContext context, {
+    required Color currentColor,
+    required ValueChanged<Color> onColorSelected,
+  }) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => _TeleprompterColorPickerDialog(
+        currentColor: currentColor,
+        onColorSelected: onColorSelected,
+      ),
+    );
+  }
+
+  String _formatHex(Color color) =>
+      '#${color.toARGB32().toRadixString(16).padLeft(8, '0').toUpperCase()}';
+
   void _syncTextController(
     TextEditingController controller,
     FocusNode focusNode,
@@ -786,4 +922,125 @@ class _TeleprompterSettingsPanelState extends State<TeleprompterSettingsPanel> {
       selection: TextSelection.collapsed(offset: text.length),
     );
   }
+}
+
+class _TeleprompterColorPickerDialog extends StatefulWidget {
+  final Color currentColor;
+  final ValueChanged<Color> onColorSelected;
+
+  const _TeleprompterColorPickerDialog({
+    required this.currentColor,
+    required this.onColorSelected,
+  });
+
+  @override
+  State<_TeleprompterColorPickerDialog> createState() =>
+      _TeleprompterColorPickerDialogState();
+}
+
+class _TeleprompterColorPickerDialogState
+    extends State<_TeleprompterColorPickerDialog> {
+  late Color _pickerColor;
+  late final TextEditingController _hexController;
+  String? _hexError;
+
+  @override
+  void initState() {
+    super.initState();
+    _pickerColor = widget.currentColor;
+    _hexController = TextEditingController(text: _formatHex(_pickerColor));
+  }
+
+  @override
+  void dispose() {
+    _hexController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('选择背景色'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ColorPicker(
+              pickerColor: _pickerColor,
+              onColorChanged: (color) => setState(() {
+                _pickerColor = color;
+                _hexError = null;
+                _syncHex(color);
+              }),
+              enableAlpha: true,
+              displayThumbColor: true,
+              pickerAreaHeightPercent: 0.8,
+              portraitOnly: true,
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _hexController,
+              decoration: InputDecoration(
+                labelText: 'HEX',
+                hintText: '#AARRGGBB 或 #RRGGBB',
+                errorText: _hexError,
+                border: const OutlineInputBorder(),
+                isDense: true,
+              ),
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(RegExp(r'[0-9a-fA-F#]')),
+              ],
+              maxLength: 9,
+              onChanged: (value) {
+                final parsed = _parseHex(value);
+                setState(() {
+                  _hexError = parsed == null ? '请输入 6 或 8 位十六进制颜色' : null;
+                  if (parsed != null) _pickerColor = parsed;
+                });
+              },
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('取消'),
+        ),
+        TextButton(
+          onPressed: () {
+            widget.onColorSelected(const Color(0xFF000000));
+            Navigator.pop(context);
+          },
+          child: const Text('恢复黑色'),
+        ),
+        FilledButton(
+          onPressed: () {
+            widget.onColorSelected(_pickerColor);
+            Navigator.pop(context);
+          },
+          child: const Text('确定'),
+        ),
+      ],
+    );
+  }
+
+  Color? _parseHex(String value) {
+    final normalized = value.trim().replaceFirst('#', '');
+    if (normalized.length != 6 && normalized.length != 8) return null;
+    final argb = normalized.length == 6 ? 'FF$normalized' : normalized;
+    final parsed = int.tryParse(argb, radix: 16);
+    return parsed == null ? null : Color(parsed);
+  }
+
+  void _syncHex(Color color) {
+    final text = _formatHex(color);
+    _hexController.value = TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
+    );
+  }
+
+  String _formatHex(Color color) =>
+      '#${color.toARGB32().toRadixString(16).padLeft(8, '0').toUpperCase()}';
 }

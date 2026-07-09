@@ -48,6 +48,7 @@ class _TeleprompterPageState extends State<TeleprompterPage>
   bool _remoteRetrying = false;
   bool _isExiting = false;
   bool _pauseShortcutPressed = false;
+  int _remoteExitWarningCount = 0;
   DateTime? _lastPauseShortcutAt;
   int _lastAutoFollowIndex = -2;
   Timer? _remoteRetryTimer;
@@ -78,9 +79,7 @@ class _TeleprompterPageState extends State<TeleprompterPage>
 
     final key = event.logicalKey;
     if (event is KeyDownEvent && key == LogicalKeyboardKey.escape) {
-      final connection = context.read<ConnectionProvider>();
-      if (connection.isRemote) return true;
-      unawaited(_exitTeleprompter(context));
+      unawaited(_requestExitTeleprompter(context));
       return true;
     }
 
@@ -132,17 +131,14 @@ class _TeleprompterPageState extends State<TeleprompterPage>
             bindings: {
               const SingleActivator(LogicalKeyboardKey.escape): () {
                 if (_isTextInputFocused()) return;
-                final connection = context.read<ConnectionProvider>();
-                if (connection.isRemote) return;
-                unawaited(_exitTeleprompter(context));
+                unawaited(_requestExitTeleprompter(context));
               },
             },
             child: PopScope(
               canPop: _isExiting,
               onPopInvokedWithResult: (didPop, _) {
                 if (didPop) return;
-                if (connection.isRemote) return;
-                unawaited(_exitTeleprompter(context));
+                unawaited(_requestExitTeleprompter(context));
               },
               child: Scaffold(
                 backgroundColor: AppColors.teleprompterBgFromSettings(
@@ -190,12 +186,7 @@ class _TeleprompterPageState extends State<TeleprompterPage>
 
                           // ── 4. 顶部导航栏（浮动、可隐藏） ──
                           if (teleprompter.controlsVisible)
-                            _buildTopNavBar(
-                              context,
-                              teleprompter,
-                              settings,
-                              hideExitButton: connection.isRemote,
-                            ),
+                            _buildTopNavBar(context, teleprompter, settings),
 
                           // ── 5. 底部浮动工具栏（可隐藏） ──
                           if (teleprompter.controlsVisible)
@@ -261,8 +252,7 @@ class _TeleprompterPageState extends State<TeleprompterPage>
     }
 
     if (isRemoteClient &&
-        ((key == LogicalKeyboardKey.escape && connection.isRemote) ||
-            key == LogicalKeyboardKey.arrowUp ||
+        (key == LogicalKeyboardKey.arrowUp ||
             key == LogicalKeyboardKey.arrowDown ||
             key == LogicalKeyboardKey.arrowLeft ||
             key == LogicalKeyboardKey.arrowRight ||
@@ -284,7 +274,7 @@ class _TeleprompterPageState extends State<TeleprompterPage>
         key == LogicalKeyboardKey.enter) {
       toggleFullScreen();
     } else if (key == LogicalKeyboardKey.escape) {
-      unawaited(_exitTeleprompter(context));
+      unawaited(_requestExitTeleprompter(context));
     } else if (key == LogicalKeyboardKey.home) {
       _jumpToStart(teleprompter);
     } else if (key == LogicalKeyboardKey.end) {
@@ -532,9 +522,8 @@ class _TeleprompterPageState extends State<TeleprompterPage>
   Widget _buildTopNavBar(
     BuildContext context,
     TeleprompterProvider teleprompter,
-    AppSettings settings, {
-    required bool hideExitButton,
-  }) {
+    AppSettings settings,
+  ) {
     return AnimatedPositioned(
       duration: const Duration(milliseconds: 300),
       curve: Curves.easeOutCubic,
@@ -557,25 +546,18 @@ class _TeleprompterPageState extends State<TeleprompterPage>
           ),
           child: Row(
             children: [
-              // 返回按钮（客户端播放由服务端结束）
-              if (!hideExitButton) ...[
-                IconButton(
-                  icon: const Icon(
-                    Icons.arrow_back,
-                    color: AppColors.textPrimary,
-                    size: 22,
-                  ),
-                  onPressed: () async {
-                    await _exitTeleprompter(context);
-                  },
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(
-                    minWidth: 36,
-                    minHeight: 36,
-                  ),
+              IconButton(
+                icon: const Icon(
+                  Icons.arrow_back,
+                  color: AppColors.textPrimary,
+                  size: 22,
                 ),
-                const SizedBox(width: 4),
-              ],
+                tooltip: '退出提词',
+                onPressed: () => _requestExitTeleprompter(context),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+              ),
+              const SizedBox(width: 4),
               // 稿件标题
               Expanded(
                 child: Text(
@@ -652,7 +634,7 @@ class _TeleprompterPageState extends State<TeleprompterPage>
                 ),
               ),
               TextButton(
-                onPressed: () => _exitTeleprompter(context),
+                onPressed: () => _requestExitTeleprompter(context),
                 child: const Text('退出'),
               ),
             ],
@@ -1219,6 +1201,32 @@ class _TeleprompterPageState extends State<TeleprompterPage>
   }
 
   /// 退出提词器（Esc 键）
+  Future<void> _requestExitTeleprompter(BuildContext context) async {
+    if (_isExiting) return;
+    final connection = context.read<ConnectionProvider>();
+    if (_isRemoteClientConnection(connection) && _remoteExitWarningCount < 2) {
+      _remoteExitWarningCount += 1;
+      final message = _remoteExitWarningCount == 1
+          ? '当前为客户端播放，退出只会离开本机提词画面，不会停止服务端。'
+          : '再次退出将离开本机提词画面。';
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(message),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      return;
+    }
+    await _exitTeleprompter(context);
+  }
+
+  bool _isRemoteClientConnection(ConnectionProvider connection) {
+    return connection.isRemote ||
+        (_wasRemoteClient && connection.canRetryRemoteConnection);
+  }
+
   Future<void> _exitTeleprompter(BuildContext context) async {
     if (_isExiting) return;
     if (mounted) {

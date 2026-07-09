@@ -15,6 +15,7 @@ class SettingsProvider with ChangeNotifier {
 
   // ─── 稿件覆盖设置 ──────────────────────────────────────
   Map<String, dynamic> _articleOverrides = {};
+  bool _articleOverridesActive = false;
 
   VoidCallback? _connectionListener;
   AppSettings get settings => _settings;
@@ -38,6 +39,7 @@ class SettingsProvider with ChangeNotifier {
     _connectionListener = () {
       if (!connection.isConnected && !connection.canRetryRemoteConnection) {
         _articleOverrides = {};
+        _articleOverridesActive = false;
         _isLoading = false;
         notifyListeners();
       }
@@ -51,14 +53,20 @@ class SettingsProvider with ChangeNotifier {
     bool notify = true,
   }) {
     final next = Map<String, dynamic>.from(overrides ?? const {});
-    if (_mapEquals(_articleOverrides, next)) return;
+    final unchanged =
+        _articleOverridesActive && _mapEquals(_articleOverrides, next);
+    _articleOverridesActive = true;
+    if (unchanged) return;
     _articleOverrides = next;
     if (notify) notifyListeners();
   }
 
   void applyRemoteTeleprompterSettings(Map<String, dynamic> settings) {
     final next = Map<String, dynamic>.from(settings);
-    if (_mapEquals(_articleOverrides, next)) return;
+    final unchanged =
+        _articleOverridesActive && _mapEquals(_articleOverrides, next);
+    _articleOverridesActive = true;
+    if (unchanged) return;
     _articleOverrides = next;
     notifyListeners();
   }
@@ -88,15 +96,15 @@ class SettingsProvider with ChangeNotifier {
   }
 
   void clearArticleOverrides() {
-    if (_articleOverrides.isNotEmpty) {
-      _articleOverrides = {};
-      notifyListeners();
-    }
+    if (!_articleOverridesActive && _articleOverrides.isEmpty) return;
+    _articleOverridesActive = false;
+    _articleOverrides = {};
+    notifyListeners();
   }
 
   /// 内部辅助：在当前稿件覆盖激活时写入覆盖层，否则写入全局设置
   Future<void> _setAndSave({required Map<String, dynamic> overrideData}) async {
-    if (_articleOverrides.isNotEmpty) {
+    if (_articleOverridesActive) {
       // 稿件覆盖模式：写入覆盖层，不保存到全局
       _articleOverrides.addAll(overrideData);
       notifyListeners();
@@ -289,7 +297,7 @@ class SettingsProvider with ChangeNotifier {
 
   /// 更新滚动模式
   Future<void> setScrollMode(ScrollMode mode) async {
-    if (_articleOverrides.isNotEmpty) {
+    if (_articleOverridesActive) {
       _articleOverrides['scrollMode'] = mode.name;
       notifyListeners();
     } else {

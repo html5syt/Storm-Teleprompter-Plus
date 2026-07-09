@@ -87,7 +87,7 @@ mixin TeleprompterPageLogic<T extends StatefulWidget>
   void _saveArticleOverrides() {
     final connection = _connectionProvider;
     if (connection == null) return;
-    if (connection.isRemote) return;
+    if (connection.isRemote || connection.canRetryRemoteConnection) return;
 
     final overrides = _settingsProvider?.articleOverrides;
     if (overrides != null && overrides.isNotEmpty) {
