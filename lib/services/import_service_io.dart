@@ -2,16 +2,14 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:archive/archive.dart';
+import 'package:path/path.dart' as p;
 import 'package:xml/xml.dart';
 
-class ImportedArticleDraft {
-  final String title;
-  final String content;
-
-  const ImportedArticleDraft({required this.title, required this.content});
-}
+import 'import_batch.dart';
 
 class ImportService {
+  static const supportedExtensions = {'.txt', '.docx'};
+
   Future<ImportedArticleDraft?> importFile(String path) async {
     final file = File(path);
     if (!await file.exists()) return null;
@@ -20,6 +18,151 @@ class ImportService {
     if (lower.endsWith('.txt')) return _importTxt(file);
     if (lower.endsWith('.docx')) return _importDocx(file);
     return null;
+  }
+
+  Future<ImportBatchDraft> importPaths(List<String> paths) async {
+    final folders = <ImportedFolderDraft>[];
+    final files = <ImportedFileDraft>[];
+    final failures = <String>[];
+    var skippedCount = 0;
+    final seenFolders = <String>{};
+    final seenSources = <String>{};
+    final usedRootNames = <String>{};
+
+    for (final sourcePath in paths) {
+      final normalized = p.normalize(sourcePath);
+      if (!seenSources.add(_pathKey(normalized))) continue;
+
+      try {
+        final type = await FileSystemEntity.type(
+          normalized,
+          followLinks: false,
+        );
+        if (type == FileSystemEntityType.directory) {
+          final rootName = _uniqueRootName(
+            p.basename(normalized),
+            usedRootNames,
+          );
+          skippedCount += await _importDirectory(
+            Directory(normalized),
+            rootName: rootName,
+            folders: folders,
+            files: files,
+            failures: failures,
+            seenFolders: seenFolders,
+          );
+        } else if (type == FileSystemEntityType.file) {
+          final supported = await _importFileIntoBatch(
+            normalized,
+            const [],
+            files: files,
+            failures: failures,
+          );
+          if (!supported) skippedCount++;
+        } else {
+          failures.add('${p.basename(normalized)}: 路径不存在或无法读取');
+        }
+      } catch (error) {
+        failures.add('${p.basename(normalized)}: 无法读取（$error）');
+      }
+    }
+
+    return ImportBatchDraft(
+      folders: folders,
+      files: files,
+      failures: failures,
+      skippedCount: skippedCount,
+    );
+  }
+
+  Future<int> _importDirectory(
+    Directory root, {
+    required String rootName,
+    required List<ImportedFolderDraft> folders,
+    required List<ImportedFileDraft> files,
+    required List<String> failures,
+    required Set<String> seenFolders,
+  }) async {
+    final rootParts = [rootName];
+    _addFolder(rootParts, folders, seenFolders);
+    var skippedCount = 0;
+
+    try {
+      await for (final entity in root.list(
+        recursive: true,
+        followLinks: false,
+      )) {
+        final relative = p.relative(entity.path, from: root.path);
+        final relativeParts = p.split(relative);
+        if (entity is Directory) {
+          _addFolder([...rootParts, ...relativeParts], folders, seenFolders);
+          continue;
+        }
+        if (entity is! File) continue;
+        final supported = await _importFileIntoBatch(
+          entity.path,
+          [...rootParts, ...relativeParts.take(relativeParts.length - 1)],
+          files: files,
+          failures: failures,
+        );
+        if (!supported) skippedCount++;
+      }
+    } catch (error) {
+      failures.add('$rootName: 无法读取文件夹（$error）');
+    }
+    return skippedCount;
+  }
+
+  void _addFolder(
+    List<String> parts,
+    List<ImportedFolderDraft> folders,
+    Set<String> seenFolders,
+  ) {
+    final key = parts.map(_pathKey).join('/');
+    if (seenFolders.add(key)) {
+      folders.add(ImportedFolderDraft(List.unmodifiable(parts)));
+    }
+  }
+
+  Future<bool> _importFileIntoBatch(
+    String path,
+    List<String> relativeFolderPath, {
+    required List<ImportedFileDraft> files,
+    required List<String> failures,
+  }) async {
+    if (!supportedExtensions.contains(p.extension(path).toLowerCase())) {
+      return false;
+    }
+    try {
+      final article = await importFile(path);
+      if (article == null) {
+        failures.add('${p.basename(path)}: 不支持的文件格式');
+        return true;
+      }
+      files.add(
+        ImportedFileDraft(
+          sourcePath: path,
+          relativeFolderPath: List.unmodifiable(relativeFolderPath),
+          article: article,
+        ),
+      );
+    } catch (error) {
+      failures.add('${p.basename(path)}: $error');
+    }
+    return true;
+  }
+
+  String _pathKey(String value) =>
+      Platform.isWindows ? value.toLowerCase() : value;
+
+  String _uniqueRootName(String requested, Set<String> usedNames) {
+    var candidate = requested;
+    var suffix = 2;
+    while (!usedNames.add(_pathKey(candidate))) {
+      candidate = '$requested ($suffix)';
+      suffix++;
+    }
+    return candidate;
   }
 
   Future<ImportedArticleDraft> _importTxt(File file) async {

@@ -41,6 +41,8 @@ mixin HomeLogic on State<HomePage> {
   final ExportService _exportService = ExportService();
   bool _isDraggingImport = false;
   bool _isImporting = false;
+  double? _importProgress;
+  String _importStatusText = '';
 
   // ─── 文件夹导航 ───────────────────────────────────────
   String? _currentFolderId;
@@ -364,49 +366,128 @@ mixin HomeLogic on State<HomePage> {
     setState(() {
       _isDraggingImport = false;
       _isImporting = true;
+      _importProgress = null;
+      _importStatusText = '正在扫描文件和文件夹...';
     });
 
     final articleProvider = context.read<ArticleProvider>();
+    final folderProvider = context.read<FolderProvider>();
     var importedCount = 0;
-    final errors = <String>[];
+    var importedFolderCount = 0;
+    final batch = await _importService.importPaths(paths);
+    final errors = [...batch.failures];
+    final folderIds = <String, String>{};
+    final folders = [...batch.folders]
+      ..sort((a, b) => a.relativePath.length.compareTo(b.relativePath.length));
+    final totalSteps = folders.length + batch.files.length;
+    var completedSteps = 0;
 
-    for (final path in paths) {
-      try {
-        final draft = await _importService.importFile(path);
-        if (draft == null) {
-          errors.add('${_fileName(path)}: 不支持的文件格式');
-          continue;
+    for (final draft in folders) {
+      final parentPath = draft.relativePath.sublist(
+        0,
+        draft.relativePath.length - 1,
+      );
+      final parentId = parentPath.isEmpty
+          ? _currentFolderId
+          : folderIds[_folderPathKey(parentPath)];
+      if (parentPath.isNotEmpty && parentId == null) {
+        errors.add('${draft.relativePath.join('/')}: 无法创建父文件夹');
+      } else {
+        final name = _uniqueImportedFolderName(
+          draft.relativePath.last,
+          parentId,
+          folderProvider,
+        );
+        final folder = await folderProvider.createFolder(
+          name,
+          parentId: parentId,
+        );
+        if (folder == null) {
+          errors.add('${draft.relativePath.join('/')}: 创建失败');
+        } else {
+          folderIds[_folderPathKey(draft.relativePath)] = folder.id;
+          importedFolderCount++;
         }
+      }
+      completedSteps++;
+      _updateImportProgress(completedSteps, totalSteps, '正在创建文件夹...');
+    }
+
+    for (final file in batch.files) {
+      final folderId = file.relativeFolderPath.isEmpty
+          ? _currentFolderId
+          : folderIds[_folderPathKey(file.relativeFolderPath)];
+      if (file.relativeFolderPath.isNotEmpty && folderId == null) {
+        errors.add('${_fileName(file.sourcePath)}: 目标文件夹创建失败');
+      } else {
         final article = await articleProvider.createArticle(
-          title: draft.title.isEmpty ? '未命名稿件' : draft.title,
-          content: draft.content,
-          folderId: _currentFolderId,
+          title: file.article.title.isEmpty ? '未命名稿件' : file.article.title,
+          content: file.article.content,
+          folderId: folderId,
         );
         if (article == null) {
-          errors.add('${_fileName(path)}: 创建失败');
+          errors.add('${_fileName(file.sourcePath)}: 创建失败');
         } else {
           importedCount++;
         }
-      } catch (error) {
-        errors.add('${_fileName(path)}: $error');
       }
+      completedSteps++;
+      _updateImportProgress(completedSteps, totalSteps, '正在导入稿件...');
     }
 
     if (!mounted) return;
-    setState(() => _isImporting = false);
+    setState(() {
+      _isImporting = false;
+      _importProgress = null;
+      _importStatusText = '';
+    });
 
     if (importedCount > 0 && errors.isEmpty) {
-      _showImportSnackBar('已导入 $importedCount 篇稿件');
-    } else if (importedCount > 0) {
-      _showImportSnackBar('已导入 $importedCount 篇稿件，${errors.length} 个文件失败');
+      _showImportSnackBar(
+        '已导入 $importedCount 篇稿件、$importedFolderCount 个文件夹'
+        '${batch.skippedCount == 0 ? '' : '，跳过 ${batch.skippedCount} 个其他文件'}',
+      );
+    } else if (importedCount > 0 || importedFolderCount > 0) {
+      _showImportSnackBar(
+        '已导入 $importedCount 篇稿件、$importedFolderCount 个文件夹，'
+        '${errors.length} 项失败',
+      );
     } else if (errors.isNotEmpty) {
       _showImportSnackBar(errors.take(2).join('\n'));
     } else {
-      _showImportSnackBar('没有可导入的文件');
+      _showImportSnackBar('没有可导入的 txt/docx 文件');
     }
   }
 
-  Future<void> _importFromMenu() async {
+  void _updateImportProgress(int completed, int total, String status) {
+    if (!mounted) return;
+    setState(() {
+      _importProgress = total == 0 ? null : completed / total;
+      _importStatusText = status;
+    });
+  }
+
+  String _folderPathKey(List<String> parts) => parts.join('\u001f');
+
+  String _uniqueImportedFolderName(
+    String requested,
+    String? parentId,
+    FolderProvider provider,
+  ) {
+    final existing = provider.folders
+        .where((folder) => folder.parentId == parentId)
+        .map((folder) => folder.name.toLowerCase())
+        .toSet();
+    var candidate = requested;
+    var suffix = 2;
+    while (existing.contains(candidate.toLowerCase())) {
+      candidate = '$requested ($suffix)';
+      suffix++;
+    }
+    return candidate;
+  }
+
+  Future<void> _importFilesFromMenu() async {
     final files = await openFiles(
       acceptedTypeGroups: const [
         XTypeGroup(label: '稿件文件', extensions: ['txt', 'docx']),
@@ -414,6 +495,25 @@ mixin HomeLogic on State<HomePage> {
     );
     if (files.isEmpty) return;
     await _importDroppedFiles(files.map((file) => file.path).toList());
+  }
+
+  Future<void> _importFoldersFromMenu() async {
+    var paths = <String>[];
+    try {
+      paths = (await getDirectoryPaths(
+        confirmButtonText: '导入',
+      )).whereType<String>().where((path) => path.isNotEmpty).toList();
+    } catch (_) {
+      try {
+        final path = await getDirectoryPath(confirmButtonText: '导入');
+        if (path != null && path.isNotEmpty) paths = [path];
+      } catch (error) {
+        _showImportSnackBar('当前平台无法选择文件夹：$error');
+        return;
+      }
+    }
+    if (paths.isEmpty || !mounted) return;
+    await _importDroppedFiles(paths);
   }
 
   Future<void> _exportSelectedItems() async {
@@ -442,55 +542,6 @@ mixin HomeLogic on State<HomePage> {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(message)));
-  }
-
-  Widget _buildImportOverlay() {
-    return IgnorePointer(
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 120),
-        color: AppColors.primary.withValues(alpha: _isImporting ? 0.10 : 0.08),
-        child: Center(
-          child: Container(
-            constraints: const BoxConstraints(maxWidth: 360),
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-            decoration: BoxDecoration(
-              color: AppColors.surfaceFor(context).withValues(alpha: 0.96),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(
-                color: AppColors.primary.withValues(alpha: 0.45),
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.12),
-                  blurRadius: 24,
-                  offset: const Offset(0, 12),
-                ),
-              ],
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  _isImporting ? Icons.hourglass_top : Icons.upload_file,
-                  color: AppColors.primary,
-                  size: 28,
-                ),
-                const SizedBox(width: 12),
-                Flexible(
-                  child: Text(
-                    _isImporting ? '正在导入稿件...' : '松开导入 txt/docx 稿件',
-                    style: const TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
   }
 
   void _toggleSort(SortBy by) {

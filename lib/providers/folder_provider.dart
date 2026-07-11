@@ -90,7 +90,7 @@ class FolderProvider with ChangeNotifier {
   }
 
   /// 创建文件夹
-  Future<void> createFolder(String name, {String? parentId}) async {
+  Future<Folder?> createFolder(String name, {String? parentId}) async {
     try {
       if (_connection != null && _connection!.isConnected) {
         final response = await _connection!.request(
@@ -103,11 +103,13 @@ class FolderProvider with ChangeNotifier {
           );
           _folders.add(folder);
           notifyListeners();
+          return folder;
         }
       }
     } catch (e) {
       debugPrint('[FolderProvider] 创建失败: $e');
     }
+    return null;
   }
 
   /// 重命名文件夹

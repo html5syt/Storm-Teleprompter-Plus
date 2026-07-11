@@ -29,6 +29,7 @@ part 'home_logic.dart';
 part 'home_breadcrumb_bar.dart';
 part 'home_move_dialog.dart';
 part 'home_auxiliary_widgets.dart';
+part 'home_import_overlay.dart';
 
 /// 视图模式
 enum ViewMode { largeIcons, smallIcons, list, details }
@@ -194,7 +195,13 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
                               ],
                             ),
                             if (_isDraggingImport || _isImporting)
-                              Positioned.fill(child: _buildImportOverlay()),
+                              Positioned.fill(
+                                child: _HomeImportOverlay(
+                                  isImporting: _isImporting,
+                                  progress: _importProgress,
+                                  statusText: _importStatusText,
+                                ),
+                              ),
                           ],
                         ),
                       )
@@ -814,21 +821,34 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
             _moveDraggedItemsToFolder(details.data, item.id),
         builder: (context, candidateItems, rejectedItems) {
           final hovering = candidateItems.isNotEmpty;
-          return AnimatedContainer(
-            duration: const Duration(milliseconds: 60),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(8),
-              boxShadow: hovering
-                  ? [
-                      BoxShadow(
-                        color: AppColors.primary.withValues(alpha: 0.24),
-                        blurRadius: 18,
-                        spreadRadius: 2,
-                      ),
-                    ]
-                  : null,
+          return AnimatedScale(
+            scale: hovering ? 1.025 : 1,
+            duration: const Duration(milliseconds: 140),
+            curve: Curves.easeOutCubic,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 140),
+              curve: Curves.easeOutCubic,
+              foregroundDecoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: hovering ? AppColors.primary : Colors.transparent,
+                  width: 2,
+                ),
+              ),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(8),
+                boxShadow: hovering
+                    ? [
+                        BoxShadow(
+                          color: AppColors.primary.withValues(alpha: 0.26),
+                          blurRadius: 20,
+                          spreadRadius: 2,
+                        ),
+                      ]
+                    : null,
+              ),
+              child: child,
             ),
-            child: child,
           );
         },
       );
@@ -859,6 +879,7 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
         data: item,
         delay: const Duration(milliseconds: 260),
         dragAnchorStrategy: pointerDragAnchorStrategy,
+        feedbackOffset: const Offset(14, 14),
         onDragStarted: () => _beginItemDrag(item),
         onDragCompleted: _endItemDrag,
         onDraggableCanceled: (_, _) => _endItemDrag(),
@@ -918,7 +939,7 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
             ),
           ),
         ),
-        childWhenDragging: Opacity(opacity: 0.45, child: targetChild),
+        childWhenDragging: Opacity(opacity: 0.32, child: targetChild),
         child: tooltipChild,
       ),
     );
@@ -1244,10 +1265,20 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
             children: [
               ListTile(
                 leading: const Icon(Icons.upload_file),
-                title: const Text('导入稿件'),
+                title: const Text('导入文件'),
+                subtitle: const Text('批量选择 TXT / DOCX 稿件'),
                 onTap: () {
                   Navigator.pop(ctx);
-                  unawaited(_importFromMenu());
+                  unawaited(_importFilesFromMenu());
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.folder_copy),
+                title: const Text('导入文件夹'),
+                subtitle: const Text('可多选并保留原目录层级'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  unawaited(_importFoldersFromMenu());
                 },
               ),
               if (!connection.isRemote) ...[
