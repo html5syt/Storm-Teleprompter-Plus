@@ -14,6 +14,24 @@ class AsrSessionService {
   AsrSessionService(this._settingsService, this._onCurrentIndexChanged);
 
   static const unloadDelay = Duration(seconds: 20);
+  static const int maxPartialAdvance = 4;
+  static const int maxFinalAdvance = 6;
+
+  static int limitAdvance({
+    required int currentIndex,
+    required int requestedIndex,
+    required bool isFinal,
+  }) {
+    if (requestedIndex < 0 ||
+        currentIndex < 0 ||
+        requestedIndex <= currentIndex) {
+      return requestedIndex;
+    }
+    final maxAdvance = isFinal ? maxFinalAdvance : maxPartialAdvance;
+    return requestedIndex
+        .clamp(currentIndex, currentIndex + maxAdvance)
+        .toInt();
+  }
 
   final SettingsService _settingsService;
   final void Function(int currentIndex) _onCurrentIndexChanged;
@@ -69,6 +87,13 @@ class AsrSessionService {
       ..setScript(alignmentText)
       ..setCurrentIndex(currentIndex);
     _broadcastStatus();
+  }
+
+  /// 手动或自动移动当前字后，同步覆盖对齐锚点。
+  void setCurrentIndex(int currentIndex) {
+    if (_articleId.isEmpty) return;
+    _currentIndex = currentIndex;
+    _alignment.setCurrentIndex(currentIndex);
   }
 
   Future<void> pause() async {
@@ -232,8 +257,13 @@ class AsrSessionService {
       _partialTranscript,
     ].where((part) => part.isNotEmpty).join('\n');
     final result = _alignment.consumeTranscript(text, isFinal);
-    if (result.index >= 0 && result.index >= _currentIndex) {
-      _currentIndex = result.index;
+    final alignedIndex = limitAdvance(
+      currentIndex: _currentIndex,
+      requestedIndex: result.index,
+      isFinal: isFinal,
+    );
+    if (alignedIndex >= 0 && alignedIndex >= _currentIndex) {
+      _currentIndex = alignedIndex;
       _onCurrentIndexChanged(_currentIndex);
     }
     _server?.broadcast(

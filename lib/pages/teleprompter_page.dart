@@ -571,6 +571,19 @@ class _TeleprompterPageState extends State<TeleprompterPage>
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
+              IconButton(
+                icon: Icon(
+                  teleprompter.controlsPinned
+                      ? Icons.push_pin
+                      : Icons.push_pin_outlined,
+                  color: AppColors.textPrimary,
+                  size: 21,
+                ),
+                onPressed: () => teleprompter.toggleControlsPinned(settings),
+                tooltip: teleprompter.controlsPinned ? '取消叠加层常驻' : '叠加层常驻',
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+              ),
               // 全屏按钮
               IconButton(
                 icon: Icon(

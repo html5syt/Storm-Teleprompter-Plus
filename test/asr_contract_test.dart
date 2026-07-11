@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:storm_teleprompter_plus/backend/asr_session_service.dart';
 import 'package:storm_teleprompter_plus/backend/ws_protocol.dart';
 import 'package:storm_teleprompter_plus/models/app_settings.dart';
 import 'package:storm_teleprompter_plus/services/alignment_engine.dart';
@@ -83,6 +84,52 @@ void main() {
       final second = alignment.consumeTranscript('第二句话继续', true);
 
       expect(second.index, greaterThan(first.index));
+    });
+
+    test('manual cursor move resets the matching anchor', () {
+      final alignment = TeleprompterAlignment()..setScript('重复内容前段重复内容后段');
+
+      alignment.setCurrentIndex(5);
+      final result = alignment.consumeTranscript('重复内容后段', true);
+
+      expect(result.index, 11);
+    });
+
+    test('script omissions and transcript hallucinations stay aligned', () {
+      final alignment = TeleprompterAlignment()..setScript('今天我们一起测试语音跟随功能');
+
+      final omitted = alignment.consumeTranscript('今天一起测试', false);
+      final hallucinated = alignment.consumeTranscript('今天我们真的一起测试语音', false);
+
+      expect(omitted.index, greaterThanOrEqualTo(5));
+      expect(hallucinated.index, greaterThanOrEqualTo(omitted.index));
+    });
+
+    test('ASR advances are limited like the reference client', () {
+      expect(
+        AsrSessionService.limitAdvance(
+          currentIndex: 10,
+          requestedIndex: 100,
+          isFinal: false,
+        ),
+        14,
+      );
+      expect(
+        AsrSessionService.limitAdvance(
+          currentIndex: 10,
+          requestedIndex: 100,
+          isFinal: true,
+        ),
+        16,
+      );
+      expect(
+        AsrSessionService.limitAdvance(
+          currentIndex: -1,
+          requestedIndex: 20,
+          isFinal: false,
+        ),
+        20,
+      );
     });
   });
 }

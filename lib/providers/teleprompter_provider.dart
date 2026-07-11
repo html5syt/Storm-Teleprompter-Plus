@@ -57,6 +57,7 @@ class TeleprompterProvider with ChangeNotifier {
 
   // ─── 全屏/控制面板 ─────────────────────────────────────
   bool _controlsVisible = true;
+  bool _controlsPinned = false;
   Timer? _hideControlsTimer;
 
   // ─── WebSocket 同步 ─────────────────────────────────────
@@ -74,6 +75,7 @@ class TeleprompterProvider with ChangeNotifier {
   String? get asrError => _asrError;
   bool get isAsrLoading => _asrStatus == 'loading';
   bool get controlsVisible => _controlsVisible;
+  bool get controlsPinned => _controlsPinned;
 
   /// 是否正在播放（任何模式）
   bool get isPlaying => _state == TeleprompterState.playing;
@@ -405,7 +407,20 @@ class TeleprompterProvider with ChangeNotifier {
 
   /// 切换控制面板可见性
   void toggleControls() {
+    if (_controlsPinned) return;
     _controlsVisible = !_controlsVisible;
+    notifyListeners();
+  }
+
+  /// 切换叠加层常驻状态。
+  void toggleControlsPinned(AppSettings settings) {
+    _controlsPinned = !_controlsPinned;
+    if (_controlsPinned) {
+      _cancelHideControls();
+      _controlsVisible = true;
+    } else if (_state == TeleprompterState.playing) {
+      _scheduleHideControls(settings);
+    }
     notifyListeners();
   }
 
@@ -613,7 +628,7 @@ class TeleprompterProvider with ChangeNotifier {
 
   void _scheduleHideControls(AppSettings settings) {
     _cancelHideControls();
-    if (!settings.autoHideUI) return;
+    if (_controlsPinned || !settings.autoHideUI) return;
 
     _hideControlsTimer = Timer(
       Duration(seconds: settings.autoHideDelaySeconds),
