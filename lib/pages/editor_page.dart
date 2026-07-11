@@ -17,6 +17,7 @@ import '../providers/article_provider.dart';
 import '../providers/connection_provider.dart';
 import '../providers/settings_provider.dart';
 import '../providers/teleprompter_provider.dart';
+import '../services/inline_style_parser.dart';
 import '../services/text_parser.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';

@@ -71,4 +71,49 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(milliseconds: 1));
   });
+
+  testWidgets('stored background color does not become text color', (
+    tester,
+  ) async {
+    final now = DateTime(2026);
+    final article = Article(
+      id: 'article-background-color',
+      title: '背景色测试',
+      content: '<p><span style="background-color: #FFFF00FF">背景</span></p>',
+      createdAt: now,
+      updatedAt: now,
+    );
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider(create: (_) => ArticleProvider()),
+          ChangeNotifierProvider(create: (_) => SettingsProvider()),
+          ChangeNotifierProvider(create: (_) => TeleprompterProvider()),
+        ],
+        child: MaterialApp(
+          localizationsDelegates:
+              quill.FlutterQuillLocalizations.localizationsDelegates,
+          supportedLocales: quill.FlutterQuillLocalizations.supportedLocales,
+          home: EditorPage(article: article),
+        ),
+      ),
+    );
+
+    await tester.pump(const Duration(milliseconds: 1));
+    final editor = tester.widget<quill.QuillEditor>(
+      find.byType(quill.QuillEditor),
+    );
+    final attributes = editor.controller.document
+        .toDelta()
+        .operations
+        .first
+        .attributes;
+
+    expect(attributes?['background'], '#FFFF00FF');
+    expect(attributes?['color'], isNull);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(milliseconds: 1));
+  });
 }

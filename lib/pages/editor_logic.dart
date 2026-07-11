@@ -494,9 +494,9 @@ mixin EditorLogic on State<EditorPage> {
           ).firstMatch(rawTag)?.group(1);
           if (style != null) {
             final background =
-                _extractCssColor(style, 'background-color') ??
-                _extractCssColor(style, 'background');
-            final color = _extractCssColor(style, 'color');
+                InlineStyleParser.color(style, 'background-color') ??
+                InlineStyleParser.color(style, 'background');
+            final color = InlineStyleParser.color(style, 'color');
             final size = RegExp(
               r'font-size\s*:\s*([^;]+)',
               caseSensitive: false,
@@ -616,14 +616,6 @@ mixin EditorLogic on State<EditorPage> {
       r'^\s*(?:sourceurl|source\s+url)\s*:?.*$',
       caseSensitive: false,
     ).hasMatch(line.trim());
-  }
-
-  String? _extractCssColor(String style, String property) {
-    final match = RegExp(
-      '$property\\s*:\\s*(#[0-9a-fA-F]{6}|#[0-9a-fA-F]{8}|rgba?\\([^;]+\\))',
-      caseSensitive: false,
-    ).firstMatch(style);
-    return match?.group(1);
   }
 
   qd.Delta _sanitizeEditorDelta(qd.Delta delta) {
