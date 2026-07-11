@@ -13,6 +13,7 @@ import '../providers/connection_provider.dart';
 import '../services/asr_service.dart';
 import '../services/font_service.dart';
 import '../theme/app_colors.dart';
+import '../widgets/about_settings_section.dart';
 
 /// 应用设置页面
 ///
@@ -86,7 +87,7 @@ class SettingsPage extends StatelessWidget {
                   // ── 关于 ──
                   _buildSectionHeader(context, '关于'),
                   const SizedBox(height: 12),
-                  _buildAboutSection(context),
+                  const AboutSettingsSection(),
                 ],
               );
             },
@@ -1135,37 +1136,6 @@ class SettingsPage extends StatelessWidget {
               );
             },
           ),
-        ),
-      ],
-    );
-  }
-
-  // ═══════════════════════════════════════════════════════
-  // 关于
-  // ═══════════════════════════════════════════════════════
-
-  Widget _buildAboutSection(BuildContext context) {
-    return const Column(
-      children: [
-        ListTile(
-          leading: Icon(Icons.info_outline),
-          title: Text('飓风提词器 Plus'),
-          subtitle: Text('版本 1.0.0\n基于 Flutter 构建的智能提词器'),
-        ),
-        ListTile(
-          leading: Icon(Icons.help_outline),
-          title: Text('帮助'),
-          subtitle: Text('查看使用说明'),
-        ),
-        ListTile(
-          leading: Icon(Icons.update),
-          title: Text('检查更新'),
-          subtitle: Text('当前版本 1.0.0'),
-        ),
-        ListTile(
-          leading: Icon(Icons.description_outlined),
-          title: Text('License'),
-          subtitle: Text('MIT License'),
         ),
       ],
     );

@@ -5,9 +5,6 @@ class AppConstants {
   /// 应用名称
   static const String appName = '飓风提词器 Plus';
 
-  /// 应用版本
-  static const String appVersion = '1.0.0';
-
   /// WPM 范围（自动滚动速度）
   static const int minWpm = 30;
   static const int maxWpm = 450;

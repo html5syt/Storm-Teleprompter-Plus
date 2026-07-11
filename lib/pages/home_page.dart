@@ -26,6 +26,8 @@ import 'editor_page.dart';
 import 'settings_page.dart';
 
 part 'home_logic.dart';
+part 'home_breadcrumb_bar.dart';
+part 'home_move_dialog.dart';
 
 /// 视图模式
 enum ViewMode { largeIcons, smallIcons, list, details }
@@ -401,92 +403,15 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
 
   // ─── 面包屑导航栏 ─────────────────────────────────────
   Widget _buildBreadcrumbBar() {
-    // 直接使用 _currentFolderId（State 变量）而非 FolderProvider，
-    // 因为导航状态由 HomePage 管理，setState 会触发重建
     final folderProvider = context.watch<FolderProvider>();
     final breadcrumb = folderProvider.getBreadcrumbFrom(_currentFolderId);
-    final isRoot = _currentFolderId == null;
-
-    return Container(
-      height: 36,
-      padding: const EdgeInsets.symmetric(horizontal: 8),
-      decoration: BoxDecoration(
-        color: AppColors.surfaceFor(context),
-        border: Border(
-          bottom: BorderSide(
-            color: AppColors.borderFor(context).withValues(alpha: 0.5),
-          ),
-        ),
-      ),
-      child: Align(
-        alignment: Alignment.centerLeft,
-        child: SingleChildScrollView(
-          controller: _breadcrumbScrollController,
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            children: [
-              // 根目录入口
-              GestureDetector(
-                onTap: isRoot ? null : () => _navigateToFolder(null),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.home,
-                        size: 14,
-                        color: isRoot
-                            ? AppColors.primary
-                            : AppColors.textSecondaryFor(context),
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        '稿件',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: isRoot
-                              ? FontWeight.w600
-                              : FontWeight.normal,
-                          color: isRoot
-                              ? AppColors.primary
-                              : AppColors.textSecondaryFor(context),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              // 路径段
-              for (int i = 0; i < breadcrumb.length; i++) ...[
-                Icon(
-                  Icons.chevron_right,
-                  size: 14,
-                  color: AppColors.textDisabledFor(context),
-                ),
-                GestureDetector(
-                  onTap: () => _navigateToFolder(breadcrumb[i].id),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 4),
-                    child: Text(
-                      breadcrumb[i].name,
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: i == breadcrumb.length - 1
-                            ? FontWeight.w600
-                            : FontWeight.normal,
-                        color: i == breadcrumb.length - 1
-                            ? AppColors.primary
-                            : AppColors.textSecondaryFor(context),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
+    return _HomeBreadcrumbBar(
+      controller: _breadcrumbScrollController,
+      breadcrumb: breadcrumb,
+      currentFolderId: _currentFolderId,
+      onNavigate: _navigateToFolder,
+      canDrop: _canDropDraggedItemsOnFolder,
+      onDrop: _moveDraggedItemsToFolder,
     );
   }
 

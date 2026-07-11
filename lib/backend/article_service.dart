@@ -123,7 +123,11 @@ class ArticleService {
     final content = data['content'] as String? ?? '';
     final folderId = data['folderId'] as String?;
 
-    final article = await createArticle(title: title, content: content, folderId: folderId);
+    final article = await createArticle(
+      title: title,
+      content: content,
+      folderId: folderId,
+    );
     server.respond(
       request.clientId,
       WsMessage(
@@ -178,7 +182,11 @@ class ArticleService {
       server.broadcast(
         WsMessage(
           type: WsMessageType.articleUpdateResponse,
-          data: {'article': updated.toJson(), 'success': true, 'broadcast': true},
+          data: {
+            'article': updated.toJson(),
+            'success': true,
+            'broadcast': true,
+          },
         ),
       );
     }
@@ -443,7 +451,11 @@ class ArticleService {
       server.broadcast(
         WsMessage(
           type: WsMessageType.folderMoveArticleResponse,
-          data: {'article': article.toJson(), 'success': true, 'broadcast': true},
+          data: {
+            'article': article.toJson(),
+            'success': true,
+            'broadcast': true,
+          },
         ),
       );
     }

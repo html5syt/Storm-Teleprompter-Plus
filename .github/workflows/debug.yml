@@ -57,9 +57,10 @@ jobs:
 
       - name: Build Android debug artifacts
         run: |
+          VERSION="${GITHUB_SHA:0:8}"
           flutter pub get
-          flutter build apk --debug --split-per-abi
-          flutter build appbundle --debug
+          flutter build apk --debug --split-per-abi --dart-define=APP_VERSION="$VERSION"
+          flutter build appbundle --debug --dart-define=APP_VERSION="$VERSION"
           mkdir -p artifacts
           for apk in build/app/outputs/flutter-apk/*-debug.apk; do
             abi="$(basename "$apk" -debug.apk)"
@@ -87,8 +88,9 @@ jobs:
 
       - name: Build Web
         run: |
+          VERSION="${GITHUB_SHA:0:8}"
           flutter pub get
-          flutter build web --debug
+          flutter build web --debug --dart-define=APP_VERSION="$VERSION"
           mkdir -p artifacts
           tar -czf artifacts/${APP_NAME}-web.tar.gz -C build/web .
 
@@ -116,9 +118,10 @@ jobs:
 
       - name: Build Linux
         run: |
+          VERSION="${GITHUB_SHA:0:8}"
           flutter config --enable-linux-desktop
           flutter pub get
-          flutter build linux --debug
+          flutter build linux --debug --dart-define=APP_VERSION="$VERSION"
           mkdir -p artifacts
           tar -czf artifacts/${APP_NAME}-linux-x64.tar.gz -C build/linux/x64/debug/bundle .
 
@@ -142,9 +145,10 @@ jobs:
       - name: Build Windows
         shell: powershell
         run: |
+          $version = $env:GITHUB_SHA.Substring(0, 8)
           flutter config --enable-windows-desktop
           flutter pub get
-          flutter build windows --debug
+          flutter build windows --debug --dart-define=APP_VERSION=$version
           New-Item -ItemType Directory -Force artifacts | Out-Null
           Compress-Archive -Path build\windows\x64\runner\debug\* -DestinationPath artifacts\${env:APP_NAME}-windows-x64.zip -Force
 
@@ -167,10 +171,11 @@ jobs:
 
       - name: Build macOS and unsigned iOS
         run: |
+          VERSION="${GITHUB_SHA:0:8}"
           flutter config --enable-macos-desktop
           flutter pub get
-          flutter build macos --debug
-          flutter build ios --debug --no-codesign
+          flutter build macos --debug --dart-define=APP_VERSION="$VERSION"
+          flutter build ios --debug --no-codesign --dart-define=APP_VERSION="$VERSION"
           mkdir -p artifacts
           MACOS_APP="$(find build/macos/Build/Products/debug -maxdepth 1 -name '*.app' -print -quit)"
           if [ -z "$MACOS_APP" ]; then

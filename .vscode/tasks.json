@@ -4,42 +4,50 @@
     {
       "label": "Build Windows Debug",
       "type": "shell",
-      "command": "flutter",
-      "args": ["build", "windows", "--debug"],
+      "command": "powershell",
+      "args": ["-ExecutionPolicy", "Bypass", "-File", "tool/flutter_build.ps1", "-Target", "windows", "-Mode", "debug"],
       "group": "build",
       "problemMatcher": []
     },
     {
       "label": "Build Windows Release",
       "type": "shell",
-      "command": "flutter",
-      "args": ["build", "windows", "--release"],
+      "command": "powershell",
+      "args": ["-ExecutionPolicy", "Bypass", "-File", "tool/flutter_build.ps1", "-Target", "windows", "-Mode", "release", "-Version", "${input:releaseVersion}"],
       "group": "build",
       "problemMatcher": []
     },
     {
       "label": "Build Android Debug APKs",
       "type": "shell",
-      "command": "flutter",
-      "args": ["build", "apk", "--debug", "--split-per-abi"],
+      "command": "powershell",
+      "args": ["-ExecutionPolicy", "Bypass", "-File", "tool/flutter_build.ps1", "-Target", "apk", "-Mode", "debug"],
       "group": "build",
       "problemMatcher": []
     },
     {
       "label": "Build Android Release APKs",
       "type": "shell",
-      "command": "flutter",
-      "args": ["build", "apk", "--release", "--split-per-abi"],
+      "command": "powershell",
+      "args": ["-ExecutionPolicy", "Bypass", "-File", "tool/flutter_build.ps1", "-Target", "apk", "-Mode", "release", "-Version", "${input:releaseVersion}"],
       "group": "build",
       "problemMatcher": []
     },
     {
       "label": "Build Android Release AAB",
       "type": "shell",
-      "command": "flutter",
-      "args": ["build", "appbundle", "--release"],
+      "command": "powershell",
+      "args": ["-ExecutionPolicy", "Bypass", "-File", "tool/flutter_build.ps1", "-Target", "appbundle", "-Mode", "release", "-Version", "${input:releaseVersion}"],
       "group": "build",
       "problemMatcher": []
+    }
+  ],
+  "inputs": [
+    {
+      "id": "releaseVersion",
+      "type": "promptString",
+      "description": "Release 版本（例如 v2.0.0）",
+      "default": "v1.0.0"
     }
   ]
 }

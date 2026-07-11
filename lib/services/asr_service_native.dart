@@ -79,7 +79,7 @@ class AsrModels {
       downloadUrl:
           'https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-streaming-zipformer-en-2023-06-21.tar.bz2',
       mirrorUrl: null,
-      approximateSizeMB: 300,
+      approximateSizeMB: 483,
       languages: '英文',
       scenario: '纯英文稿件、英文演讲与低延迟跟随',
       accuracy: '很高',

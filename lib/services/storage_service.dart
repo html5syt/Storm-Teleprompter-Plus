@@ -160,10 +160,7 @@ class StorageService {
   }
 
   /// 创建新文件夹
-  Future<Folder> createFolder({
-    required String name,
-    String? parentId,
-  }) async {
+  Future<Folder> createFolder({required String name, String? parentId}) async {
     final now = DateTime.now();
     final folder = Folder(
       id: _generateId(),

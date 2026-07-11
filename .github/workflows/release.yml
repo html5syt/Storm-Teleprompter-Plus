@@ -26,6 +26,7 @@ jobs:
       prerelease: ${{ steps.metadata.outputs.prerelease }}
       draft: ${{ steps.metadata.outputs.draft }}
       release_source: ${{ steps.metadata.outputs.release_source }}
+      app_version: ${{ steps.metadata.outputs.app_version }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -94,6 +95,7 @@ jobs:
               fh.write(f"prerelease={prerelease}\n")
               fh.write(f"draft={draft}\n")
               fh.write(f"release_source={release_source}\n")
+              fh.write(f"app_version={tag_name}\n")
               fh.write("release_title<<__RELEASE_TITLE__\n")
               fh.write(f"{release_title}\n")
               fh.write("__RELEASE_TITLE__\n")
@@ -151,9 +153,11 @@ jobs:
 
       - name: Build Android release artifacts
         run: |
+          VERSION='${{ needs.release_metadata.outputs.app_version }}'
+          BUILD_NAME="${VERSION#v}"
           flutter pub get
-          flutter build apk --release --split-per-abi
-          flutter build appbundle --release
+          flutter build apk --release --split-per-abi --build-name="$BUILD_NAME" --dart-define=APP_VERSION="$VERSION"
+          flutter build appbundle --release --build-name="$BUILD_NAME" --dart-define=APP_VERSION="$VERSION"
           mkdir -p artifacts
           for apk in build/app/outputs/flutter-apk/*-release.apk; do
             abi="$(basename "$apk" -release.apk)"
@@ -183,8 +187,9 @@ jobs:
 
       - name: Build Web
         run: |
+          VERSION='${{ needs.release_metadata.outputs.app_version }}'
           flutter pub get
-          flutter build web --release
+          flutter build web --release --dart-define=APP_VERSION="$VERSION"
           mkdir -p artifacts
           tar -czf artifacts/${APP_NAME}-web.tar.gz -C build/web .
 
@@ -214,9 +219,10 @@ jobs:
 
       - name: Build Linux
         run: |
+          VERSION='${{ needs.release_metadata.outputs.app_version }}'
           flutter config --enable-linux-desktop
           flutter pub get
-          flutter build linux --release
+          flutter build linux --release --dart-define=APP_VERSION="$VERSION"
           mkdir -p artifacts
           tar -czf artifacts/${APP_NAME}-linux-x64.tar.gz -C build/linux/x64/release/bundle .
 
@@ -242,9 +248,11 @@ jobs:
       - name: Build Windows
         shell: powershell
         run: |
+          $version = '${{ needs.release_metadata.outputs.app_version }}'
+          $buildName = $version.TrimStart('v')
           flutter config --enable-windows-desktop
           flutter pub get
-          flutter build windows --release
+          flutter build windows --release --build-name=$buildName --dart-define=APP_VERSION=$version
           New-Item -ItemType Directory -Force artifacts | Out-Null
           Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath artifacts\${env:APP_NAME}-windows-x64.zip -Force
 
@@ -269,10 +277,12 @@ jobs:
 
       - name: Build macOS and unsigned iOS
         run: |
+          VERSION='${{ needs.release_metadata.outputs.app_version }}'
+          BUILD_NAME="${VERSION#v}"
           flutter config --enable-macos-desktop
           flutter pub get
-          flutter build macos --release
-          flutter build ios --release --no-codesign
+          flutter build macos --release --build-name="$BUILD_NAME" --dart-define=APP_VERSION="$VERSION"
+          flutter build ios --release --no-codesign --build-name="$BUILD_NAME" --dart-define=APP_VERSION="$VERSION"
           mkdir -p artifacts
           MACOS_APP="$(find build/macos/Build/Products/Release -maxdepth 1 -name '*.app' -print -quit)"
           if [ -z "$MACOS_APP" ]; then

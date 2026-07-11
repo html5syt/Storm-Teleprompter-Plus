@@ -220,6 +220,16 @@ void main() {
       );
     });
 
+    test('removes short overlaps emitted by mobile recognizers', () {
+      expect(composeAsrDisplayText('第一句', '句第二句'), '第一句\n第二句');
+      expect(composeAsrDisplayText('请继续阅读', '阅读下一段'), '请继续阅读\n下一段');
+      expect(
+        composeAsrDisplayText('Welcome everyone', 'everyone to the show'),
+        'Welcome everyone\nto the show',
+      );
+      expect(composeAsrDisplayText('idea', 'and then'), 'idea\nand then');
+    });
+
     test('does not append a repeated final segment twice', () {
       expect(
         appendAsrTranscript('Welcome everyone', 'Welcome everyone'),

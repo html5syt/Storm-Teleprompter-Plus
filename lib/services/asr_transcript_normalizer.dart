@@ -72,7 +72,9 @@ int _suffixPrefixOverlap(String committed, String incoming) {
   final left = committed.runes.toList(growable: false);
   final right = incoming.runes.toList(growable: false);
   final maximum = min(left.length, right.length);
-  for (var length = maximum; length >= 3; length--) {
+  // Mobile recognizers frequently carry only the final one or two characters
+  // of the committed segment into the next partial result.
+  for (var length = maximum; length >= 1; length--) {
     var matches = true;
     for (var offset = 0; offset < length; offset++) {
       if (left[left.length - length + offset] != right[offset]) {
@@ -80,10 +82,17 @@ int _suffixPrefixOverlap(String committed, String incoming) {
         break;
       }
     }
-    if (matches) return length;
+    if (matches && (length > 1 || !_isAsciiLetterOrDigit(right.first))) {
+      return length;
+    }
   }
   return 0;
 }
+
+bool _isAsciiLetterOrDigit(int rune) =>
+    (rune >= 0x30 && rune <= 0x39) ||
+    (rune >= 0x41 && rune <= 0x5A) ||
+    (rune >= 0x61 && rune <= 0x7A);
 
 String _dropRunes(String text, int count) {
   if (count <= 0) return text;

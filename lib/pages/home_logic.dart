@@ -734,9 +734,14 @@ mixin HomeLogic on State<HomePage> {
     }
   }
 
-  bool _canDropItemOnFolder(_ContentItem dragged, String targetFolderId) {
-    if (dragged.isFolder && dragged.id == targetFolderId) return false;
+  bool _canDropItemOnFolder(_ContentItem dragged, String? targetFolderId) {
+    final currentFolderId = dragged.isFolder
+        ? dragged.folder?.parentId
+        : dragged.article?.folderId;
+    if (currentFolderId == targetFolderId) return false;
     if (!dragged.isFolder) return true;
+    if (targetFolderId == null) return true;
+    if (dragged.id == targetFolderId) return false;
     final folders = context.read<FolderProvider>().folders;
     var parentId = targetFolderId;
     while (parentId.isNotEmpty) {
@@ -750,7 +755,7 @@ mixin HomeLogic on State<HomePage> {
 
   bool _canDropDraggedItemsOnFolder(
     _ContentItem dragged,
-    String targetFolderId,
+    String? targetFolderId,
   ) {
     final items = _selectedItems.contains(dragged.id)
         ? _getContentItemsByIds(_selectedItems)
@@ -760,27 +765,14 @@ mixin HomeLogic on State<HomePage> {
 
   Future<void> _moveDraggedItemsToFolder(
     _ContentItem dragged,
-    String targetFolderId,
+    String? targetFolderId,
   ) async {
     if (!_canDropDraggedItemsOnFolder(dragged, targetFolderId)) return;
 
     final itemsToMove = _selectedItems.contains(dragged.id)
         ? _getContentItemsByIds(_selectedItems)
         : <_ContentItem>[dragged];
-    final folderProvider = context.read<FolderProvider>();
-    final articleProvider = context.read<ArticleProvider>();
-
-    for (final item in itemsToMove) {
-      if (item.isFolder) {
-        if (!_canDropItemOnFolder(item, targetFolderId)) continue;
-        await folderProvider.moveFolder(item.id, targetFolderId);
-      } else if (item.article != null) {
-        await articleProvider.moveArticleToFolder(item.id, targetFolderId);
-      }
-    }
-
-    if (!mounted) return;
-    setState(() => _selectedItems.clear());
+    await _moveItemsToFolder(itemsToMove, targetFolderId);
   }
 
   void _handleItemDoubleTap(_ContentItem item) {
@@ -818,28 +810,28 @@ mixin HomeLogic on State<HomePage> {
       items: <PopupMenuEntry<String>>[
         if (item.isFolder) ...[
           const PopupMenuItem<String>(value: 'open', child: Text('打开')),
-          const PopupMenuItem<String>(value: 'rename', child: Text('重命名')),
+          if (_selectedItems.length == 1)
+            const PopupMenuItem<String>(value: 'rename', child: Text('重命名')),
           const PopupMenuDivider(),
           const PopupMenuItem<String>(value: 'cut', child: Text('剪切')),
           const PopupMenuItem<String>(value: 'copy', child: Text('复制')),
           const PopupMenuItem<String>(value: 'properties', child: Text('属性')),
-          const PopupMenuDivider(),
-          const PopupMenuItem<String>(value: 'delete', child: Text('删除')),
         ] else ...[
           const PopupMenuItem<String>(value: 'open', child: Text('打开提词')),
           const PopupMenuItem<String>(value: 'edit', child: Text('编辑')),
-          const PopupMenuItem<String>(value: 'rename', child: Text('重命名')),
+          if (_selectedItems.length == 1)
+            const PopupMenuItem<String>(value: 'rename', child: Text('重命名')),
           const PopupMenuDivider(),
           const PopupMenuItem<String>(value: 'cut', child: Text('剪切')),
           const PopupMenuItem<String>(value: 'copy', child: Text('复制')),
           const PopupMenuItem<String>(value: 'properties', child: Text('属性')),
-          const PopupMenuDivider(),
-          const PopupMenuItem<String>(
-            value: 'moveToFolder',
-            child: Text('移动到文件夹...'),
-          ),
-          const PopupMenuItem<String>(value: 'delete', child: Text('删除')),
         ],
+        const PopupMenuDivider(),
+        const PopupMenuItem<String>(
+          value: 'moveToFolder',
+          child: Text('移动到文件夹...'),
+        ),
+        const PopupMenuItem<String>(value: 'delete', child: Text('删除')),
       ],
     );
     if (!mounted || value == null) return;
@@ -874,7 +866,7 @@ mixin HomeLogic on State<HomePage> {
         _deleteItemDialog(item);
         break;
       case 'moveToFolder':
-        if (item.article != null) _moveToFolderDialog(item.article!);
+        unawaited(_moveSelectedToFolderDialog());
         break;
     }
   }
@@ -981,59 +973,46 @@ mixin HomeLogic on State<HomePage> {
     );
   }
 
-  void _moveToFolderDialog(Article article) {
+  Future<void> _moveSelectedToFolderDialog() async {
+    final items = _getContentItemsByIds(_selectedItems);
+    if (items.isEmpty) return;
     final folderProvider = context.read<FolderProvider>();
-    showDialog(
+    final destinations = <_MoveDestination>[
+      _MoveDestination(
+        folderId: null,
+        label: '根目录',
+        enabled: items.every((item) => _canDropItemOnFolder(item, null)),
+      ),
+      for (final folder in folderProvider.folders)
+        _MoveDestination(
+          folderId: folder.id,
+          label: _folderLocationLabel(folder.id),
+          enabled: items.every((item) => _canDropItemOnFolder(item, folder.id)),
+        ),
+    ];
+    final target = await _showMoveToFolderDialog(
       context: context,
-      builder: (ctx) {
-        return AlertDialog(
-          title: const Text('移动到文件夹'),
-          content: SizedBox(
-            width: 300,
-            height: 300,
-            child: ListView(
-              children: [
-                ListTile(
-                  leading: const Icon(Icons.home, size: 20),
-                  title: const Text('根目录'),
-                  dense: true,
-                  onTap: () {
-                    context.read<ArticleProvider>().moveArticleToFolder(
-                      article.id,
-                      null,
-                    );
-                    Navigator.pop(ctx);
-                  },
-                ),
-                for (final folder in folderProvider.folders)
-                  ListTile(
-                    leading: const Icon(
-                      Icons.folder,
-                      size: 20,
-                      color: AppColors.primary,
-                    ),
-                    title: Text(folder.name),
-                    dense: true,
-                    onTap: () {
-                      context.read<ArticleProvider>().moveArticleToFolder(
-                        article.id,
-                        folder.id,
-                      );
-                      Navigator.pop(ctx);
-                    },
-                  ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('取消'),
-            ),
-          ],
-        );
-      },
+      destinations: destinations,
     );
+    if (target == null || !mounted) return;
+    await _moveItemsToFolder(items, target.folderId);
+  }
+
+  Future<void> _moveItemsToFolder(
+    List<_ContentItem> items,
+    String? targetFolderId,
+  ) async {
+    final folderProvider = context.read<FolderProvider>();
+    final articleProvider = context.read<ArticleProvider>();
+    for (final item in items) {
+      if (!_canDropItemOnFolder(item, targetFolderId)) continue;
+      if (item.isFolder) {
+        await folderProvider.moveFolder(item.id, targetFolderId);
+      } else {
+        await articleProvider.moveArticleToFolder(item.id, targetFolderId);
+      }
+    }
+    if (mounted) setState(() => _selectedItems.clear());
   }
 
   // ─── 文章操作 ────────────────────────────────────────
