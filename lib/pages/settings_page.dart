@@ -784,7 +784,11 @@ class SettingsPage extends StatelessWidget {
                       provider: provider,
                       asr: asr,
                       id: device.id,
-                      label: device.label.isEmpty ? device.id : device.label,
+                      label: [
+                        device.label.isEmpty ? device.id : device.label,
+                        if (device.sampleRates.isNotEmpty)
+                          '${device.sampleRates.join('/')} Hz',
+                      ].join(' · '),
                     ),
                   ),
                 ],

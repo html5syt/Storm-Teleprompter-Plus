@@ -9,6 +9,7 @@ import 'package:http/io_client.dart';
 import 'package:archive/archive_io.dart';
 import 'package:record/record.dart';
 import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa;
+import 'pcm_resampler.dart';
 
 /// ASR 模型信息
 class AsrModelInfo {
@@ -191,6 +192,9 @@ class AsrService with ChangeNotifier {
   double _previewRms = 0;
   String? _previewDeviceId;
   String? _previewError;
+  int _captureSampleRate = 16000;
+  int _captureNumChannels = 1;
+  final PcmResampler _resampler = PcmResampler(targetSampleRate: 16000);
 
   /// 获取指定模型的下载进度
   DownloadProgress getDownloadProgress(String modelId) {
@@ -292,18 +296,30 @@ class AsrService with ChangeNotifier {
       if (device == null) throw StateError('选择的麦克风设备当前不可用');
     }
     _previewDeviceId = device?.id ?? '';
+    final sampleRate = _preferredCaptureSampleRate(device);
+    final numChannels = Platform.isWindows ? 2 : 1;
+    await _previewRecorder.setOnConfigChanged((config) {
+      debugPrint(
+        '[AsrService] 麦克风试听配置已调整: '
+        '${config.sampleRate} Hz, ${config.numChannels} channel(s)',
+      );
+    });
+    debugPrint(
+      '[AsrService] 麦克风试听启动: ${device?.label ?? '系统默认'}, '
+      'sampleRate=$sampleRate, channels=$numChannels, '
+      'deviceId=${device?.id ?? 'default'}',
+    );
     final stream = await _previewRecorder.startStream(
       RecordConfig(
         encoder: AudioEncoder.pcm16bits,
-        sampleRate: 16000,
-        numChannels: 1,
+        bitRate: sampleRate * numChannels * 16,
+        sampleRate: sampleRate,
+        numChannels: numChannels,
         device: device,
       ),
     );
-    final firstAudio = Completer<void>();
     _previewSubscription = stream.listen(
       (bytes) {
-        if (!firstAudio.isCompleted) firstAudio.complete();
         _previewRms = _calculatePcm16Rms(bytes);
         notifyListeners();
       },
@@ -311,17 +327,8 @@ class AsrService with ChangeNotifier {
         _previewError = error.toString();
         _previewRms = 0;
         notifyListeners();
-        if (!firstAudio.isCompleted) {
-          firstAudio.completeError(error, stackTrace);
-        }
       },
     );
-    try {
-      await firstAudio.future.timeout(const Duration(seconds: 3));
-    } catch (error) {
-      await stopInputPreview();
-      throw StateError('麦克风已打开但未收到音频数据：$error');
-    }
     notifyListeners();
   }
 
@@ -953,12 +960,30 @@ class AsrService with ChangeNotifier {
           throw StateError('选择的麦克风设备当前不可用');
         }
       }
+      _captureSampleRate = _preferredCaptureSampleRate(inputDevice);
+      _captureNumChannels = Platform.isWindows ? 2 : 1;
+      _resampler.reset();
+      await _recorder.setOnConfigChanged((config) {
+        _captureSampleRate = config.sampleRate;
+        _captureNumChannels = config.numChannels;
+        _resampler.reset();
+        debugPrint(
+          '[AsrService] ASR 录音配置已调整: '
+          '${config.sampleRate} Hz, ${config.numChannels} channel(s)',
+        );
+      });
+      debugPrint(
+        '[AsrService] ASR 麦克风启动: ${inputDevice?.label ?? '系统默认'}, '
+        'sampleRate=$_captureSampleRate, channels=$_captureNumChannels, '
+        'deviceId=${inputDevice?.id ?? 'default'}',
+      );
 
       final audioStream = await _recorder.startStream(
         RecordConfig(
           encoder: AudioEncoder.pcm16bits,
-          sampleRate: 16000,
-          numChannels: 1,
+          bitRate: _captureSampleRate * _captureNumChannels * 16,
+          sampleRate: _captureSampleRate,
+          numChannels: _captureNumChannels,
           autoGain: false,
           echoCancel: false,
           noiseSuppress: false,
@@ -988,12 +1013,33 @@ class AsrService with ChangeNotifier {
   void _processPcm16Chunk(Uint8List bytes) {
     if (bytes.length < 2) return;
     final sampleCount = bytes.length ~/ 2;
-    final samples = Float32List(sampleCount);
+    final channels = max(1, _captureNumChannels);
+    final frameCount = sampleCount ~/ channels;
+    if (frameCount == 0) return;
+    final sourceSamples = Float32List(frameCount);
     final data = ByteData.sublistView(bytes, 0, sampleCount * 2);
-    for (var i = 0; i < sampleCount; i++) {
-      samples[i] = data.getInt16(i * 2, Endian.little) / 32768.0;
+    for (var frame = 0; frame < frameCount; frame++) {
+      var mixed = 0.0;
+      for (var channel = 0; channel < channels; channel++) {
+        final sampleIndex = frame * channels + channel;
+        mixed += data.getInt16(sampleIndex * 2, Endian.little) / 32768.0;
+      }
+      sourceSamples[frame] = mixed / channels;
     }
+    final samples = _resampler.process(sourceSamples, _captureSampleRate);
+    if (samples.isEmpty) return;
     processAudioSamples(samples);
+  }
+
+  int _preferredCaptureSampleRate(InputDevice? device) {
+    final rates = (device?.sampleRates ?? const <int>[])
+        .where((rate) => rate > 0)
+        .toList(growable: false);
+    if (rates.isEmpty) return Platform.isWindows ? 48000 : 16000;
+    return rates.reduce(
+      (best, candidate) =>
+          (candidate - 16000).abs() < (best - 16000).abs() ? candidate : best,
+    );
   }
 
   double _calculatePcm16Rms(Uint8List bytes) {
@@ -1056,6 +1102,7 @@ class AsrService with ChangeNotifier {
     await _audioSubscription?.cancel();
     _audioSubscription = null;
     await _recorder.stop();
+    _resampler.reset();
 
     _stream?.free();
     _stream = null;
