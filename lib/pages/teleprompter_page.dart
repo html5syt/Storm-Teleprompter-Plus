@@ -267,7 +267,17 @@ class _TeleprompterPageState extends State<TeleprompterPage>
       return KeyEventResult.ignored;
     }
 
-    if (key == LogicalKeyboardKey.f11 ||
+    if (event is KeyDownEvent &&
+        (key == LogicalKeyboardKey.shiftLeft ||
+            key == LogicalKeyboardKey.shiftRight)) {
+      if (!isRemoteClient) {
+        final settingsProvider = context.read<SettingsProvider>();
+        final nextMode = settings.scrollMode == ScrollMode.auto
+            ? ScrollMode.asr
+            : ScrollMode.auto;
+        unawaited(_selectScrollMode(nextMode, settingsProvider));
+      }
+    } else if (key == LogicalKeyboardKey.f11 ||
         (key == LogicalKeyboardKey.keyF &&
             HardwareKeyboard.instance.isControlPressed &&
             HardwareKeyboard.instance.isShiftPressed) ||

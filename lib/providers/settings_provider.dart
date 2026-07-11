@@ -72,15 +72,28 @@ class SettingsProvider with ChangeNotifier {
   }
 
   void applyRemoteSyncedRuntimeSettings(Map<String, dynamic> settings) {
+    var changed = false;
+    if (settings['scrollMode'] case final String modeName) {
+      final mode = ScrollMode.values.firstWhere(
+        (value) => value.name == modeName,
+        orElse: () => mergedSettings.scrollMode,
+      );
+      if (_articleOverrides['scrollMode'] != mode.name) {
+        _articleOverrides['scrollMode'] = mode.name;
+        changed = true;
+      }
+    }
     if (settings.containsKey('wpm')) {
       final value = settings['wpm'];
       if (value is num) {
         final next = value.toInt();
-        if (_articleOverrides['wpm'] == next) return;
-        _articleOverrides['wpm'] = next;
+        if (_articleOverrides['wpm'] != next) {
+          _articleOverrides['wpm'] = next;
+          changed = true;
+        }
       }
-      notifyListeners();
     }
+    if (changed) notifyListeners();
   }
 
   /// 清除稿件覆盖设置

@@ -2,7 +2,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:storm_teleprompter_plus/backend/asr_session_service.dart';
 import 'package:storm_teleprompter_plus/backend/ws_protocol.dart';
 import 'package:storm_teleprompter_plus/models/app_settings.dart';
+import 'package:storm_teleprompter_plus/providers/settings_provider.dart';
 import 'package:storm_teleprompter_plus/services/alignment_engine.dart';
+import 'package:storm_teleprompter_plus/services/asr_transcript_normalizer.dart';
 
 void main() {
   group('ASR settings', () {
@@ -62,6 +64,23 @@ void main() {
       expect(WsMessageType.fromString('asr:result'), WsMessageType.asrResult);
       expect(WsMessageType.fromString('asr:status'), WsMessageType.asrStatus);
     });
+  });
+
+  test('remote runtime settings synchronize ASR mode and speed', () {
+    final provider = SettingsProvider();
+    addTearDown(provider.dispose);
+    provider.applyRemoteTeleprompterSettings({
+      'scrollMode': ScrollMode.auto.name,
+      'wpm': 120,
+    });
+
+    provider.applyRemoteSyncedRuntimeSettings({
+      'scrollMode': ScrollMode.asr.name,
+      'wpm': 180,
+    });
+
+    expect(provider.mergedSettings.scrollMode, ScrollMode.asr);
+    expect(provider.mergedSettings.wpm, 180);
   });
 
   group('server-side transcript alignment', () {
@@ -130,6 +149,16 @@ void main() {
         ),
         20,
       );
+    });
+  });
+
+  group('ASR transcript normalization', () {
+    test('collapses pathological character and phrase repetitions', () {
+      expect(normalizeAsrTranscript('泛泛泛泛由于由于明明明明'), '泛由于明');
+    });
+
+    test('keeps ordinary double characters', () {
+      expect(normalizeAsrTranscript('人人都看看'), '人人都看看');
     });
   });
 }

@@ -59,7 +59,8 @@ dev_dependencies:
 
 dependency_overrides:
   # 2.2.0 starts capture but emits no stream data on Windows audio devices.
-  record_windows: 2.1.0
+  record_windows:
+    path: third_party/record_windows
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

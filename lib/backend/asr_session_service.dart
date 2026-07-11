@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import '../services/alignment_engine.dart';
+import '../services/asr_transcript_normalizer.dart';
 import '../services/asr_service.dart';
 import '../services/text_parser.dart';
 import 'settings_service.dart';
@@ -241,7 +242,7 @@ class AsrSessionService {
   }
 
   void _handleTranscript(String text, bool isFinal) {
-    final trimmed = text.trim();
+    final trimmed = normalizeAsrTranscript(text.trim());
     if (isFinal) {
       if (trimmed.isNotEmpty) {
         _committedTranscript = _committedTranscript.isEmpty
@@ -256,7 +257,7 @@ class AsrSessionService {
       _committedTranscript,
       _partialTranscript,
     ].where((part) => part.isNotEmpty).join('\n');
-    final result = _alignment.consumeTranscript(text, isFinal);
+    final result = _alignment.consumeTranscript(trimmed, isFinal);
     final alignedIndex = limitAdvance(
       currentIndex: _currentIndex,
       requestedIndex: result.index,
@@ -269,7 +270,7 @@ class AsrSessionService {
     _server?.broadcast(
       WsMessage(
         type: WsMessageType.asrResult,
-        data: {..._statusData(), 'segment': text, 'isFinal': isFinal},
+        data: {..._statusData(), 'segment': trimmed, 'isFinal': isFinal},
       ),
     );
   }

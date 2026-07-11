@@ -704,10 +704,9 @@ packages:
   record_windows:
     dependency: "direct overridden"
     description:
-      name: record_windows
-      sha256: a1db1c0b996acd4161a93cc412b81a2a09a4fd7161c6353f32bf97683003b52f
-      url: "https://pub.flutter-io.cn"
-    source: hosted
+      path: "third_party/record_windows"
+      relative: true
+    source: path
     version: "2.1.0"
   screen_retriever:
     dependency: transitive
