@@ -5,7 +5,9 @@ import 'package:url_launcher/url_launcher.dart';
 import '../services/app_release_service.dart';
 
 class AboutSettingsSection extends StatefulWidget {
-  const AboutSettingsSection({super.key});
+  const AboutSettingsSection({super.key, this.versionLoader});
+
+  final Future<AppVersionInfo> Function()? versionLoader;
 
   @override
   State<AboutSettingsSection> createState() => _AboutSettingsSectionState();
@@ -13,8 +15,14 @@ class AboutSettingsSection extends StatefulWidget {
 
 class _AboutSettingsSectionState extends State<AboutSettingsSection> {
   final AppReleaseService _releaseService = AppReleaseService();
-  late final Future<AppVersionInfo> _version = AppVersionInfo.load();
+  late final Future<AppVersionInfo> _version;
   bool _checkingUpdate = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _version = widget.versionLoader?.call() ?? AppVersionInfo.load();
+  }
 
   @override
   void dispose() {
