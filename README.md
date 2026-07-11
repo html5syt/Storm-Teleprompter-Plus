@@ -2,8 +2,8 @@
 
 基于 Flutter 开发的跨平台提词器，提供富文本稿件管理、自动滚动、离线语音跟随、分光镜镜像显示，以及局域网多设备同步。
 
-> [!IMPORTANT]
-> 项目仍在开发和测试阶段，尚未正式发布。当前主要测试平台为 Windows 和 Android；其他平台可由 CI 构建，但仍需要更多实际设备验证。
+> [!NOTE]
+> 本项目源自[影视飓风：AI真的好用吗？影视飓风全新工作流分享！](https://www.bilibili.com/video/BV16woRBfEsH/)中提到的**飓风提词器**，本项目将其从飞书妙搭中解耦，使其可以完全本地运行，并扩展了一些功能。你可以在 [notes/ori_code](notes/ori_code) 中查看原始代码。
 
 ## 功能概览
 
@@ -11,7 +11,7 @@
 - Quill 富文本编辑器，支持字体、字号、前景色、背景色和常用文本格式。
 - 编辑内容实时保存，可从编辑器直接开始提词。
 - 自动滚动模式，滚动速度支持任意非负数值和运行时快速调整。
-- 基于 sherpa-onnx 的本地离线语音识别，可按朗读进度自动定位当前字。
+- 基于 sherpa-onnx 的本地离线语音识别，可按朗读进度自动定位当前字。*（识别准确度和延迟相较受制于web wasm环境而使用int8量化模型的原版更优秀）*
 - 中英混合、纯中文和纯英文 ASR 模型选择。
 - 正文字号、字体、颜色、背景、边距、阅读框位置和进度条显示设置。
 - 镜像翻转正文、阅读框和进度条，适配分光镜。
@@ -26,13 +26,11 @@
 | Android | 主要测试平台 | 支持本地服务端、麦克风权限、ASR 和横屏提词 |
 | Linux / macOS | CI 构建 | 主要功能已接入，仍需更多设备验证 |
 | iOS | CI 无签名构建 | 实际安装需要 Apple Developer 签名和 provisioning profile |
-| Web | 功能受限 | 不提供内置本地后端、原生 ASR、系统字体扫描等原生能力 |
+| Web | 未正式支持 | 出于技术限制和性能、开发成本考虑，不提供内置本地后端、原生 ASR、系统字体扫描等原生能力，未经过专门适配。如有需要请使用原版。 |
 
 ## 获取应用
 
-正式版本发布后，可从仓库的 [Releases](https://github.com/html5syt/Storm-Teleprompter-Plus/releases) 页面下载对应平台产物。
-
-当前没有可用 Release 时，请按照[本地运行](#本地运行)章节从源码启动。
+可从仓库的 [Releases](https://github.com/html5syt/Storm-Teleprompter-Plus/releases) 页面下载对应平台产物，也可按照[本地运行](#本地运行)章节从源码启动。
 
 ## 快速开始
 
@@ -175,6 +173,8 @@
 
 ### 环境要求
 
+你需要具备基本的 Flutter 开发环境和 Android/iOS 构建环境。请参考 [Flutter 官方文档](https://docs.flutter.dev/get-started/install) 进行安装。
+
 - Flutter `3.44.1` stable，或与 `pubspec.yaml` 约束兼容的更新版本。
 - Git。
 - Android 构建需要 JDK 17、Android SDK 和可用的 Android 设备或模拟器。
@@ -228,9 +228,7 @@ powershell -ExecutionPolicy Bypass -File tool/flutter_build.ps1 `
   -Target apk -Mode release -Version v1.0.0
 ```
 
-Android Release 签名、`html5syt.jks` 配置和 GitHub Secrets 说明见 [Android 发布签名文档](notes/docs/android-release-signing.md)。不要提交密钥库、`android/key.properties` 或任何密码。
-
-版本注入规则见 [版本文档](notes/docs/release-versioning.md)，代码分层见 [架构文档](notes/docs/architecture.md)。
+Android Release 签名配置和 GitHub Secrets 说明见 [Android 发布签名文档](notes/docs/android-release-signing.md)。不要提交密钥库、`android/key.properties` 或任何密码。
 
 ## 自动发布
 
@@ -246,7 +244,7 @@ GitHub Actions 可以构建 Android、Windows、Linux、Web、macOS 和未签名
 
 Android Release 构建需要先配置仓库 Secrets，详情见 Android 签名文档。
 
-## 常见问题
+## 开发&构建常见问题
 
 ### Windows 或 Android 首次构建下载失败
 
@@ -282,6 +280,12 @@ flutter test --no-pub
 
 页面不应直接访问持久化服务。UI 通过 Provider 读取状态，Provider 通过 `ConnectionProvider` 与本地或远程后端通信。ASR 音频采集、识别器生命周期、文本对齐和提词器播放状态应保持职责分离。
 
-## License
+## License & Disclaimer
 
 本项目采用 [MIT License](LICENSE)。
+
+绝大部分代码由Codex编写，存在部分潜在不当实现或安全漏洞。如有发现，请提交 Issue 或 Pull Request。
+
+如果你有新功能建议、Bug 报告或其他反馈，请在 [GitHub Issues](https://github.com/html5syt/Storm-Teleprompter-Plus/issues) 中提交。
+
+<h2 style="text-align: right;">Mr. Tim 2026.7</h2>
