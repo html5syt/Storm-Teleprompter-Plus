@@ -4,7 +4,8 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:http/http.dart' as http;
-import 'package:archive/archive.dart';
+import 'package:archive/archive_io.dart';
+import 'package:record/record.dart';
 import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa;
 
 /// ASR 模型信息
@@ -15,6 +16,11 @@ class AsrModelInfo {
   final String downloadUrl;
   final String? mirrorUrl;
   final int approximateSizeMB;
+  final String languages;
+  final String scenario;
+  final String accuracy;
+  final String latency;
+  final int recommendedMemoryMB;
 
   const AsrModelInfo({
     required this.id,
@@ -23,6 +29,11 @@ class AsrModelInfo {
     required this.downloadUrl,
     this.mirrorUrl,
     required this.approximateSizeMB,
+    this.languages = '中文',
+    this.scenario = '通用提词',
+    this.accuracy = '标准',
+    this.latency = '低',
+    this.recommendedMemoryMB = 1024,
   });
 }
 
@@ -32,24 +43,18 @@ class AsrModels {
 
   static const List<AsrModelInfo> availableModels = [
     AsrModelInfo(
-      id: 'paraformer-zh',
-      name: 'Paraformer 中文',
-      description: '中文语音识别模型，适合大多数中文场景',
+      id: 'zipformer-bilingual-zh-en',
+      name: 'Zipformer 中英双语',
+      description: '官方流式中英双语 Transducer 模型，兼顾准确率与实时性',
       downloadUrl:
-          'https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-paraformer-zh-2023-09-14.tar.bz2',
-      mirrorUrl:
-          'https://hf-mirror.com/k2-fsa/sherpa-onnx/resolve/main/sherpa-onnx-paraformer-zh-2023-09-14.tar.bz2',
-      approximateSizeMB: 234,
-    ),
-    AsrModelInfo(
-      id: 'streaming-paraformer',
-      name: '流式 Paraformer 中文',
-      description: '流式中文语音识别，实时性更好',
-      downloadUrl:
-          'https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-streaming-paraformer-bilingual-zh-en.tar.bz2',
-      mirrorUrl:
-          'https://hf-mirror.com/k2-fsa/sherpa-onnx/resolve/main/sherpa-onnx-streaming-paraformer-bilingual-zh-en.tar.bz2',
-      approximateSizeMB: 1047,
+          'https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20.tar.bz2',
+      mirrorUrl: null,
+      approximateSizeMB: 322,
+      languages: '中文、英文',
+      scenario: '中英混合稿件与高准确率场景',
+      accuracy: '很高',
+      latency: '中',
+      recommendedMemoryMB: 3072,
     ),
     AsrModelInfo(
       id: 'zipformer2-ced',
@@ -59,6 +64,10 @@ class AsrModels {
           'https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-streaming-zipformer-zh-14M-2023-02-23.tar.bz2',
       mirrorUrl: null,
       approximateSizeMB: 74,
+      scenario: '资源受限设备和低延迟跟随',
+      accuracy: '标准',
+      latency: '很低',
+      recommendedMemoryMB: 768,
     ),
   ];
 }
@@ -112,8 +121,11 @@ class AsrService with ChangeNotifier {
 
   sherpa.OnlineRecognizer? _recognizer;
   sherpa.OnlineStream? _stream;
+  final AudioRecorder _recorder = AudioRecorder();
+  StreamSubscription<Uint8List>? _audioSubscription;
   bool _isRunning = false;
   bool _isModelLoaded = false;
+  bool _isReleased = false;
   String? _currentModelId;
 
   // 回调
@@ -124,6 +136,7 @@ class AsrService with ChangeNotifier {
   // ─── 下载状态跟踪 ──────────────────────────────────────
   final Map<String, DownloadProgress> _downloadProgress = {};
   StreamSubscription? _currentDownloadSubscription;
+  Completer<void>? _currentDownloadCompleter;
   String? _currentDownloadModelId;
   bool _currentDownloadCancelled = false;
 
@@ -141,8 +154,11 @@ class AsrService with ChangeNotifier {
     if (_currentDownloadSubscription != null &&
         _currentDownloadModelId != null) {
       _currentDownloadCancelled = true;
-      _currentDownloadSubscription!.cancel();
+      unawaited(_currentDownloadSubscription!.cancel());
       _currentDownloadSubscription = null;
+      if (_currentDownloadCompleter?.isCompleted == false) {
+        _currentDownloadCompleter!.complete();
+      }
       final modelId = _currentDownloadModelId!;
       _currentDownloadModelId = null;
       _downloadProgress[modelId] = const DownloadProgress(
@@ -182,6 +198,16 @@ class AsrService with ChangeNotifier {
   /// 是否正在运行
   bool get isRunning => _isRunning;
 
+  AsrModelInfo recommendModel() {
+    final processors = Platform.numberOfProcessors;
+    final preferredId = processors >= 8
+        ? 'zipformer-bilingual-zh-en'
+        : 'zipformer2-ced';
+    return AsrModels.availableModels.firstWhere(
+      (model) => model.id == preferredId,
+    );
+  }
+
   /// 获取模型存储目录
   Future<String> _getModelDir() async {
     final appDir = await getApplicationSupportDirectory();
@@ -196,7 +222,8 @@ class AsrService with ChangeNotifier {
   Future<bool> isModelDownloaded(String modelId) async {
     final modelDir = await _getModelDir();
     final targetDir = Directory('$modelDir/$modelId');
-    return targetDir.exists();
+    return await targetDir.exists() &&
+        await _containsRequiredModelFiles(targetDir);
   }
 
   /// 下载并解压 ASR 模型
@@ -277,10 +304,7 @@ class AsrService with ChangeNotifier {
       }
 
       final url = urls[attempt];
-      final sourceLabel =
-          attempt == 0 && useMirror && modelInfo.mirrorUrl != null
-          ? '镜像'
-          : '原始';
+      final sourceLabel = url == modelInfo.downloadUrl ? '原始' : '镜像';
 
       updateProgress(0, '[$sourceLabel] 开始下载: ${modelInfo.name}');
 
@@ -303,6 +327,8 @@ class AsrService with ChangeNotifier {
         int downloaded = 0;
         final sink = tempFile.openWrite();
 
+        final downloadCompleter = Completer<void>();
+        _currentDownloadCompleter = downloadCompleter;
         _currentDownloadSubscription = response.stream.listen(
           (chunk) {
             sink.add(chunk);
@@ -321,15 +347,20 @@ class AsrService with ChangeNotifier {
           },
           onDone: () async {
             await sink.close();
+            if (!downloadCompleter.isCompleted) downloadCompleter.complete();
           },
           onError: (e) async {
             await sink.close();
-            throw e;
+            if (!downloadCompleter.isCompleted) {
+              downloadCompleter.completeError(e);
+            }
           },
           cancelOnError: false,
         );
 
-        await _currentDownloadSubscription!.asFuture<void>();
+        await downloadCompleter.future;
+        _currentDownloadCompleter = null;
+        _currentDownloadSubscription = null;
 
         if (_currentDownloadCancelled) {
           await sink.close();
@@ -343,37 +374,27 @@ class AsrService with ChangeNotifier {
 
         updateProgress(0.8, '下载完成，正在解压...');
 
-        // ── 读取临时文件并解压 ──
-        final bytes = await tempFile.readAsBytes();
-
-        // 解压 tar.bz2
-        final bz2Decoded = BZip2Decoder().decodeBytes(bytes);
-        final tarArchive = TarDecoder().decodeBytes(bz2Decoded);
-
         final targetDir = '$modelDir/${modelInfo.id}';
         final dir = Directory(targetDir);
-        if (await dir.exists()) {
-          await dir.delete(recursive: true);
-        }
-        await dir.create(recursive: true);
+        final stagingDir = Directory('$targetDir.importing');
+        if (await stagingDir.exists()) await stagingDir.delete(recursive: true);
+        await stagingDir.create(recursive: true);
 
-        final totalFiles = tarArchive.length;
-        for (int i = 0; i < totalFiles; i++) {
-          final file = tarArchive[i];
-          final filePath = '$targetDir/${file.name}';
-          if (file.isFile) {
-            final outFile = File(filePath);
-            await outFile.parent.create(recursive: true);
-            await outFile.writeAsBytes(file.content as List<int>);
-          } else {
-            await Directory(filePath).create(recursive: true);
-          }
-          final extractProgress = (i + 1) / totalFiles;
-          updateProgress(
-            0.8 + extractProgress * 0.2,
-            '解压中: ${i + 1}/$totalFiles 文件',
-          );
+        var extractedFiles = 0;
+        await extractFileToDisk(
+          tempPath,
+          stagingDir.path,
+          callback: (entry) {
+            extractedFiles++;
+            updateProgress(0.9, '解压中: $extractedFiles 个文件');
+          },
+        );
+        if (!await _containsRequiredModelFiles(stagingDir)) {
+          await stagingDir.delete(recursive: true);
+          throw const FormatException('下载的模型缺少 tokens、encoder 或 decoder 文件');
         }
+        if (await dir.exists()) await dir.delete(recursive: true);
+        await stagingDir.rename(targetDir);
 
         // 清理临时文件
         if (await tempFile.exists()) {
@@ -383,6 +404,8 @@ class AsrService with ChangeNotifier {
         completeProgress();
         return; // 成功
       } catch (e) {
+        _currentDownloadCompleter = null;
+        _currentDownloadSubscription = null;
         lastError = e.toString();
         updateProgress(0, '[$sourceLabel] 出错: $lastError，尝试其他地址...');
         // 清理临时文件
@@ -408,6 +431,67 @@ class AsrService with ChangeNotifier {
     notifyListeners();
   }
 
+  /// Imports a downloaded Sherpa-Onnx .zip or .tar.bz2 model archive.
+  Future<String> importModelArchive(
+    String archivePath, {
+    String? modelId,
+  }) async {
+    final source = File(archivePath);
+    if (!await source.exists()) throw ArgumentError('模型文件不存在');
+    final lower = archivePath.toLowerCase();
+    final resolvedId = (modelId == null || modelId.trim().isEmpty)
+        ? source.uri.pathSegments.last
+              .replaceFirst(RegExp(r'\.tar\.bz2$', caseSensitive: false), '')
+              .replaceFirst(RegExp(r'\.zip$', caseSensitive: false), '')
+              .replaceAll(RegExp(r'[^a-zA-Z0-9_-]+'), '-')
+        : modelId.trim();
+    if (resolvedId.isEmpty) throw ArgumentError('无法确定模型 ID');
+
+    if (!lower.endsWith('.zip') &&
+        !lower.endsWith('.tar.bz2') &&
+        !lower.endsWith('.tbz')) {
+      throw const FormatException('仅支持 .zip、.tar.bz2 和 .tbz 模型包');
+    }
+
+    final modelRoot = await _getModelDir();
+    final target = Directory('$modelRoot/$resolvedId');
+    final staging = Directory('${target.path}.importing');
+    if (await staging.exists()) await staging.delete(recursive: true);
+    await staging.create(recursive: true);
+    try {
+      await extractFileToDisk(archivePath, staging.path);
+      if (!await _containsRequiredModelFiles(staging)) {
+        throw const FormatException('模型包缺少 tokens、encoder 或 decoder 文件');
+      }
+      if (await target.exists()) await target.delete(recursive: true);
+      await staging.rename(target.path);
+    } catch (_) {
+      if (await staging.exists()) await staging.delete(recursive: true);
+      rethrow;
+    }
+    _downloadProgress[resolvedId] = const DownloadProgress(
+      progress: 1,
+      isCompleted: true,
+      message: '本地导入完成',
+    );
+    notifyListeners();
+    return resolvedId;
+  }
+
+  Future<bool> _containsRequiredModelFiles(Directory directory) async {
+    var hasTokens = false;
+    var hasEncoder = false;
+    var hasDecoder = false;
+    await for (final entity in directory.list(recursive: true)) {
+      if (entity is! File) continue;
+      final name = entity.uri.pathSegments.last.toLowerCase();
+      hasTokens |= name == 'tokens.txt';
+      hasEncoder |= name.contains('encoder') && name.endsWith('.onnx');
+      hasDecoder |= name.contains('decoder') && name.endsWith('.onnx');
+    }
+    return hasTokens && hasEncoder && hasDecoder;
+  }
+
   /// 加载模型
   ///
   /// 加载指定的 ASR 模型到内存。如果已加载其他模型会先释放。
@@ -416,13 +500,19 @@ class AsrService with ChangeNotifier {
   /// 支持的模型格式：
   /// - 流式 Transducer (Zipformer): encoder/decoder/joiner + tokens
   /// - 流式 Paraformer: encoder/decoder + tokens
-  Future<void> loadModel(String modelId) async {
+  Future<void> loadModel(
+    String modelId, {
+    int numThreads = 0,
+    double rule1MinTrailingSilence = 2.4,
+    double rule2MinTrailingSilence = 1.2,
+    double rule3MinUtteranceLength = 20.0,
+  }) async {
     if (!_bindingsInitialized) {
       throw StateError('sherpa-onnx 尚未初始化，请先调用 AsrService.init()');
     }
 
     if (_isModelLoaded) {
-      unloadModel();
+      await unloadModel();
     }
 
     final modelDir = await _getModelDir();
@@ -473,6 +563,9 @@ class AsrService with ChangeNotifier {
 
       // 构建识别器配置
       sherpa.OnlineModelConfig modelConfig;
+      final resolvedThreads = numThreads > 0
+          ? numThreads
+          : max(1, min(8, Platform.numberOfProcessors ~/ 2));
 
       if (joinerPath != null) {
         // Transducer 模型（如 Zipformer）
@@ -483,7 +576,7 @@ class AsrService with ChangeNotifier {
             joiner: joinerPath,
           ),
           tokens: tokensPath,
-          numThreads: 4,
+          numThreads: resolvedThreads,
           debug: kDebugMode,
         );
         debugPrint('[AsrService] 加载 Transducer 模型');
@@ -495,7 +588,7 @@ class AsrService with ChangeNotifier {
             decoder: decoderPath,
           ),
           tokens: tokensPath,
-          numThreads: 4,
+          numThreads: resolvedThreads,
           debug: kDebugMode,
         );
         debugPrint('[AsrService] 加载流式 Paraformer 模型');
@@ -504,9 +597,9 @@ class AsrService with ChangeNotifier {
       final config = sherpa.OnlineRecognizerConfig(
         model: modelConfig,
         enableEndpoint: true,
-        rule1MinTrailingSilence: 2.4,
-        rule2MinTrailingSilence: 1.2,
-        rule3MinUtteranceLength: 20,
+        rule1MinTrailingSilence: rule1MinTrailingSilence,
+        rule2MinTrailingSilence: rule2MinTrailingSilence,
+        rule3MinUtteranceLength: rule3MinUtteranceLength,
       );
 
       _recognizer = sherpa.OnlineRecognizer(config);
@@ -541,17 +634,51 @@ class AsrService with ChangeNotifier {
 
     try {
       _stream = _recognizer!.createStream();
-      _isRunning = true;
+      if (!await _recorder.hasPermission()) {
+        throw StateError('没有麦克风权限，无法启动语音识别');
+      }
+      if (!await _recorder.isEncoderSupported(AudioEncoder.pcm16bits)) {
+        throw UnsupportedError('当前平台不支持 PCM16 麦克风流');
+      }
 
-      // 使用 record 插件进行音频采集
-      // 注意：实际音频采集需要在使用时通过 record 包实现
-      // 这里提供接口，具体采集逻辑在 UI 层通过回调实现
+      final audioStream = await _recorder.startStream(
+        const RecordConfig(
+          encoder: AudioEncoder.pcm16bits,
+          sampleRate: 16000,
+          numChannels: 1,
+          autoGain: false,
+          echoCancel: false,
+          noiseSuppress: false,
+        ),
+      );
+      _isRunning = true;
+      _audioSubscription = audioStream.listen(
+        _processPcm16Chunk,
+        onError: (Object error, StackTrace stackTrace) {
+          debugPrint('[AsrService] 麦克风音频流错误: $error');
+          unawaited(stop());
+        },
+      );
+
       debugPrint('[AsrService] ASR 识别已启动');
     } catch (e) {
       _isRunning = false;
+      _stream?.free();
+      _stream = null;
       debugPrint('[AsrService] ASR 启动失败: $e');
       rethrow;
     }
+  }
+
+  void _processPcm16Chunk(Uint8List bytes) {
+    if (bytes.length < 2) return;
+    final sampleCount = bytes.length ~/ 2;
+    final samples = Float32List(sampleCount);
+    final data = ByteData.sublistView(bytes, 0, sampleCount * 2);
+    for (var i = 0; i < sampleCount; i++) {
+      samples[i] = data.getInt16(i * 2, Endian.little) / 32768.0;
+    }
+    processAudioSamples(samples);
   }
 
   /// 处理音频数据
@@ -599,6 +726,10 @@ class AsrService with ChangeNotifier {
     if (!_isRunning) return;
     _isRunning = false;
 
+    await _audioSubscription?.cancel();
+    _audioSubscription = null;
+    await _recorder.stop();
+
     _stream?.free();
     _stream = null;
 
@@ -606,8 +737,8 @@ class AsrService with ChangeNotifier {
   }
 
   /// 卸载模型，释放资源
-  void unloadModel() {
-    stop();
+  Future<void> unloadModel() async {
+    await stop();
     _recognizer?.free();
     _recognizer = null;
     _isModelLoaded = false;
@@ -615,11 +746,19 @@ class AsrService with ChangeNotifier {
     debugPrint('[AsrService] 模型已卸载');
   }
 
+  /// Final application shutdown. The service cannot be reused afterwards.
+  Future<void> release() async {
+    if (_isReleased) return;
+    _isReleased = true;
+    await unloadModel();
+    await _recorder.dispose();
+    _instance = null;
+  }
+
   /// 释放所有资源
   @override
   void dispose() {
-    unloadModel();
-    _instance = null;
+    unawaited(release());
     super.dispose();
   }
 }

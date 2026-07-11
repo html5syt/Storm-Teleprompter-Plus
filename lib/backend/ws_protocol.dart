@@ -50,6 +50,10 @@ enum WsMessageType {
   teleprompterSettingsUpdate('teleprompter:settings_update'),
 
   // ─── ASR 语音识别 ──────────────────────────────────────
+  asrStart('asr:start'),
+  asrStartResponse('asr:start_response'),
+  asrPause('asr:pause'),
+  asrPauseResponse('asr:pause_response'),
   asrResult('asr:result'),
   asrStatus('asr:status'),
 

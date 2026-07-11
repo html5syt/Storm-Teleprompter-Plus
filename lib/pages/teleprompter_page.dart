@@ -196,10 +196,9 @@ class _TeleprompterPageState extends State<TeleprompterPage>
                               isRemoteClient: isRemoteControlLocked,
                             ),
 
-                          // ── 6. ASR 音量指示器 ──
                           if (settings.scrollMode == ScrollMode.asr &&
-                              teleprompter.isPlaying)
-                            _buildRmsMeter(teleprompter, settings),
+                              teleprompter.controlsVisible)
+                            _buildAsrTranscriptOverlay(teleprompter, settings),
 
                           // ── 7. 设置抽屉面板 ──
                           if (_showSettings)
@@ -751,6 +750,9 @@ class _TeleprompterPageState extends State<TeleprompterPage>
                         settingsProvider,
                         readOnly: isRemoteClient,
                       ),
+                    ] else ...[
+                      SizedBox(width: isCompact ? 8 : 12),
+                      _buildRmsMeter(teleprompter, settings),
                     ],
 
                     // ── 设置齿轮 ──
@@ -1374,35 +1376,103 @@ class _TeleprompterPageState extends State<TeleprompterPage>
 
   // ─── ASR 音量指示器 ──────────────────────────────────
 
+  Widget _buildAsrTranscriptOverlay(
+    TeleprompterProvider teleprompter,
+    AppSettings settings,
+  ) {
+    final message = switch (teleprompter.asrStatus) {
+      'loading' => '正在加载语音识别模型...',
+      'error' => teleprompter.asrError ?? '语音识别启动失败',
+      _ when teleprompter.asrTranscript.isNotEmpty =>
+        teleprompter.asrTranscript,
+      'paused' => '语音识别已暂停',
+      _ => '等待语音输入',
+    };
+
+    return Positioned(
+      left: 16,
+      right: 16,
+      bottom: MediaQuery.of(context).padding.bottom + 92,
+      child: IgnorePointer(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 760, maxHeight: 104),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: AppColors.surface.withValues(alpha: 0.94),
+                border: Border.all(color: AppColors.border),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 10,
+                ),
+                child: SingleChildScrollView(
+                  reverse: true,
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (teleprompter.isAsrLoading) ...[
+                        SizedBox.square(
+                          dimension: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: _primaryFromSettings(settings),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                      ],
+                      Expanded(
+                        child: Text(
+                          message,
+                          style: TextStyle(
+                            color: teleprompter.asrStatus == 'error'
+                                ? Colors.redAccent
+                                : AppColors.textPrimary,
+                            fontSize: 15,
+                            height: 1.4,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildRmsMeter(
     TeleprompterProvider teleprompter,
     AppSettings settings,
   ) {
     final normalizedRms = (teleprompter.rms * 3).clamp(0.0, 1.0);
 
-    return Positioned(
-      top: MediaQuery.of(context).padding.top + 60,
-      right: 16,
-      child: IgnorePointer(
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 100),
-          width: 6,
-          height: 60,
-          decoration: BoxDecoration(
-            color: AppColors.border,
-            borderRadius: BorderRadius.circular(3),
-          ),
-          child: Align(
-            alignment: Alignment.bottomCenter,
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 100),
-              height: 60 * normalizedRms,
-              decoration: BoxDecoration(
-                color: _primaryFromSettings(settings),
+    return Tooltip(
+      message: '麦克风电平',
+      child: SizedBox(
+        width: 52,
+        height: 28,
+        child: Row(
+          children: [
+            const Icon(Icons.mic, size: 16, color: AppColors.textSecondary),
+            const SizedBox(width: 5),
+            Expanded(
+              child: ClipRRect(
                 borderRadius: BorderRadius.circular(3),
+                child: LinearProgressIndicator(
+                  minHeight: 6,
+                  value: normalizedRms,
+                  color: _primaryFromSettings(settings),
+                  backgroundColor: AppColors.border,
+                ),
               ),
             ),
-          ),
+          ],
         ),
       ),
     );

@@ -91,6 +91,7 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
 
   Future<void> _handleWindowClose() async {
     if (_isClosingWindow) return;
+    final connection = context.read<ConnectionProvider>();
     final shouldClose = await _confirmLocalBackendShutdown(
       context,
       actionLabel: '关闭服务端',
@@ -122,6 +123,8 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
       ),
     );
     await Future<void>.delayed(const Duration(milliseconds: 80));
+    await connection.stopLocalAndDisconnect();
+    await globalBackendServer.shutdownApplication();
     await windowManager.destroy();
   }
 

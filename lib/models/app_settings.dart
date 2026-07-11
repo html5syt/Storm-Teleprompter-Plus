@@ -66,6 +66,13 @@ class AppSettings {
   /// ASR 模型下载镜像 URL（为空则用原始地址）
   final String asrMirrorUrl;
 
+  /// Sherpa-Onnx worker thread count. Zero selects a device-based default.
+  final int asrNumThreads;
+
+  final double asrRule1MinTrailingSilence;
+  final double asrRule2MinTrailingSilence;
+  final double asrRule3MinUtteranceLength;
+
   /// 应用 UI 字体（空字符串使用系统默认）
   final String appFontFamily;
 
@@ -124,6 +131,10 @@ class AppSettings {
     this.defaultBold = true,
     this.progressInfoSizeRatio = 0.6,
     this.asrMirrorUrl = '',
+    this.asrNumThreads = 0,
+    this.asrRule1MinTrailingSilence = 2.4,
+    this.asrRule2MinTrailingSilence = 1.2,
+    this.asrRule3MinUtteranceLength = 20.0,
     this.appFontFamily = 'Noto Sans SC',
     this.teleprompterFontFamily = 'Noto Sans SC',
     this.grayReadChars = true,
@@ -164,6 +175,13 @@ class AppSettings {
       progressInfoSizeRatio:
           (json['progressInfoSizeRatio'] as num?)?.toDouble() ?? 0.6,
       asrMirrorUrl: json['asrMirrorUrl'] as String? ?? '',
+      asrNumThreads: (json['asrNumThreads'] as num?)?.toInt() ?? 0,
+      asrRule1MinTrailingSilence:
+          (json['asrRule1MinTrailingSilence'] as num?)?.toDouble() ?? 2.4,
+      asrRule2MinTrailingSilence:
+          (json['asrRule2MinTrailingSilence'] as num?)?.toDouble() ?? 1.2,
+      asrRule3MinUtteranceLength:
+          (json['asrRule3MinUtteranceLength'] as num?)?.toDouble() ?? 20.0,
       appFontFamily: json['appFontFamily'] as String? ?? 'Noto Sans SC',
       teleprompterFontFamily:
           json['teleprompterFontFamily'] as String? ?? 'Noto Sans SC',
@@ -206,6 +224,10 @@ class AppSettings {
       'defaultBold': defaultBold,
       'progressInfoSizeRatio': progressInfoSizeRatio,
       'asrMirrorUrl': asrMirrorUrl,
+      'asrNumThreads': asrNumThreads,
+      'asrRule1MinTrailingSilence': asrRule1MinTrailingSilence,
+      'asrRule2MinTrailingSilence': asrRule2MinTrailingSilence,
+      'asrRule3MinUtteranceLength': asrRule3MinUtteranceLength,
       'appFontFamily': appFontFamily,
       'teleprompterFontFamily': teleprompterFontFamily,
       'grayReadChars': grayReadChars,
@@ -240,6 +262,10 @@ class AppSettings {
     double? readingLineOffset,
     double? progressInfoSizeRatio,
     String? asrMirrorUrl,
+    int? asrNumThreads,
+    double? asrRule1MinTrailingSilence,
+    double? asrRule2MinTrailingSilence,
+    double? asrRule3MinUtteranceLength,
     String? appFontFamily,
     String? teleprompterFontFamily,
     bool? grayReadChars,
@@ -274,6 +300,13 @@ class AppSettings {
       progressInfoSizeRatio:
           progressInfoSizeRatio ?? this.progressInfoSizeRatio,
       asrMirrorUrl: asrMirrorUrl ?? this.asrMirrorUrl,
+      asrNumThreads: asrNumThreads ?? this.asrNumThreads,
+      asrRule1MinTrailingSilence:
+          asrRule1MinTrailingSilence ?? this.asrRule1MinTrailingSilence,
+      asrRule2MinTrailingSilence:
+          asrRule2MinTrailingSilence ?? this.asrRule2MinTrailingSilence,
+      asrRule3MinUtteranceLength:
+          asrRule3MinUtteranceLength ?? this.asrRule3MinUtteranceLength,
       appFontFamily: appFontFamily ?? this.appFontFamily,
       teleprompterFontFamily:
           teleprompterFontFamily ?? this.teleprompterFontFamily,
@@ -345,6 +378,10 @@ class AppSettings {
       uiPrimaryColor: uiPrimaryColor,
       appFontFamily: appFontFamily,
       asrMirrorUrl: asrMirrorUrl,
+      asrNumThreads: asrNumThreads,
+      asrRule1MinTrailingSilence: asrRule1MinTrailingSilence,
+      asrRule2MinTrailingSilence: asrRule2MinTrailingSilence,
+      asrRule3MinUtteranceLength: asrRule3MinUtteranceLength,
       progressShowTime:
           overrides['progressShowTime'] as bool? ?? progressShowTime,
       progressShowPercentage:

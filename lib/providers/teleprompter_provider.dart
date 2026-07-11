@@ -5,8 +5,6 @@ import '../models/app_settings.dart';
 import '../models/script_character.dart';
 import '../providers/settings_provider.dart';
 import '../providers/connection_provider.dart';
-import '../services/alignment_engine.dart';
-import '../services/asr_service.dart';
 import '../services/text_parser.dart';
 
 /// 提词器运行状态
@@ -50,9 +48,12 @@ class TeleprompterProvider with ChangeNotifier {
   Duration _elapsedBeforePause = Duration.zero;
 
   // ─── ASR ────────────────────────────────────────────────
-  final TeleprompterAlignment _alignment = TeleprompterAlignment();
-  final AsrService _asrService = AsrService.instance;
   double _rms = 0;
+  String _asrTranscript = '';
+  String _asrStatus = 'idle';
+  String? _asrError;
+  StreamSubscription<WsMessage>? _asrResultSubscription;
+  StreamSubscription<WsMessage>? _asrStatusSubscription;
 
   // ─── 全屏/控制面板 ─────────────────────────────────────
   bool _controlsVisible = true;
@@ -68,6 +69,10 @@ class TeleprompterProvider with ChangeNotifier {
   List<ScriptLine> get lines => _lines;
   String get articleId => _articleId;
   double get rms => _rms;
+  String get asrTranscript => _asrTranscript;
+  String get asrStatus => _asrStatus;
+  String? get asrError => _asrError;
+  bool get isAsrLoading => _asrStatus == 'loading';
   bool get controlsVisible => _controlsVisible;
 
   /// 是否正在播放（任何模式）
@@ -104,7 +109,29 @@ class TeleprompterProvider with ChangeNotifier {
 
   /// 绑定 WebSocket 连接（用于多端同步）
   void bindConnection(ConnectionProvider connection) {
+    _asrResultSubscription?.cancel();
+    _asrStatusSubscription?.cancel();
     _connection = connection;
+    _asrResultSubscription = connection
+        .listenTo(WsMessageType.asrResult)
+        .listen(_applyAsrMessage);
+    _asrStatusSubscription = connection
+        .listenTo(WsMessageType.asrStatus)
+        .listen(_applyAsrMessage);
+  }
+
+  void _applyAsrMessage(WsMessage message) {
+    final articleId = message.data['articleId'] as String? ?? '';
+    if (articleId.isNotEmpty && articleId != _articleId) return;
+    _asrStatus = message.data['status'] as String? ?? _asrStatus;
+    _asrTranscript = message.data['text'] as String? ?? _asrTranscript;
+    _rms = (message.data['rms'] as num?)?.toDouble() ?? _rms;
+    _asrError = message.data['error'] as String?;
+    final index = (message.data['currentIndex'] as num?)?.toInt();
+    if (index != null && index >= 0 && index >= _currentIndex) {
+      _currentIndex = _normalizeRawIndex(index);
+    }
+    notifyListeners();
   }
 
   void applyRemoteSync({
@@ -118,11 +145,6 @@ class TeleprompterProvider with ChangeNotifier {
         ? -1
         : _normalizeRawIndex(currentIndex);
     _currentIndex = normalizedIndex;
-    if (_currentIndex >= 0) {
-      _alignment.setCurrentIndex(_currentIndex);
-    } else {
-      _alignment.reset();
-    }
 
     if (isPlaying) {
       if (_state != TeleprompterState.playing) {
@@ -130,7 +152,6 @@ class TeleprompterProvider with ChangeNotifier {
         _playStartTime = DateTime.now();
       }
       _stopAutoScroll();
-      _stopAsr();
       _scheduleHideControls(settings);
     } else {
       if (_state == TeleprompterState.playing && _playStartTime != null) {
@@ -139,7 +160,6 @@ class TeleprompterProvider with ChangeNotifier {
       _state = TeleprompterState.paused;
       _playStartTime = null;
       _stopAutoScroll();
-      _stopAsr();
       _cancelHideControls();
       _controlsVisible = true;
     }
@@ -259,11 +279,11 @@ class TeleprompterProvider with ChangeNotifier {
     // 建立可见字符序号 -> 原稿 rawIndex 映射。
     _rebuildRawIndexMap();
 
-    // 设置对齐引擎
-    _alignment.setScript(content);
-    _alignment.reset();
-
     _currentIndex = -1;
+    _asrTranscript = '';
+    _asrStatus = 'idle';
+    _asrError = null;
+    _rms = 0;
     _state = _lines.isEmpty ? TeleprompterState.idle : TeleprompterState.paused;
     _playStartTime = null;
     _elapsedBeforePause = Duration.zero;
@@ -319,7 +339,6 @@ class TeleprompterProvider with ChangeNotifier {
   /// 手动设置当前索引（点击跳转）
   void setCurrentIndex(int rawIndex) {
     _currentIndex = _normalizeRawIndex(rawIndex);
-    _alignment.setCurrentIndex(_currentIndex);
     _syncToBackend();
     notifyListeners();
   }
@@ -329,7 +348,6 @@ class TeleprompterProvider with ChangeNotifier {
     _stopAutoScroll();
     _stopAsr();
     _currentIndex = -1;
-    _alignment.reset();
     _state = _lines.isEmpty ? TeleprompterState.idle : TeleprompterState.paused;
     _controlsVisible = true;
     _playStartTime = null;
@@ -345,7 +363,6 @@ class TeleprompterProvider with ChangeNotifier {
     final targetOrdinal = currentOrdinal <= 0 ? 0 : currentOrdinal - 1;
     final target = _rawIndexAtOrdinal(targetOrdinal);
     _currentIndex = target;
-    _alignment.setCurrentIndex(target);
     if (_state == TeleprompterState.playing &&
         settings.scrollMode == ScrollMode.auto) {
       _stopAutoScroll();
@@ -361,7 +378,6 @@ class TeleprompterProvider with ChangeNotifier {
     final targetOrdinal = currentOrdinal < 0 ? 0 : currentOrdinal + 1;
     final target = _rawIndexAtOrdinal(targetOrdinal);
     _currentIndex = target;
-    _alignment.setCurrentIndex(target);
     if (_state == TeleprompterState.playing &&
         settings.scrollMode == ScrollMode.auto) {
       _stopAutoScroll();
@@ -374,7 +390,6 @@ class TeleprompterProvider with ChangeNotifier {
   /// 重置到开头（长按后退按钮触发）
   void resetToStart() {
     _currentIndex = -1;
-    _alignment.reset();
     _syncToBackend();
     notifyListeners();
   }
@@ -383,7 +398,6 @@ class TeleprompterProvider with ChangeNotifier {
   void resetToEnd() {
     if (_totalChars > 0) {
       _currentIndex = _charRawIndices.last;
-      _alignment.setCurrentIndex(_currentIndex);
       _syncToBackend();
       notifyListeners();
     }
@@ -406,6 +420,7 @@ class TeleprompterProvider with ChangeNotifier {
   }
 
   void refreshAutoScrollSettings(AppSettings settings) {
+    final previousMode = _activeAutoMode;
     final changed =
         _activeAutoWpm != settings.wpm ||
         _activeAutoMode != settings.scrollMode;
@@ -413,6 +428,19 @@ class TeleprompterProvider with ChangeNotifier {
     if (_state != TeleprompterState.playing) {
       _rememberAutoScrollSettings(settings);
       return;
+    }
+
+    if (settings.scrollMode == ScrollMode.asr) {
+      _stopAutoScroll();
+      _rememberAutoScrollSettings(settings);
+      if (previousMode != ScrollMode.asr) {
+        _startAsrIfNeeded(settings);
+      }
+      return;
+    }
+
+    if (previousMode == ScrollMode.asr) {
+      _stopAsr();
     }
 
     if (settings.scrollMode != ScrollMode.auto) {
@@ -546,41 +574,38 @@ class TeleprompterProvider with ChangeNotifier {
 
   void _startAsrIfNeeded(AppSettings settings) {
     if (settings.scrollMode != ScrollMode.asr) return;
-
-    if (!_asrService.isModelLoaded) {
-      debugPrint('[Teleprompter] ASR 模型未加载，无法启动语音跟随');
+    final connection = _connection;
+    if (connection == null || !connection.isConnected) {
+      _asrStatus = 'error';
+      _asrError = '服务端未连接';
       return;
     }
-
-    _asrService.start(
-      onPartialResult: (text) {
-        if (!hasListeners) return;
-        final result = _alignment.consumeTranscript(text, false);
-        if (result.index >= 0 && result.index > _currentIndex) {
-          _currentIndex = result.index;
-          _syncToBackend();
-          notifyListeners();
-        }
-      },
-      onFinalResult: (text) {
-        if (!hasListeners) return;
-        final result = _alignment.consumeTranscript(text, true);
-        if (result.index >= 0) {
-          _currentIndex = result.index;
-          _syncToBackend();
-          notifyListeners();
-        }
-      },
-      onRmsUpdate: (rms) {
-        if (!hasListeners) return;
-        _rms = rms;
-        notifyListeners();
-      },
+    _asrStatus = 'loading';
+    _asrError = null;
+    unawaited(
+      connection
+          .request(WsMessageType.asrStart, timeout: const Duration(minutes: 2))
+          .then(_applyAsrMessage)
+          .catchError((Object error) {
+            _asrStatus = 'error';
+            _asrError = error.toString();
+            notifyListeners();
+          }),
     );
   }
 
   void _stopAsr() {
-    _asrService.stop();
+    final connection = _connection;
+    if (connection != null && connection.isConnected && connection.isLocal) {
+      unawaited(
+        connection
+            .request(WsMessageType.asrPause)
+            .then(_applyAsrMessage)
+            .catchError((Object error) {
+              debugPrint('[Teleprompter] 暂停 ASR 失败: $error');
+            }),
+      );
+    }
     _rms = 0;
   }
 
@@ -633,6 +658,8 @@ class TeleprompterProvider with ChangeNotifier {
 
   @override
   void dispose() {
+    _asrResultSubscription?.cancel();
+    _asrStatusSubscription?.cancel();
     _stopAutoScroll();
     _stopAsr();
     _cancelHideControls();

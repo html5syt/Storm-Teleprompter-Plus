@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -16,6 +18,7 @@ import 'pages/home_page.dart';
 
 /// 全局 BackendServer 实例（用于多客户端检测）
 late BackendServer globalBackendServer;
+AppLifecycleListener? appLifecycleListener;
 
 /// 飓风提词器 Plus 应用入口
 ///
@@ -36,6 +39,11 @@ void main() async {
   // ── 1. 启动后端服务 ──
   globalBackendServer = BackendServer();
   final port = kIsWeb ? 0 : await globalBackendServer.start(); // 自动分配端口
+  if (!kIsWeb) {
+    appLifecycleListener = AppLifecycleListener(
+      onDetach: () => unawaited(globalBackendServer.shutdownApplication()),
+    );
+  }
 
   // ── 2. 创建 Provider ──
   final connectionProvider = ConnectionProvider();

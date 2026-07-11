@@ -5,6 +5,7 @@ import 'ws_server.dart';
 import 'article_service.dart';
 import 'settings_service.dart';
 import 'teleprompter_session.dart';
+import 'asr_session_service.dart';
 
 /// 后端主控
 ///
@@ -17,10 +18,19 @@ import 'teleprompter_session.dart';
 /// 前端默认连接到本机后端，如未启动则在此启动一个。
 /// 改连接到远程后端时，停止本机持有的后端实例。
 class BackendServer {
+  BackendServer() {
+    asrSessionService = AsrSessionService(
+      settingsService,
+      teleprompterSession.updateCurrentIndexFromAsr,
+    );
+    teleprompterSession.bindAsrSession(asrSessionService);
+  }
+
   final WsServer wsServer = WsServer();
   final ArticleService articleService = ArticleService();
   final SettingsService settingsService = SettingsService();
   final TeleprompterSession teleprompterSession = TeleprompterSession();
+  late final AsrSessionService asrSessionService;
 
   bool _isRunning = false;
   int _port = 0;
@@ -65,6 +75,7 @@ class BackendServer {
         articleService.registerHandlers(wsServer);
         settingsService.registerHandlers(wsServer);
         teleprompterSession.registerHandlers(wsServer);
+        asrSessionService.registerHandlers(wsServer);
         _handlersRegistered = true;
       }
 
@@ -90,12 +101,18 @@ class BackendServer {
     _pingSubscription?.cancel();
     _clientCountSubscription?.cancel();
     teleprompterSession.reset();
+    await asrSessionService.shutdown();
     await wsServer.stop();
 
     _isRunning = false;
     _port = 0;
     _hasMultipleClients = false;
     debugPrint('[BackendServer] 后端服务已停止');
+  }
+
+  Future<void> shutdownApplication() async {
+    await stop();
+    await asrSessionService.release();
   }
 
   /// 注册 Ping 处理器

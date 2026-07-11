@@ -387,6 +387,22 @@ class SettingsProvider with ChangeNotifier {
     await _saveSettings();
   }
 
+  Future<void> setAsrAdvancedParameters({
+    required int numThreads,
+    required double rule1MinTrailingSilence,
+    required double rule2MinTrailingSilence,
+    required double rule3MinUtteranceLength,
+  }) async {
+    _settings = _settings.copyWith(
+      asrNumThreads: numThreads.clamp(0, 64),
+      asrRule1MinTrailingSilence: rule1MinTrailingSilence.clamp(0.1, 20),
+      asrRule2MinTrailingSilence: rule2MinTrailingSilence.clamp(0.1, 20),
+      asrRule3MinUtteranceLength: rule3MinUtteranceLength.clamp(1, 300),
+    );
+    notifyListeners();
+    await _saveSettings();
+  }
+
   /// 更新应用 UI 字体
   Future<void> setAppFontFamily(String fontFamily) async {
     _settings = _settings.copyWith(appFontFamily: fontFamily);

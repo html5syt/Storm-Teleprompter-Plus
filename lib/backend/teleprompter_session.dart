@@ -2,12 +2,18 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'ws_protocol.dart';
 import 'ws_server.dart';
+import 'asr_session_service.dart';
 
 /// 提词器会话管理
 ///
 /// 管理提词器的多端同步，包括当前字位置、播放状态等。
 /// 当远程后端开始提词会话时，本地自动下载稿件并同步。
 class TeleprompterSession {
+  AsrSessionService? _asrSession;
+  WsServer? _server;
+
+  void bindAsrSession(AsrSessionService service) => _asrSession = service;
+
   /// 当前活跃的稿件 ID
   String? _activeArticleId;
 
@@ -41,6 +47,7 @@ class TeleprompterSession {
 
   /// 注册消息处理器到 WsServer
   void registerHandlers(WsServer server) {
+    _server = server;
     server.requests.listen((request) {
       switch (request.message.type) {
         case WsMessageType.teleprompterStartSession:
@@ -73,6 +80,15 @@ class TeleprompterSession {
         ? null
         : Map<String, dynamic>.from(data['article'] as Map);
     _revision++;
+
+    final content = _articleSnapshot?['content'] as String? ?? '';
+    if (_activeArticleId != null && content.isNotEmpty) {
+      _asrSession?.beginSession(
+        articleId: _activeArticleId!,
+        content: content,
+        currentIndex: _currentIndex,
+      );
+    }
 
     debugPrint('[TeleprompterSession] 会话开始: $_activeArticleId');
 
@@ -109,6 +125,7 @@ class TeleprompterSession {
     _settingsOverride = {};
     _articleSnapshot = null;
     _revision++;
+    unawaited(_asrSession?.endSession());
 
     _emitState();
 
@@ -176,6 +193,16 @@ class TeleprompterSession {
     );
   }
 
+  void updateCurrentIndexFromAsr(int currentIndex) {
+    if (_activeArticleId == null || currentIndex < _currentIndex) return;
+    _currentIndex = currentIndex;
+    _revision++;
+    _emitState();
+    _server?.broadcast(
+      WsMessage(type: WsMessageType.teleprompterSync, data: _sessionData()),
+    );
+  }
+
   Map<String, dynamic> _sessionData() {
     return {
       'articleId': _activeArticleId,
@@ -199,6 +226,7 @@ class TeleprompterSession {
   }
 
   void reset() {
+    unawaited(_asrSession?.endSession());
     _activeArticleId = null;
     _currentIndex = -1;
     _isPlaying = false;

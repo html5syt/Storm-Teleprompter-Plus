@@ -7,6 +7,11 @@ class AsrModelInfo {
   final String downloadUrl;
   final String? mirrorUrl;
   final int approximateSizeMB;
+  final String languages;
+  final String scenario;
+  final String accuracy;
+  final String latency;
+  final int recommendedMemoryMB;
 
   const AsrModelInfo({
     required this.id,
@@ -15,6 +20,11 @@ class AsrModelInfo {
     required this.downloadUrl,
     this.mirrorUrl,
     required this.approximateSizeMB,
+    this.languages = '中文',
+    this.scenario = '通用提词',
+    this.accuracy = '标准',
+    this.latency = '低',
+    this.recommendedMemoryMB = 1024,
   });
 }
 
@@ -61,6 +71,7 @@ class DownloadProgress {
 
 class AsrService with ChangeNotifier {
   static AsrService? _instance;
+  bool _isReleased = false;
 
   AsrService._();
 
@@ -74,6 +85,9 @@ class AsrService with ChangeNotifier {
   bool get isModelLoaded => false;
   String? get currentModelId => null;
   bool get isRunning => false;
+
+  AsrModelInfo recommendModel() =>
+      throw UnsupportedError('ASR is not supported on Web.');
 
   DownloadProgress getDownloadProgress(String modelId) {
     return const DownloadProgress();
@@ -96,7 +110,20 @@ class AsrService with ChangeNotifier {
 
   Future<void> deleteModel(String modelId) async {}
 
-  Future<void> loadModel(String modelId) async {
+  Future<String> importModelArchive(
+    String archivePath, {
+    String? modelId,
+  }) async {
+    throw UnsupportedError('ASR is not supported on Web.');
+  }
+
+  Future<void> loadModel(
+    String modelId, {
+    int numThreads = 0,
+    double rule1MinTrailingSilence = 2.4,
+    double rule2MinTrailingSilence = 1.2,
+    double rule3MinUtteranceLength = 20.0,
+  }) async {
     throw UnsupportedError('ASR is not supported on Web.');
   }
 
@@ -112,11 +139,17 @@ class AsrService with ChangeNotifier {
 
   Future<void> stop() async {}
 
-  void unloadModel() {}
+  Future<void> unloadModel() async {}
+
+  Future<void> release() async {
+    if (_isReleased) return;
+    _isReleased = true;
+    _instance = null;
+  }
 
   @override
   void dispose() {
-    _instance = null;
+    release();
     super.dispose();
   }
 }
