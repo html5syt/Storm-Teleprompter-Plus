@@ -95,7 +95,7 @@ class FolderProvider with ChangeNotifier {
       if (_connection != null && _connection!.isConnected) {
         final response = await _connection!.request(
           WsMessageType.folderCreate,
-          data: {'name': name, if (parentId != null) 'parentId': parentId},
+          data: {'name': name, 'parentId': ?parentId},
         );
         if (response.type == WsMessageType.folderCreateResponse) {
           final folder = Folder.fromJson(

@@ -73,11 +73,7 @@ class ArticleProvider with ChangeNotifier {
       if (_connection != null && _connection!.isConnected) {
         final response = await _connection!.request(
           WsMessageType.articleCreate,
-          data: {
-            'title': title,
-            'content': content,
-            if (folderId != null) 'folderId': folderId,
-          },
+          data: {'title': title, 'content': content, 'folderId': ?folderId},
         );
         if (response.type == WsMessageType.articleCreateResponse) {
           final article = Article.fromJson(
@@ -106,11 +102,7 @@ class ArticleProvider with ChangeNotifier {
       if (_connection != null && _connection!.isConnected) {
         final response = await _connection!.request(
           WsMessageType.articleUpdate,
-          data: {
-            'id': id,
-            if (title != null) 'title': title,
-            if (content != null) 'content': content,
-          },
+          data: {'id': id, 'title': ?title, 'content': ?content},
         );
         if (response.type == WsMessageType.articleUpdateResponse &&
             response.data['success'] == true) {

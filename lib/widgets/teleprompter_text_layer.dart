@@ -6,52 +6,6 @@ import '../models/script_character.dart';
 import '../theme/app_colors.dart';
 import '../utils/constants.dart';
 
-/// 按行吸附的滚动物理效果。
-///
-/// 手动滚动仍使用名义行高做轻量吸附；当前字定位由文本层的实际行高缓存负责。
-class LineSnapScrollPhysics extends ScrollPhysics {
-  final double lineHeight;
-
-  const LineSnapScrollPhysics({required this.lineHeight, super.parent});
-
-  @override
-  LineSnapScrollPhysics applyTo(ScrollPhysics? ancestor) {
-    return LineSnapScrollPhysics(
-      lineHeight: lineHeight,
-      parent: buildParent(ancestor),
-    );
-  }
-
-  double _snapToLine(double offset) {
-    if (lineHeight <= 0) return offset;
-    return (offset / lineHeight).roundToDouble() * lineHeight;
-  }
-
-  @override
-  Simulation? createBallisticSimulation(
-    ScrollMetrics position,
-    double velocity,
-  ) {
-    if (lineHeight <= 0) {
-      return super.createBallisticSimulation(position, velocity);
-    }
-
-    final target = _snapToLine(position.pixels);
-    if ((target - position.pixels).abs() < 1.0) return null;
-
-    return ScrollSpringSimulation(
-      spring,
-      position.pixels,
-      target,
-      velocity * 0.3,
-      tolerance: Tolerance(
-        velocity: 1.0 / (0.05 * position.viewportDimension),
-        distance: 1.0,
-      ),
-    );
-  }
-}
-
 /// 提词器文本渲染层（懒加载 + 实际行高定位）。
 ///
 /// - [SliverList.builder] 只构建可见正文行，控制大型稿件 Widget 数量。

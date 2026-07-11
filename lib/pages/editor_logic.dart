@@ -52,8 +52,12 @@ mixin EditorLogic on State<EditorPage> {
       ),
       selection: const TextSelection.collapsed(offset: 0),
       config: quill_config.QuillControllerConfig(
+        // flutter_quill 目前仅通过实验 API 暴露自定义粘贴清理回调。
+        // ignore: experimental_member_use
         clipboardConfig: quill_config.QuillClipboardConfig(
+          // ignore: experimental_member_use
           onPlainTextPaste: (plainText) async => _cleanPastedText(plainText),
+          // ignore: experimental_member_use
           onRichTextPaste: (delta, isExternal) async =>
               _cleanPastedDelta(delta),
         ),

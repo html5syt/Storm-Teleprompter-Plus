@@ -201,9 +201,7 @@ class _TeleprompterSettingsPanelState extends State<TeleprompterSettingsPanel> {
     );
   }
 
-  // ═══════════════════════════════════════════════════════
-  // 1. 进度条提示文字设置
-  // ═══════════════════════════════════════════════════════
+  // ─── 播放与进度 ────────────────────────────────────────
 
   /// 字号（占正文比例）
   Widget _buildProgressFontSizeSlider(
@@ -354,13 +352,7 @@ class _TeleprompterSettingsPanelState extends State<TeleprompterSettingsPanel> {
     );
   }
 
-  // ═══════════════════════════════════════════════════════
-  // 2. 正文显示设置
-  // ═══════════════════════════════════════════════════════
-
-  // ═══════════════════════════════════════════════════════
-  // 正文显示设置方法
-  // ═══════════════════════════════════════════════════════
+  // ─── 正文外观与排版 ────────────────────────────────────
 
   /// 提词器正文字体选择
   Widget _buildTeleprompterFontTile(
@@ -755,9 +747,7 @@ class _TeleprompterSettingsPanelState extends State<TeleprompterSettingsPanel> {
     );
   }
 
-  // ═══════════════════════════════════════════════════════
-  // 3. 阅读区域框设置
-  // ═══════════════════════════════════════════════════════
+  // ─── 阅读区域 ──────────────────────────────────────────
 
   /// 边框粗细
   Widget _buildReadingAreaBorderSlider(
@@ -818,9 +808,7 @@ class _TeleprompterSettingsPanelState extends State<TeleprompterSettingsPanel> {
     );
   }
 
-  // ═══════════════════════════════════════════════════════
-  // 通用 Slider 组件
-  // ═══════════════════════════════════════════════════════
+  // ─── 通用控件 ──────────────────────────────────────────
 
   Widget _buildSlider(
     BuildContext context, {

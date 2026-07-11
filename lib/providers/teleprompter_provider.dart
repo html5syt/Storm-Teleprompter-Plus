@@ -27,8 +27,7 @@ enum TeleprompterState {
 /// 提词器状态管理
 ///
 /// 管理提词器的滚动、ASR 对齐、文本渲染等核心逻辑。
-/// 自动滚动使用 RAF (requestAnimationFrame) 时间累加器模式,
-/// 与原始 Web 项目保持一致，确保滚动速度精准。
+/// 自动滚动使用周期计时器累计真实时间，避免帧率变化影响滚动速度。
 class TeleprompterProvider with ChangeNotifier {
   // ─── 核心状态 ──────────────────────────────────────────
   TeleprompterState _state = TeleprompterState.idle;
@@ -36,7 +35,7 @@ class TeleprompterProvider with ChangeNotifier {
   List<ScriptLine> _lines = [];
   String _articleId = '';
 
-  // ─── 自动滚动（RAF 时间累加器） ────────────────────────
+  // ─── 自动滚动 ──────────────────────────────────────────
   int _totalChars = 0;
   final List<int> _charRawIndices = <int>[];
   double _accumulator = 0.0; // 时间累加器（毫秒）
@@ -70,8 +69,6 @@ class TeleprompterProvider with ChangeNotifier {
   String get articleId => _articleId;
   double get rms => _rms;
   bool get controlsVisible => _controlsVisible;
-  int get totalChars => _totalChars;
-  TeleprompterAlignment get alignment => _alignment;
 
   /// 是否正在播放（任何模式）
   bool get isPlaying => _state == TeleprompterState.playing;
@@ -96,8 +93,6 @@ class TeleprompterProvider with ChangeNotifier {
 
   // ─── 视口滚动进度跟踪 ─────────────────────────────────
   double _viewportProgress = 0.0;
-
-  double get viewportProgress => _viewportProgress;
 
   /// 设置视口滚动进度，用于当前字尚未映射时的进度回退。
   void setViewportProgress(double value) {
@@ -431,7 +426,7 @@ class TeleprompterProvider with ChangeNotifier {
     }
   }
 
-  // ─── 自动滚动逻辑（RAF 时间累加器） ───────────────────
+  // ─── 自动滚动逻辑 ──────────────────────────────────────
 
   void _startAutoScrollIfNeeded(AppSettings settings) {
     _rememberAutoScrollSettings(settings);
@@ -541,7 +536,7 @@ class TeleprompterProvider with ChangeNotifier {
     if (newWpm != merged.wpm) {
       final runtimeSettings = merged.copyWith(wpm: newWpm);
       settingsProvider.setWpm(newWpm);
-      // 重启 ticker 使新 WPM 立即生效
+      // 重启自动滚动计时器，使新 WPM 立即生效。
       _stopAutoScroll();
       _startAutoScrollIfNeeded(runtimeSettings);
     }
@@ -619,17 +614,6 @@ class TeleprompterProvider with ChangeNotifier {
         if (line.characters[charIdx].rawIndex == rawIndex) {
           return (lineIdx, charIdx);
         }
-      }
-    }
-    return null;
-  }
-
-  /// 获取当前索引对应的字符信息
-  ScriptCharacter? get currentCharacter {
-    if (_currentIndex < 0 || _lines.isEmpty) return null;
-    for (final line in _lines) {
-      for (final char in line.characters) {
-        if (char.rawIndex == _currentIndex) return char;
       }
     }
     return null;

@@ -2,7 +2,7 @@ part of 'teleprompter_page.dart';
 
 /// 提词器页面逻辑 mixin
 ///
-/// 包含全屏控制、滚轮调速、格式化等业务逻辑。
+/// 包含全屏控制、滚轮调速、滚动进度和会话退出等页面逻辑。
 mixin TeleprompterPageLogic<T extends StatefulWidget>
     on State<T>, WidgetsBindingObserver {
   final ScrollController scrollController = ScrollController();

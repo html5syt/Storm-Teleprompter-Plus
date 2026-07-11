@@ -10,7 +10,7 @@ void main() {
     final title = topic['title'] ?? '';
     final indent = '  ' * depth;
     if (title.isNotEmpty) {
-      print('$indent- $title');
+      stdout.writeln('$indent- $title');
     }
     final children = topic['children']?['attached'] as List?;
     if (children != null) {

@@ -320,7 +320,6 @@ class SettingsPage extends StatelessWidget {
     final fontService = FontService();
     List<String> allFonts = [];
     List<String> filteredFonts = [];
-    String searchQuery = '';
 
     showDialog(
       context: context,
@@ -329,6 +328,7 @@ class SettingsPage extends StatelessWidget {
           // 首次加载系统字体
           if (allFonts.isEmpty) {
             fontService.getAvailableFonts().then((fonts) {
+              if (!context.mounted) return;
               dialogSetState(() {
                 allFonts = fonts;
                 filteredFonts = fonts;
@@ -360,8 +360,8 @@ class SettingsPage extends StatelessWidget {
                         isDense: true,
                       ),
                       onChanged: (value) {
-                        searchQuery = value;
                         fontService.searchFonts(value).then((fonts) {
+                          if (!context.mounted) return;
                           dialogSetState(() => filteredFonts = fonts);
                         });
                       },

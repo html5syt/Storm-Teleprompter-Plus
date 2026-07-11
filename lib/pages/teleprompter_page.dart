@@ -30,7 +30,6 @@ part 'teleprompter_logic.dart';
 /// - 顶部全幅进度条 + 右侧已用时间/速度
 /// - 浮动工具栏（可隐藏）
 /// - 鼠标滚轮动态调速（自动模式）
-/// - 按行滚动（snap physics）
 /// - 全屏模式修复
 class TeleprompterPage extends StatefulWidget {
   final Article article;

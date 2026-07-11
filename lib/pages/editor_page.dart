@@ -5,6 +5,8 @@ import 'package:dart_quill_delta/dart_quill_delta.dart' as qd;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_quill/flutter_quill.dart' as quill;
+// QuillControllerConfig 尚未通过 flutter_quill 公共入口导出。
+// ignore: implementation_imports
 import 'package:flutter_quill/src/controller/quill_controller_config.dart'
     as quill_config;
 import 'package:flutter_quill_delta_from_html/flutter_quill_delta_from_html.dart';
