@@ -212,5 +212,19 @@ void main() {
     test('keeps ordinary double characters', () {
       expect(normalizeAsrTranscript('人人都看看'), '人人都看看');
     });
+
+    test('removes overlap between committed and partial UI text', () {
+      expect(
+        composeAsrDisplayText('第一句已经读完', '已经读完第二句正在开始'),
+        '第一句已经读完\n第二句正在开始',
+      );
+    });
+
+    test('does not append a repeated final segment twice', () {
+      expect(
+        appendAsrTranscript('Welcome everyone', 'Welcome everyone'),
+        'Welcome everyone',
+      );
+    });
   });
 }

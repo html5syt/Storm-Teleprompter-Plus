@@ -248,18 +248,19 @@ class AsrSessionService {
     final trimmed = normalizeAsrTranscript(text.trim());
     if (isFinal) {
       if (trimmed.isNotEmpty) {
-        _committedTranscript = _committedTranscript.isEmpty
-            ? trimmed
-            : '$_committedTranscript\n$trimmed';
+        _committedTranscript = appendAsrTranscript(
+          _committedTranscript,
+          trimmed,
+        );
       }
       _partialTranscript = '';
     } else {
       _partialTranscript = trimmed;
     }
-    _transcript = [
+    _transcript = composeAsrDisplayText(
       _committedTranscript,
       _partialTranscript,
-    ].where((part) => part.isNotEmpty).join('\n');
+    );
     final result = _alignment.consumeTranscript(trimmed, isFinal);
     final alignedIndex = limitAdvance(
       currentIndex: _currentIndex,
