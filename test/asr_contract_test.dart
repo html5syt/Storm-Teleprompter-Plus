@@ -14,6 +14,9 @@ void main() {
         asrRule1MinTrailingSilence: 1.8,
         asrRule2MinTrailingSilence: 0.8,
         asrRule3MinUtteranceLength: 16,
+        asrUseSystemProxy: false,
+        asrInputDeviceId: 'microphone-1',
+        asrInputDeviceName: 'Studio microphone',
       );
 
       final restored = AppSettings.fromJson(settings.toJson());
@@ -24,12 +27,17 @@ void main() {
       expect(restored.asrRule1MinTrailingSilence, 1.8);
       expect(restored.asrRule2MinTrailingSilence, 0.8);
       expect(restored.asrRule3MinUtteranceLength, 16);
+      expect(restored.asrUseSystemProxy, isFalse);
+      expect(restored.asrInputDeviceId, 'microphone-1');
+      expect(restored.asrInputDeviceName, 'Studio microphone');
     });
 
     test('article overrides preserve server-only ASR settings', () {
       final settings = const AppSettings().copyWith(
         asrNumThreads: 8,
         asrRule1MinTrailingSilence: 1.5,
+        asrUseSystemProxy: false,
+        asrInputDeviceId: 'microphone-2',
       );
 
       final merged = settings.mergeOverrides({'fontSize': 80});
@@ -37,6 +45,8 @@ void main() {
       expect(merged.fontSize, 80);
       expect(merged.asrNumThreads, 8);
       expect(merged.asrRule1MinTrailingSilence, 1.5);
+      expect(merged.asrUseSystemProxy, isFalse);
+      expect(merged.asrInputDeviceId, 'microphone-2');
     });
   });
 

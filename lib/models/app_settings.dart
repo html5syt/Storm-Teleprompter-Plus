@@ -73,6 +73,12 @@ class AppSettings {
   final double asrRule2MinTrailingSilence;
   final double asrRule3MinUtteranceLength;
 
+  final bool asrUseSystemProxy;
+
+  /// Empty means the operating-system default input device.
+  final String asrInputDeviceId;
+  final String asrInputDeviceName;
+
   /// 应用 UI 字体（空字符串使用系统默认）
   final String appFontFamily;
 
@@ -135,6 +141,9 @@ class AppSettings {
     this.asrRule1MinTrailingSilence = 2.4,
     this.asrRule2MinTrailingSilence = 1.2,
     this.asrRule3MinUtteranceLength = 20.0,
+    this.asrUseSystemProxy = true,
+    this.asrInputDeviceId = '',
+    this.asrInputDeviceName = '',
     this.appFontFamily = 'Noto Sans SC',
     this.teleprompterFontFamily = 'Noto Sans SC',
     this.grayReadChars = true,
@@ -182,6 +191,9 @@ class AppSettings {
           (json['asrRule2MinTrailingSilence'] as num?)?.toDouble() ?? 1.2,
       asrRule3MinUtteranceLength:
           (json['asrRule3MinUtteranceLength'] as num?)?.toDouble() ?? 20.0,
+      asrUseSystemProxy: json['asrUseSystemProxy'] as bool? ?? true,
+      asrInputDeviceId: json['asrInputDeviceId'] as String? ?? '',
+      asrInputDeviceName: json['asrInputDeviceName'] as String? ?? '',
       appFontFamily: json['appFontFamily'] as String? ?? 'Noto Sans SC',
       teleprompterFontFamily:
           json['teleprompterFontFamily'] as String? ?? 'Noto Sans SC',
@@ -228,6 +240,9 @@ class AppSettings {
       'asrRule1MinTrailingSilence': asrRule1MinTrailingSilence,
       'asrRule2MinTrailingSilence': asrRule2MinTrailingSilence,
       'asrRule3MinUtteranceLength': asrRule3MinUtteranceLength,
+      'asrUseSystemProxy': asrUseSystemProxy,
+      'asrInputDeviceId': asrInputDeviceId,
+      'asrInputDeviceName': asrInputDeviceName,
       'appFontFamily': appFontFamily,
       'teleprompterFontFamily': teleprompterFontFamily,
       'grayReadChars': grayReadChars,
@@ -266,6 +281,9 @@ class AppSettings {
     double? asrRule1MinTrailingSilence,
     double? asrRule2MinTrailingSilence,
     double? asrRule3MinUtteranceLength,
+    bool? asrUseSystemProxy,
+    String? asrInputDeviceId,
+    String? asrInputDeviceName,
     String? appFontFamily,
     String? teleprompterFontFamily,
     bool? grayReadChars,
@@ -307,6 +325,9 @@ class AppSettings {
           asrRule2MinTrailingSilence ?? this.asrRule2MinTrailingSilence,
       asrRule3MinUtteranceLength:
           asrRule3MinUtteranceLength ?? this.asrRule3MinUtteranceLength,
+      asrUseSystemProxy: asrUseSystemProxy ?? this.asrUseSystemProxy,
+      asrInputDeviceId: asrInputDeviceId ?? this.asrInputDeviceId,
+      asrInputDeviceName: asrInputDeviceName ?? this.asrInputDeviceName,
       appFontFamily: appFontFamily ?? this.appFontFamily,
       teleprompterFontFamily:
           teleprompterFontFamily ?? this.teleprompterFontFamily,
@@ -382,6 +403,9 @@ class AppSettings {
       asrRule1MinTrailingSilence: asrRule1MinTrailingSilence,
       asrRule2MinTrailingSilence: asrRule2MinTrailingSilence,
       asrRule3MinUtteranceLength: asrRule3MinUtteranceLength,
+      asrUseSystemProxy: asrUseSystemProxy,
+      asrInputDeviceId: asrInputDeviceId,
+      asrInputDeviceName: asrInputDeviceName,
       progressShowTime:
           overrides['progressShowTime'] as bool? ?? progressShowTime,
       progressShowPercentage:

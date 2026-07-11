@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:http/http.dart' as http;
+import 'package:http/io_client.dart';
 import 'package:archive/archive_io.dart';
 import 'package:record/record.dart';
 import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa;
@@ -122,7 +123,9 @@ class AsrService with ChangeNotifier {
   sherpa.OnlineRecognizer? _recognizer;
   sherpa.OnlineStream? _stream;
   final AudioRecorder _recorder = AudioRecorder();
+  final AudioRecorder _previewRecorder = AudioRecorder();
   StreamSubscription<Uint8List>? _audioSubscription;
+  StreamSubscription<Uint8List>? _previewSubscription;
   bool _isRunning = false;
   bool _isModelLoaded = false;
   bool _isReleased = false;
@@ -139,6 +142,9 @@ class AsrService with ChangeNotifier {
   Completer<void>? _currentDownloadCompleter;
   String? _currentDownloadModelId;
   bool _currentDownloadCancelled = false;
+  http.Client? _currentDownloadClient;
+  double _previewRms = 0;
+  String? _previewDeviceId;
 
   /// 获取指定模型的下载进度
   DownloadProgress getDownloadProgress(String modelId) {
@@ -150,12 +156,14 @@ class AsrService with ChangeNotifier {
       Map.unmodifiable(_downloadProgress);
 
   /// 取消当前正在进行的下载
-  void cancelDownload() {
-    if (_currentDownloadSubscription != null &&
-        _currentDownloadModelId != null) {
+  Future<void> cancelDownload() async {
+    if (_currentDownloadModelId != null) {
       _currentDownloadCancelled = true;
-      unawaited(_currentDownloadSubscription!.cancel());
+      final subscription = _currentDownloadSubscription;
       _currentDownloadSubscription = null;
+      await subscription?.cancel();
+      _currentDownloadClient?.close();
+      _currentDownloadClient = null;
       if (_currentDownloadCompleter?.isCompleted == false) {
         _currentDownloadCompleter!.complete();
       }
@@ -197,6 +205,56 @@ class AsrService with ChangeNotifier {
 
   /// 是否正在运行
   bool get isRunning => _isRunning;
+  double get previewRms => _previewRms;
+  String? get previewDeviceId => _previewDeviceId;
+
+  Future<List<InputDevice>> listInputDevices() async {
+    if (!await _previewRecorder.hasPermission()) return const [];
+    return _previewRecorder.listInputDevices();
+  }
+
+  Future<void> startInputPreview(String? deviceId) async {
+    await stopInputPreview();
+    if (!await _previewRecorder.hasPermission()) {
+      throw StateError('没有麦克风权限');
+    }
+    final devices = await _previewRecorder.listInputDevices();
+    InputDevice? device;
+    if (deviceId != null && deviceId.isNotEmpty) {
+      for (final candidate in devices) {
+        if (candidate.id == deviceId) {
+          device = candidate;
+          break;
+        }
+      }
+      if (device == null) throw StateError('选择的麦克风设备当前不可用');
+    }
+    _previewDeviceId = device?.id ?? '';
+    final stream = await _previewRecorder.startStream(
+      RecordConfig(
+        encoder: AudioEncoder.pcm16bits,
+        sampleRate: 16000,
+        numChannels: 1,
+        device: device,
+      ),
+    );
+    _previewSubscription = stream.listen((bytes) {
+      _previewRms = _calculatePcm16Rms(bytes);
+      notifyListeners();
+    });
+    notifyListeners();
+  }
+
+  Future<void> stopInputPreview() async {
+    await _previewSubscription?.cancel();
+    _previewSubscription = null;
+    try {
+      await _previewRecorder.stop();
+    } catch (_) {}
+    _previewRms = 0;
+    _previewDeviceId = null;
+    notifyListeners();
+  }
 
   AsrModelInfo recommendModel() {
     final processors = Platform.numberOfProcessors;
@@ -235,11 +293,15 @@ class AsrService with ChangeNotifier {
     AsrModelInfo modelInfo, {
     bool useMirror = true,
     String? customMirrorUrl, // 自定义镜像 URL，eg. https://gh-proxy.com/
+    bool useSystemProxy = true,
     DownloadProgressCallback? onProgress,
   }) async {
     final modelId = modelInfo.id;
     // 如果已经在下载，不重复启动
-    if (_downloadProgress[modelId]?.isDownloading == true) return;
+    if (_currentDownloadModelId != null ||
+        _downloadProgress[modelId]?.isDownloading == true) {
+      return;
+    }
 
     _currentDownloadCancelled = false;
     _currentDownloadModelId = modelId;
@@ -315,9 +377,19 @@ class AsrService with ChangeNotifier {
       try {
         // ── 流式下载：分块写入磁盘 ──
         final request = http.Request('GET', Uri.parse(url));
-        final response = await http.Client().send(request);
+        final client = useSystemProxy
+            ? IOClient(
+                HttpClient()..findProxy = HttpClient.findProxyFromEnvironment,
+              )
+            : http.Client();
+        _currentDownloadClient = client;
+        final response = await client.send(request);
 
         if (response.statusCode != 200) {
+          client.close();
+          if (identical(_currentDownloadClient, client)) {
+            _currentDownloadClient = null;
+          }
           lastError = 'HTTP ${response.statusCode}';
           updateProgress(0, '[$sourceLabel] 下载失败: $lastError，尝试其他地址...');
           continue;
@@ -361,6 +433,10 @@ class AsrService with ChangeNotifier {
         await downloadCompleter.future;
         _currentDownloadCompleter = null;
         _currentDownloadSubscription = null;
+        client.close();
+        if (identical(_currentDownloadClient, client)) {
+          _currentDownloadClient = null;
+        }
 
         if (_currentDownloadCancelled) {
           await sink.close();
@@ -385,6 +461,9 @@ class AsrService with ChangeNotifier {
           tempPath,
           stagingDir.path,
           callback: (entry) {
+            if (_currentDownloadCancelled) {
+              throw StateError('模型下载已取消');
+            }
             extractedFiles++;
             updateProgress(0.9, '解压中: $extractedFiles 个文件');
           },
@@ -392,6 +471,11 @@ class AsrService with ChangeNotifier {
         if (!await _containsRequiredModelFiles(stagingDir)) {
           await stagingDir.delete(recursive: true);
           throw const FormatException('下载的模型缺少 tokens、encoder 或 decoder 文件');
+        }
+        if (_currentDownloadCancelled) {
+          await stagingDir.delete(recursive: true);
+          if (await tempFile.exists()) await tempFile.delete();
+          return;
         }
         if (await dir.exists()) await dir.delete(recursive: true);
         await stagingDir.rename(targetDir);
@@ -404,6 +488,8 @@ class AsrService with ChangeNotifier {
         completeProgress();
         return; // 成功
       } catch (e) {
+        _currentDownloadClient?.close();
+        _currentDownloadClient = null;
         _currentDownloadCompleter = null;
         _currentDownloadSubscription = null;
         lastError = e.toString();
@@ -412,6 +498,11 @@ class AsrService with ChangeNotifier {
         if (await tempFile.exists()) {
           await tempFile.delete();
         }
+        final stagingDir = Directory('$modelDir/${modelInfo.id}.importing');
+        if (await stagingDir.exists()) {
+          await stagingDir.delete(recursive: true);
+        }
+        if (_currentDownloadCancelled) return;
       }
     }
 
@@ -622,6 +713,7 @@ class AsrService with ChangeNotifier {
     required void Function(String text) onPartialResult,
     required void Function(String text) onFinalResult,
     void Function(double rms)? onRmsUpdate,
+    String? inputDeviceId,
   }) async {
     if (_isRunning) return;
     if (!_isModelLoaded || _recognizer == null) {
@@ -640,15 +732,29 @@ class AsrService with ChangeNotifier {
       if (!await _recorder.isEncoderSupported(AudioEncoder.pcm16bits)) {
         throw UnsupportedError('当前平台不支持 PCM16 麦克风流');
       }
+      InputDevice? inputDevice;
+      if (inputDeviceId != null && inputDeviceId.isNotEmpty) {
+        final devices = await _recorder.listInputDevices();
+        for (final candidate in devices) {
+          if (candidate.id == inputDeviceId) {
+            inputDevice = candidate;
+            break;
+          }
+        }
+        if (inputDevice == null) {
+          throw StateError('选择的麦克风设备当前不可用');
+        }
+      }
 
       final audioStream = await _recorder.startStream(
-        const RecordConfig(
+        RecordConfig(
           encoder: AudioEncoder.pcm16bits,
           sampleRate: 16000,
           numChannels: 1,
           autoGain: false,
           echoCancel: false,
           noiseSuppress: false,
+          device: inputDevice,
         ),
       );
       _isRunning = true;
@@ -679,6 +785,18 @@ class AsrService with ChangeNotifier {
       samples[i] = data.getInt16(i * 2, Endian.little) / 32768.0;
     }
     processAudioSamples(samples);
+  }
+
+  double _calculatePcm16Rms(Uint8List bytes) {
+    if (bytes.length < 2) return 0;
+    final sampleCount = bytes.length ~/ 2;
+    final data = ByteData.sublistView(bytes, 0, sampleCount * 2);
+    var sumSquares = 0.0;
+    for (var i = 0; i < sampleCount; i++) {
+      final sample = data.getInt16(i * 2, Endian.little) / 32768.0;
+      sumSquares += sample * sample;
+    }
+    return sqrt(sumSquares / sampleCount);
   }
 
   /// 处理音频数据
@@ -751,7 +869,9 @@ class AsrService with ChangeNotifier {
     if (_isReleased) return;
     _isReleased = true;
     await unloadModel();
+    await stopInputPreview();
     await _recorder.dispose();
+    await _previewRecorder.dispose();
     _instance = null;
   }
 

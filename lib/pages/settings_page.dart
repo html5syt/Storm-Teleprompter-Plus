@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:provider/provider.dart';
+import 'package:record/record.dart';
 import '../models/app_settings.dart';
 import '../providers/settings_provider.dart';
 import '../providers/connection_provider.dart';
@@ -454,10 +457,22 @@ class SettingsPage extends StatelessWidget {
           onTap: () => _importAsrModel(context, provider),
         ),
         ListTile(
+          leading: const Icon(Icons.mic_outlined),
+          title: const Text('麦克风设备'),
+          subtitle: Text(
+            settings.asrInputDeviceName.isEmpty
+                ? '系统默认设备'
+                : settings.asrInputDeviceName,
+          ),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => showInputDeviceSelector(context, provider),
+        ),
+        ListTile(
           leading: const Icon(Icons.tune),
           title: const Text('下载与高级设置'),
           subtitle: Text(
             '${settings.asrMirrorUrl.isEmpty ? '原始下载源' : '自定义镜像'} · '
+            '${settings.asrUseSystemProxy ? '系统代理' : '直连'} · '
             '${settings.asrNumThreads == 0 ? '自动线程数' : '${settings.asrNumThreads} 线程'}',
           ),
           onTap: () => _showAsrAdvancedSettings(context, provider),
@@ -466,12 +481,18 @@ class SettingsPage extends StatelessWidget {
     );
   }
 
-  static void _showAsrModelSelector(
+  static Future<void> _showAsrModelSelector(
     BuildContext context,
     SettingsProvider provider,
-  ) {
+  ) async {
     final asr = AsrService.instance;
-    final currentModelId = provider.settings.asrModelId;
+    var currentModelId = provider.settings.asrModelId;
+    if (currentModelId.isNotEmpty &&
+        !await asr.isModelDownloaded(currentModelId)) {
+      await provider.clearAsrModel();
+      currentModelId = '';
+    }
+    if (!context.mounted) return;
     final recommendedModelId = asr.recommendModel().id;
     final downloadedChecks = <String, Future<bool>>{};
 
@@ -504,6 +525,9 @@ class SettingsPage extends StatelessWidget {
                       final model = AsrModels.availableModels[index];
                       final isSelected = model.id == currentModelId;
                       final progress = asr.getDownloadProgress(model.id);
+                      final anyDownloading = asr.allDownloadProgress.values.any(
+                        (item) => item.isDownloading,
+                      );
 
                       return FutureBuilder<bool>(
                         future: downloadedChecks.putIfAbsent(
@@ -570,6 +594,19 @@ class SettingsPage extends StatelessWidget {
                                               color: AppColors.success,
                                             ),
                                           ),
+                                        if (!isDownloaded &&
+                                            !progress.isDownloading)
+                                          Text(
+                                            progress.error == null
+                                                ? '未下载'
+                                                : progress.message,
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: progress.error == null
+                                                  ? AppColors.textMutedFor(ctx)
+                                                  : AppColors.error,
+                                            ),
+                                          ),
                                         if (model.id == recommendedModelId)
                                           const Text(
                                             '根据本机处理器性能推荐',
@@ -595,40 +632,40 @@ class SettingsPage extends StatelessWidget {
                                         IconButton(
                                           icon: const Icon(Icons.download),
                                           tooltip: '下载模型',
-                                          onPressed: () async {
-                                            await asr.downloadModel(
-                                              model,
-                                              customMirrorUrl: provider
-                                                  .settings
-                                                  .asrMirrorUrl,
-                                            );
-                                            if (ctx.mounted) {
-                                              provider.setAsrModel(
-                                                model.id,
-                                                model.name,
-                                              );
-                                            }
-                                          },
+                                          onPressed: anyDownloading
+                                              ? null
+                                              : () async {
+                                                  await _downloadAsrModel(
+                                                    ctx,
+                                                    asr,
+                                                    provider,
+                                                    model,
+                                                  );
+                                                },
                                         ),
                                       if (isDownloaded &&
                                           !progress.isDownloading)
                                         IconButton(
                                           icon: const Icon(Icons.refresh),
                                           tooltip: '重新下载或更新',
-                                          onPressed: () async {
-                                            await asr.downloadModel(
-                                              model,
-                                              customMirrorUrl: provider
-                                                  .settings
-                                                  .asrMirrorUrl,
-                                            );
-                                          },
+                                          onPressed: anyDownloading
+                                              ? null
+                                              : () async {
+                                                  await _downloadAsrModel(
+                                                    ctx,
+                                                    asr,
+                                                    provider,
+                                                    model,
+                                                  );
+                                                },
                                         ),
                                       if (progress.isDownloading)
                                         IconButton(
                                           icon: const Icon(Icons.close),
                                           tooltip: '取消下载',
-                                          onPressed: asr.cancelDownload,
+                                          onPressed: () {
+                                            unawaited(asr.cancelDownload());
+                                          },
                                         ),
                                     ],
                                   ),
@@ -647,6 +684,161 @@ class SettingsPage extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  static Future<void> _downloadAsrModel(
+    BuildContext context,
+    AsrService asr,
+    SettingsProvider provider,
+    AsrModelInfo model,
+  ) async {
+    try {
+      await asr.downloadModel(
+        model,
+        customMirrorUrl: provider.settings.asrMirrorUrl,
+        useSystemProxy: provider.settings.asrUseSystemProxy,
+      );
+    } catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('模型下载失败：$error')));
+    }
+  }
+
+  static Future<void> showInputDeviceSelector(
+    BuildContext context,
+    SettingsProvider provider,
+  ) async {
+    final asr = AsrService.instance;
+    List<InputDevice> devices;
+    try {
+      devices = await asr.listInputDevices();
+      final selectedId = provider.settings.asrInputDeviceId;
+      if (selectedId.isNotEmpty &&
+          !devices.any((device) => device.id == selectedId)) {
+        await provider.setAsrInputDevice('', '');
+      }
+      await asr.startInputPreview(provider.settings.asrInputDeviceId);
+    } catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('无法读取麦克风设备：$error')));
+      return;
+    }
+    if (!context.mounted) return;
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AnimatedBuilder(
+        animation: asr,
+        builder: (context, _) => AlertDialog(
+          title: const Text('选择麦克风'),
+          content: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 520, maxHeight: 480),
+            child: RadioGroup<String>(
+              groupValue: provider.settings.asrInputDeviceId,
+              onChanged: (id) async {
+                if (id == null) return;
+                InputDevice? device;
+                for (final item in devices) {
+                  if (item.id == id) {
+                    device = item;
+                    break;
+                  }
+                }
+                final label = id.isEmpty
+                    ? ''
+                    : (device?.label.isNotEmpty == true ? device!.label : id);
+                await _selectInputDevice(
+                  dialogContext,
+                  provider,
+                  asr,
+                  id,
+                  label,
+                );
+              },
+              child: ListView(
+                shrinkWrap: true,
+                children: [
+                  _buildInputDeviceTile(
+                    context: dialogContext,
+                    provider: provider,
+                    asr: asr,
+                    id: '',
+                    label: '系统默认设备',
+                  ),
+                  ...devices.map(
+                    (device) => _buildInputDeviceTile(
+                      context: dialogContext,
+                      provider: provider,
+                      asr: asr,
+                      id: device.id,
+                      label: device.label.isEmpty ? device.id : device.label,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('完成'),
+            ),
+          ],
+        ),
+      ),
+    );
+    await asr.stopInputPreview();
+  }
+
+  static Widget _buildInputDeviceTile({
+    required BuildContext context,
+    required SettingsProvider provider,
+    required AsrService asr,
+    required String id,
+    required String label,
+  }) {
+    final selected = provider.settings.asrInputDeviceId == id;
+    final previewing = asr.previewDeviceId == id;
+    final level = previewing ? (asr.previewRms * 8).clamp(0.0, 1.0) : 0.0;
+    return ListTile(
+      leading: Radio<String>(value: id),
+      title: Text(label),
+      subtitle: previewing
+          ? LinearProgressIndicator(value: level, minHeight: 6)
+          : const Text('点击试听'),
+      selected: selected,
+      onTap: () async {
+        await _selectInputDevice(
+          context,
+          provider,
+          asr,
+          id,
+          id.isEmpty ? '' : label,
+        );
+      },
+    );
+  }
+
+  static Future<void> _selectInputDevice(
+    BuildContext context,
+    SettingsProvider provider,
+    AsrService asr,
+    String id,
+    String label,
+  ) async {
+    try {
+      await asr.startInputPreview(id);
+      await provider.setAsrInputDevice(id, label);
+    } catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('无法使用该麦克风：$error')));
+    }
   }
 
   static Future<void> _importAsrModel(
@@ -711,70 +903,89 @@ class SettingsPage extends StatelessWidget {
     final rule3Controller = TextEditingController(
       text: settings.asrRule3MinUtteranceLength.toString(),
     );
+    var useSystemProxy = settings.asrUseSystemProxy;
     final shouldSave = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('下载与高级设置'),
-        content: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 520),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: mirrorController,
-                  decoration: const InputDecoration(
-                    labelText: '自定义下载镜像',
-                    hintText: '留空使用模型原始下载地址',
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModalState) => AlertDialog(
+          title: const Text('下载与高级设置'),
+          content: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 520),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('使用系统代理下载'),
+                    subtitle: const Text('读取操作系统环境中的 HTTP/HTTPS 代理设置'),
+                    value: useSystemProxy,
+                    onChanged: (value) {
+                      setModalState(() => useSystemProxy = value);
+                    },
                   ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: threadsController,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(
-                    labelText: '识别线程数',
-                    helperText: '0 表示根据处理器核心数自动选择',
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: mirrorController,
+                    decoration: const InputDecoration(
+                      labelText: '自定义下载镜像',
+                      hintText: '留空使用模型原始下载地址',
+                    ),
                   ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: rule1Controller,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: threadsController,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: '识别线程数',
+                      helperText: '0 表示根据处理器核心数自动选择',
+                    ),
                   ),
-                  decoration: const InputDecoration(labelText: '规则 1 尾部静音（秒）'),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: rule2Controller,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: rule1Controller,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: const InputDecoration(
+                      labelText: '规则 1 尾部静音（秒）',
+                    ),
                   ),
-                  decoration: const InputDecoration(labelText: '规则 2 尾部静音（秒）'),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: rule3Controller,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: rule2Controller,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: const InputDecoration(
+                      labelText: '规则 2 尾部静音（秒）',
+                    ),
                   ),
-                  decoration: const InputDecoration(labelText: '规则 3 最长语句（秒）'),
-                ),
-              ],
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: rule3Controller,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: const InputDecoration(
+                      labelText: '规则 3 最长语句（秒）',
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('保存'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('保存'),
-          ),
-        ],
       ),
     );
     if (shouldSave == true) {
@@ -787,6 +998,7 @@ class SettingsPage extends StatelessWidget {
             double.tryParse(rule2Controller.text.trim()) ?? 1.2,
         rule3MinUtteranceLength:
             double.tryParse(rule3Controller.text.trim()) ?? 20,
+        useSystemProxy: useSystemProxy,
       );
     }
     mirrorController.dispose();

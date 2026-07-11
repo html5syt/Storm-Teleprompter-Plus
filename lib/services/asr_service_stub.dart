@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:record/record.dart';
 
 class AsrModelInfo {
   final String id;
@@ -95,7 +96,7 @@ class AsrService with ChangeNotifier {
 
   Map<String, DownloadProgress> get allDownloadProgress => const {};
 
-  void cancelDownload() {}
+  Future<void> cancelDownload() async {}
 
   Future<bool> isModelDownloaded(String modelId) async => false;
 
@@ -103,6 +104,7 @@ class AsrService with ChangeNotifier {
     AsrModelInfo modelInfo, {
     bool useMirror = true,
     String? customMirrorUrl,
+    bool useSystemProxy = true,
     DownloadProgressCallback? onProgress,
   }) async {
     throw UnsupportedError('ASR is not supported on Web.');
@@ -131,11 +133,18 @@ class AsrService with ChangeNotifier {
     required void Function(String text) onPartialResult,
     required void Function(String text) onFinalResult,
     void Function(double rms)? onRmsUpdate,
+    String? inputDeviceId,
   }) async {
     throw UnsupportedError('ASR is not supported on Web.');
   }
 
   void processAudioSamples(Float32List samples) {}
+
+  double get previewRms => 0;
+  String? get previewDeviceId => null;
+  Future<List<InputDevice>> listInputDevices() async => const [];
+  Future<void> startInputPreview(String? deviceId) async {}
+  Future<void> stopInputPreview() async {}
 
   Future<void> stop() async {}
 

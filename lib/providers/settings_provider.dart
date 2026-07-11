@@ -353,6 +353,17 @@ class SettingsProvider with ChangeNotifier {
     await _saveSettings();
   }
 
+  Future<void> clearAsrModel() => setAsrModel('', '');
+
+  Future<void> setAsrInputDevice(String id, String name) async {
+    _settings = _settings.copyWith(
+      asrInputDeviceId: id,
+      asrInputDeviceName: name,
+    );
+    notifyListeners();
+    await _saveSettings();
+  }
+
   /// 更新主题色
   Future<void> setUiPrimaryColor(int hexColor) async {
     _settings = _settings.copyWith(uiPrimaryColor: hexColor);
@@ -392,12 +403,14 @@ class SettingsProvider with ChangeNotifier {
     required double rule1MinTrailingSilence,
     required double rule2MinTrailingSilence,
     required double rule3MinUtteranceLength,
+    required bool useSystemProxy,
   }) async {
     _settings = _settings.copyWith(
       asrNumThreads: numThreads.clamp(0, 64),
       asrRule1MinTrailingSilence: rule1MinTrailingSilence.clamp(0.1, 20),
       asrRule2MinTrailingSilence: rule2MinTrailingSilence.clamp(0.1, 20),
       asrRule3MinUtteranceLength: rule3MinUtteranceLength.clamp(1, 300),
+      asrUseSystemProxy: useSystemProxy,
     );
     notifyListeners();
     await _saveSettings();

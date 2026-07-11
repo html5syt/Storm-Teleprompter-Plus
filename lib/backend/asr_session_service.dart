@@ -173,6 +173,7 @@ class AsrSessionService {
         onPartialResult: (text) => _handleTranscript(text, false),
         onFinalResult: (text) => _handleTranscript(text, true),
         onRmsUpdate: _handleRms,
+        inputDeviceId: settings.asrInputDeviceId,
       );
       _status = AsrSessionStatus.running;
       _broadcastStatus();

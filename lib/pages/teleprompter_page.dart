@@ -15,9 +15,11 @@ import '../providers/teleprompter_provider.dart';
 import '../providers/settings_provider.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
+import '../services/asr_service.dart';
 import '../utils/constants.dart';
 import '../widgets/teleprompter_text_layer.dart';
 import '../widgets/teleprompter_settings_panel.dart';
+import 'settings_page.dart';
 
 part 'teleprompter_logic.dart';
 
@@ -60,6 +62,7 @@ class _TeleprompterPageState extends State<TeleprompterPage>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || _isTextInputFocused()) return;
       _pageFocusNode.requestFocus();
+      unawaited(_ensureAsrModelSelected());
     });
   }
 
@@ -1046,7 +1049,7 @@ class _TeleprompterPageState extends State<TeleprompterPage>
     return GestureDetector(
       onTap: () {
         if (!isSelected) {
-          settingsProvider.setScrollMode(mode);
+          unawaited(_selectScrollMode(mode, settingsProvider));
         }
       },
       child: AnimatedContainer(
@@ -1088,6 +1091,55 @@ class _TeleprompterPageState extends State<TeleprompterPage>
         ),
       ),
     );
+  }
+
+  Future<void> _selectScrollMode(
+    ScrollMode mode,
+    SettingsProvider settingsProvider,
+  ) async {
+    if (mode == ScrollMode.asr && !await _ensureAsrModelSelected()) return;
+    await settingsProvider.setScrollMode(mode);
+  }
+
+  Future<bool> _ensureAsrModelSelected() async {
+    final connection = context.read<ConnectionProvider>();
+    if (!connection.isLocal) return true;
+    final settingsProvider = context.read<SettingsProvider>();
+    final modelId = settingsProvider.settings.asrModelId;
+    final available =
+        modelId.isNotEmpty &&
+        await AsrService.instance.isModelDownloaded(modelId);
+    if (available || !mounted) return available;
+    if (modelId.isNotEmpty) await settingsProvider.clearAsrModel();
+    if (!mounted) return false;
+
+    final openSettings = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('需要语音识别模型'),
+        content: const Text('语音跟随需要先下载或导入一个可用的 ASR 模型。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('暂不使用'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('选择模型'),
+          ),
+        ],
+      ),
+    );
+    if (openSettings == true && mounted) {
+      await Navigator.of(
+        context,
+      ).push(MaterialPageRoute(builder: (_) => const SettingsPage()));
+      if (!mounted) return false;
+      final selectedId = settingsProvider.settings.asrModelId;
+      return selectedId.isNotEmpty &&
+          await AsrService.instance.isModelDownloaded(selectedId);
+    }
+    return false;
   }
 
   /// 处理上下键：上下移动n行（未开始时）
@@ -1451,28 +1503,39 @@ class _TeleprompterPageState extends State<TeleprompterPage>
     AppSettings settings,
   ) {
     final normalizedRms = (teleprompter.rms * 3).clamp(0.0, 1.0);
+    final connection = context.read<ConnectionProvider>();
+    final canSelectDevice = connection.isLocal && !teleprompter.isPlaying;
 
     return Tooltip(
-      message: '麦克风电平',
-      child: SizedBox(
-        width: 52,
-        height: 28,
-        child: Row(
-          children: [
-            const Icon(Icons.mic, size: 16, color: AppColors.textSecondary),
-            const SizedBox(width: 5),
-            Expanded(
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(3),
-                child: LinearProgressIndicator(
-                  minHeight: 6,
-                  value: normalizedRms,
-                  color: _primaryFromSettings(settings),
-                  backgroundColor: AppColors.border,
+      message: canSelectDevice ? '麦克风电平；点击选择设备' : '麦克风电平；暂停后可选择设备',
+      child: InkWell(
+        onTap: canSelectDevice
+            ? () => SettingsPage.showInputDeviceSelector(
+                context,
+                context.read<SettingsProvider>(),
+              )
+            : null,
+        borderRadius: BorderRadius.circular(6),
+        child: SizedBox(
+          width: 160,
+          height: 28,
+          child: Row(
+            children: [
+              const Icon(Icons.mic, size: 16, color: AppColors.textSecondary),
+              const SizedBox(width: 7),
+              Expanded(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(3),
+                  child: LinearProgressIndicator(
+                    minHeight: 7,
+                    value: normalizedRms,
+                    color: _primaryFromSettings(settings),
+                    backgroundColor: AppColors.border,
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
