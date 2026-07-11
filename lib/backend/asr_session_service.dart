@@ -11,6 +11,9 @@ import 'ws_server.dart';
 enum AsrSessionStatus { idle, loading, running, paused, error }
 
 /// Owns recognition for the backend. UI clients only receive processed data.
+typedef AsrPositionChanged =
+    void Function(int currentIndex, {bool allowBackward});
+
 class AsrSessionService {
   AsrSessionService(this._settingsService, this._onCurrentIndexChanged);
 
@@ -35,7 +38,7 @@ class AsrSessionService {
   }
 
   final SettingsService _settingsService;
-  final void Function(int currentIndex) _onCurrentIndexChanged;
+  final AsrPositionChanged _onCurrentIndexChanged;
   final AsrService _asr = AsrService.instance;
   final TeleprompterAlignment _alignment = TeleprompterAlignment();
   WsServer? _server;
@@ -263,14 +266,23 @@ class AsrSessionService {
       requestedIndex: result.index,
       isFinal: isFinal,
     );
-    if (alignedIndex >= 0 && alignedIndex >= _currentIndex) {
+    if (alignedIndex >= 0 &&
+        (alignedIndex >= _currentIndex || result.meta.allowBackward)) {
       _currentIndex = alignedIndex;
-      _onCurrentIndexChanged(_currentIndex);
+      _onCurrentIndexChanged(
+        _currentIndex,
+        allowBackward: result.meta.allowBackward,
+      );
     }
     _server?.broadcast(
       WsMessage(
         type: WsMessageType.asrResult,
-        data: {..._statusData(), 'segment': trimmed, 'isFinal': isFinal},
+        data: {
+          ..._statusData(),
+          'segment': trimmed,
+          'isFinal': isFinal,
+          'allowBackward': result.meta.allowBackward,
+        },
       ),
     );
   }

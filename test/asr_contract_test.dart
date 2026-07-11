@@ -4,10 +4,20 @@ import 'package:storm_teleprompter_plus/backend/ws_protocol.dart';
 import 'package:storm_teleprompter_plus/models/app_settings.dart';
 import 'package:storm_teleprompter_plus/providers/settings_provider.dart';
 import 'package:storm_teleprompter_plus/services/alignment_engine.dart';
+import 'package:storm_teleprompter_plus/services/asr_service.dart';
 import 'package:storm_teleprompter_plus/services/asr_transcript_normalizer.dart';
 
 void main() {
   group('ASR settings', () {
+    test('offers a dedicated English streaming model', () {
+      final model = AsrModels.availableModels.firstWhere(
+        (item) => item.id == 'zipformer-english',
+      );
+
+      expect(model.languages, '英文');
+      expect(model.downloadUrl, contains('zipformer-en'));
+    });
+
     test('advanced recognizer parameters survive JSON round trip', () {
       final settings = const AppSettings().copyWith(
         asrModelId: 'streaming-model',
@@ -122,6 +132,48 @@ void main() {
 
       expect(omitted.index, greaterThanOrEqualTo(5));
       expect(hallucinated.index, greaterThanOrEqualTo(omitted.index));
+    });
+
+    test(
+      'matches English case-insensitively without reacting to short noise',
+      () {
+        final alignment = TeleprompterAlignment()
+          ..setScript('The Quick Brown Fox jumps over the lazy dog.');
+
+        final noise = alignment.consumeTranscript('a', false);
+        final phrase = alignment.consumeTranscript(
+          'the quick brown FOX',
+          false,
+        );
+
+        expect(noise.index, -1);
+        expect(phrase.index, 18);
+      },
+    );
+
+    test('aligns mixed Chinese and English segments', () {
+      final alignment = TeleprompterAlignment()
+        ..setScript('大家好，Welcome to Storm Teleprompter，现在开始测试。');
+
+      final result = alignment.consumeTranscript(
+        '大家好 welcome to storm teleprompter',
+        false,
+      );
+
+      expect(result.index, 32);
+    });
+
+    test('allows a confirmed long phrase to move back', () {
+      final alignment = TeleprompterAlignment()
+        ..setScript('第一句内容已经结束。第二句内容正在朗读。第三句内容稍后开始。');
+      alignment.setCurrentIndex(27);
+
+      final shortResult = alignment.consumeTranscript('第一句', false);
+      final rewindResult = alignment.consumeTranscript('第一句内容已经结束', false);
+
+      expect(shortResult.index, greaterThanOrEqualTo(27));
+      expect(rewindResult.index, lessThan(27));
+      expect(rewindResult.meta.allowBackward, isTrue);
     });
 
     test('ASR advances are limited like the reference client', () {

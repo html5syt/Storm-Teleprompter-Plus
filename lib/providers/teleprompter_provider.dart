@@ -130,7 +130,10 @@ class TeleprompterProvider with ChangeNotifier {
     _rms = (message.data['rms'] as num?)?.toDouble() ?? _rms;
     _asrError = message.data['error'] as String?;
     final index = (message.data['currentIndex'] as num?)?.toInt();
-    if (index != null && index >= 0 && index >= _currentIndex) {
+    final allowBackward = message.data['allowBackward'] as bool? ?? false;
+    if (index != null &&
+        index >= 0 &&
+        (index >= _currentIndex || allowBackward)) {
       _currentIndex = _normalizeRawIndex(index);
     }
     notifyListeners();

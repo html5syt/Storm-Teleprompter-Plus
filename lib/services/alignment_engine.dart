@@ -30,11 +30,15 @@ class AlignmentMeta {
   /// 是否为最终结果
   final bool isFinal;
 
+  /// 是否为较长片段确认后的回读定位
+  final bool allowBackward;
+
   const AlignmentMeta({
     required this.strategy,
     this.matchedLength = 0,
     required this.text,
     required this.isFinal,
+    this.allowBackward = false,
   });
 }
 
@@ -72,6 +76,9 @@ class _WindowedMatchResult {
 /// - 游标只前进不后退
 class TeleprompterAlignment {
   static final RegExp _cleanCharRegex = RegExp(r'[a-zA-Z0-9\u4e00-\u9fa5]');
+  static final RegExp _latinOnlyRegex = RegExp(r'^[a-z0-9]+$');
+  static const int _forwardSearchWindow = 64;
+  static const int _backwardSearchWindow = 240;
 
   String _script = '';
   String _cleanScript = '';
@@ -92,7 +99,7 @@ class TeleprompterAlignment {
     for (int i = 0; i < content.length; i++) {
       final char = content[i];
       if (_cleanCharRegex.hasMatch(char)) {
-        _cleanScript += char;
+        _cleanScript += _foldLatinCase(char);
         _indexMap.add(i);
       }
     }
@@ -136,7 +143,16 @@ class TeleprompterAlignment {
 
   /// 过滤 ASR 文本中的标点，只保留有效字符
   String _normalizeTranscript(String text) {
-    return text.split('').where((c) => _cleanCharRegex.hasMatch(c)).join();
+    return text
+        .split('')
+        .where((c) => _cleanCharRegex.hasMatch(c))
+        .map(_foldLatinCase)
+        .join();
+  }
+
+  String _foldLatinCase(String char) {
+    final code = char.codeUnitAt(0);
+    return code >= 65 && code <= 90 ? String.fromCharCode(code + 32) : char;
   }
 
   /// 字符级匹配（跳字容错）
@@ -206,25 +222,63 @@ class TeleprompterAlignment {
     var bestMatch = _charLevelMatch(scriptStart, transcript);
     int bestOffset = 0;
 
-    if (bestMatch.matchedLength > 0) {
-      return _WindowedMatchResult(match: bestMatch, offset: bestOffset);
-    }
-
     // 向前搜索窗口内更好的匹配
-    final maxOffset = (24).clamp(
+    final maxOffset = (_forwardSearchWindow).clamp(
       0,
       (_cleanScript.length - scriptStart - 1).clamp(0, 999),
     );
     for (int offset = 1; offset <= maxOffset; offset++) {
       final candidate = _charLevelMatch(scriptStart + offset, transcript);
-      if (candidate.matchedLength > bestMatch.matchedLength) {
+      if (_isBetterMatch(candidate, offset, bestMatch, bestOffset)) {
         bestMatch = candidate;
         bestOffset = offset;
       }
-      if (bestMatch.matchedLength >= (6).clamp(0, transcript.length)) break;
     }
 
     return _WindowedMatchResult(match: bestMatch, offset: bestOffset);
+  }
+
+  bool _isBetterMatch(
+    _MatchResult candidate,
+    int candidateOffset,
+    _MatchResult current,
+    int currentOffset,
+  ) {
+    if (candidate.matchedLength != current.matchedLength) {
+      return candidate.matchedLength > current.matchedLength;
+    }
+    if (candidate.scriptAdvance != current.scriptAdvance) {
+      return candidate.scriptAdvance < current.scriptAdvance;
+    }
+    return candidateOffset < currentOffset;
+  }
+
+  bool _hasEnoughConfidence(String transcript, _MatchResult match) {
+    if (match.matchedLength == 0) return false;
+    if (_latinOnlyRegex.hasMatch(transcript)) {
+      final minimum = transcript.length < 3 ? transcript.length : 3;
+      return transcript.length >= 3 &&
+          match.matchedLength >= minimum &&
+          match.matchedLength / transcript.length >= 0.55;
+    }
+    final minimum = transcript.length >= 4 ? 2 : 1;
+    return match.matchedLength >= minimum;
+  }
+
+  int? _confirmedBackwardIndex(String transcript) {
+    if (_currentIndex < 0) return null;
+    final latinOnly = _latinOnlyRegex.hasMatch(transcript);
+    final minimumLength = latinOnly ? 12 : 8;
+    if (transcript.length < minimumLength) return null;
+
+    final searchStart = (_currentIndex - _backwardSearchWindow).clamp(
+      0,
+      _cleanScript.length,
+    );
+    final candidateStart = _cleanScript.lastIndexOf(transcript, _currentIndex);
+    if (candidateStart < searchStart) return null;
+    final candidateEnd = candidateStart + transcript.length - 1;
+    return candidateEnd < _currentIndex ? candidateEnd : null;
   }
 
   /// 消费 ASR 转录文本，计算匹配位置
@@ -252,10 +306,29 @@ class TeleprompterAlignment {
       );
     }
 
+    final backwardIndex = _confirmedBackwardIndex(cleanText);
+    if (backwardIndex != null) {
+      _currentIndex = backwardIndex;
+      _anchorIndex = backwardIndex - cleanText.length;
+      if (isFinal) _anchorIndex = _currentIndex;
+      final rawIndex = _toRawIndex(_currentIndex);
+      return AlignmentResult(
+        index: rawIndex,
+        targetId: 'word_$rawIndex',
+        meta: AlignmentMeta(
+          strategy: 'backward_resync',
+          matchedLength: cleanText.length,
+          text: text,
+          isFinal: isFinal,
+          allowBackward: true,
+        ),
+      );
+    }
+
     final anchorStart = (_anchorIndex + 1).clamp(0, _cleanScript.length);
     final windowResult = _findBestMatch(anchorStart, cleanText);
 
-    if (windowResult.match.matchedLength == 0) {
+    if (!_hasEnoughConfidence(cleanText, windowResult.match)) {
       final rawIndex = _toRawIndex(_currentIndex);
       if (isFinal) _anchorIndex = _currentIndex;
       return AlignmentResult(

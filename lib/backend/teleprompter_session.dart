@@ -194,8 +194,14 @@ class TeleprompterSession {
     );
   }
 
-  void updateCurrentIndexFromAsr(int currentIndex) {
-    if (_activeArticleId == null || currentIndex < _currentIndex) return;
+  void updateCurrentIndexFromAsr(
+    int currentIndex, {
+    bool allowBackward = false,
+  }) {
+    if (_activeArticleId == null ||
+        (!allowBackward && currentIndex < _currentIndex)) {
+      return;
+    }
     _currentIndex = currentIndex;
     _revision++;
     _emitState();

@@ -418,18 +418,20 @@ mixin HomeLogic on State<HomePage> {
 
   Future<void> _exportSelectedItems() async {
     if (_selectedItems.isEmpty) {
-      _showImportSnackBar('请选择要导出的稿件');
+      _showImportSnackBar('请选择要导出的稿件或文件夹');
       return;
     }
     final articleProvider = context.read<ArticleProvider>();
-    final selectedArticles = articleProvider.articles
-        .where((article) => _selectedItems.contains(article.id))
-        .toList();
-    final result = await _exportService.exportArticles(selectedArticles);
+    final folderProvider = context.read<FolderProvider>();
+    final result = await _exportService.exportItems(
+      articles: articleProvider.articles,
+      folders: folderProvider.folders,
+      selectedIds: Set<String>.from(_selectedItems),
+    );
     if (result.message != null) {
       _showImportSnackBar(result.message!);
-    } else if (result.count > 0) {
-      _showImportSnackBar('已导出 ${result.count} 篇稿件');
+    } else if (result.count > 0 || result.folderCount > 0) {
+      _showImportSnackBar('已导出 ${result.count} 篇稿件、${result.folderCount} 个文件夹');
     }
   }
 
@@ -585,6 +587,13 @@ mixin HomeLogic on State<HomePage> {
     final ctrl = HardwareKeyboard.instance.isControlPressed;
     final shift = HardwareKeyboard.instance.isShiftPressed;
 
+    if (!ctrl &&
+        !shift &&
+        _selectedItems.length > 1 &&
+        _selectedItems.contains(item.id)) {
+      return;
+    }
+
     setState(() {
       if (ctrl) {
         // Ctrl+点击：切换选中状态
@@ -601,6 +610,21 @@ mixin HomeLogic on State<HomePage> {
         _selectedItems.clear();
         _selectedItems.add(item.id);
       }
+    });
+  }
+
+  void _completeItemTap(_ContentItem item) {
+    if (HardwareKeyboard.instance.isControlPressed ||
+        HardwareKeyboard.instance.isShiftPressed ||
+        _isItemDragActive ||
+        _selectedItems.length <= 1 ||
+        !_selectedItems.contains(item.id)) {
+      return;
+    }
+    setState(() {
+      _selectedItems
+        ..clear()
+        ..add(item.id);
     });
   }
 
@@ -724,11 +748,21 @@ mixin HomeLogic on State<HomePage> {
     return true;
   }
 
+  bool _canDropDraggedItemsOnFolder(
+    _ContentItem dragged,
+    String targetFolderId,
+  ) {
+    final items = _selectedItems.contains(dragged.id)
+        ? _getContentItemsByIds(_selectedItems)
+        : <_ContentItem>[dragged];
+    return items.every((item) => _canDropItemOnFolder(item, targetFolderId));
+  }
+
   Future<void> _moveDraggedItemsToFolder(
     _ContentItem dragged,
     String targetFolderId,
   ) async {
-    if (!_canDropItemOnFolder(dragged, targetFolderId)) return;
+    if (!_canDropDraggedItemsOnFolder(dragged, targetFolderId)) return;
 
     final itemsToMove = _selectedItems.contains(dragged.id)
         ? _getContentItemsByIds(_selectedItems)

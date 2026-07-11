@@ -72,6 +72,20 @@ class AsrModels {
       latency: '很低',
       recommendedMemoryMB: 768,
     ),
+    AsrModelInfo(
+      id: 'zipformer-english',
+      name: 'Zipformer English',
+      description: '官方流式纯英文 Transducer 模型，减少中英双语词表开销并提升英文识别速度',
+      downloadUrl:
+          'https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-streaming-zipformer-en-2023-06-21.tar.bz2',
+      mirrorUrl: null,
+      approximateSizeMB: 300,
+      languages: '英文',
+      scenario: '纯英文稿件、英文演讲与低延迟跟随',
+      accuracy: '很高',
+      latency: '低',
+      recommendedMemoryMB: 2048,
+    ),
   ];
 }
 

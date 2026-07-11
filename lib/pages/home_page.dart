@@ -883,7 +883,7 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
     if (item.isFolder) {
       targetChild = DragTarget<_ContentItem>(
         onWillAcceptWithDetails: (details) =>
-            _canDropItemOnFolder(details.data, item.id),
+            _canDropDraggedItemsOnFolder(details.data, item.id),
         onAcceptWithDetails: (details) =>
             _moveDraggedItemsToFolder(details.data, item.id),
         builder: (context, candidateItems, rejectedItems) {
@@ -1002,7 +1002,7 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
     final isSelected = _selectedItems.contains(item.id);
     return GestureDetector(
       onTapDown: (_) => _selectSingleItem(item),
-      onTap: () {},
+      onTap: () => _completeItemTap(item),
       onDoubleTap: () => _handleItemDoubleTap(item),
       onSecondaryTapUp: (details) => _showContextMenu(details, item),
       child: AnimatedContainer(
@@ -1094,7 +1094,7 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
               borderRadius: BorderRadius.circular(6),
               child: InkWell(
                 onTapDown: (_) => _selectSingleItem(item),
-                onTap: () {},
+                onTap: () => _completeItemTap(item),
                 onDoubleTap: () => _handleItemDoubleTap(item),
                 onSecondaryTapUp: (details) => _showContextMenu(details, item),
                 borderRadius: BorderRadius.circular(6),
@@ -1221,7 +1221,7 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
                     borderRadius: BorderRadius.circular(4),
                     child: InkWell(
                       onTapDown: (_) => _selectSingleItem(item),
-                      onTap: () {},
+                      onTap: () => _completeItemTap(item),
                       onDoubleTap: () => _handleItemDoubleTap(item),
                       onSecondaryTapUp: (details) =>
                           _showContextMenu(details, item),
