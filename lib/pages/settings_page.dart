@@ -722,9 +722,7 @@ class SettingsPage extends StatelessWidget {
       await asr.startInputPreview(provider.settings.asrInputDeviceId);
     } catch (error) {
       if (!context.mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('无法读取麦克风设备：$error')));
+      _showMicrophoneError(context, asr, '无法读取麦克风设备：$error');
       return;
     }
     if (!context.mounted) return;
@@ -765,6 +763,14 @@ class SettingsPage extends StatelessWidget {
               },
               child: ListView(
                 children: [
+                  if (defaultTargetPlatform == TargetPlatform.windows)
+                    const Padding(
+                      padding: EdgeInsets.fromLTRB(16, 4, 16, 8),
+                      child: Text(
+                        'Windows 桌面应用不会弹出麦克风授权框。若试听失败，请检查系统“麦克风隐私设置”中的桌面应用访问权限。',
+                        style: TextStyle(fontSize: 12),
+                      ),
+                    ),
                   _buildInputDeviceTile(
                     context: dialogContext,
                     provider: provider,
@@ -807,10 +813,13 @@ class SettingsPage extends StatelessWidget {
     final selected = provider.settings.asrInputDeviceId == id;
     final previewing = asr.previewDeviceId == id;
     final level = previewing ? (asr.previewRms * 8).clamp(0.0, 1.0) : 0.0;
+    final previewError = previewing ? asr.previewError : null;
     return ListTile(
       leading: Radio<String>(value: id),
       title: Text(label),
-      subtitle: previewing
+      subtitle: previewError != null
+          ? Text(previewError, style: const TextStyle(color: AppColors.error))
+          : previewing
           ? LinearProgressIndicator(value: level, minHeight: 6)
           : const Text('点击试听'),
       selected: selected,
@@ -838,10 +847,28 @@ class SettingsPage extends StatelessWidget {
       await provider.setAsrInputDevice(id, label);
     } catch (error) {
       if (!context.mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('无法使用该麦克风：$error')));
+      _showMicrophoneError(context, asr, '无法使用该麦克风：$error');
     }
+  }
+
+  static void _showMicrophoneError(
+    BuildContext context,
+    AsrService asr,
+    String message,
+  ) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        action: defaultTargetPlatform == TargetPlatform.windows
+            ? SnackBarAction(
+                label: '打开系统设置',
+                onPressed: () {
+                  unawaited(asr.openMicrophonePrivacySettings());
+                },
+              )
+            : null,
+      ),
+    );
   }
 
   static Future<void> _importAsrModel(

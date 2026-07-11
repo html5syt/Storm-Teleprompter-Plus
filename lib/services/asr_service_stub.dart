@@ -134,6 +134,7 @@ class AsrService with ChangeNotifier {
     required void Function(String text) onFinalResult,
     void Function(double rms)? onRmsUpdate,
     String? inputDeviceId,
+    void Function(Object error)? onError,
   }) async {
     throw UnsupportedError('ASR is not supported on Web.');
   }
@@ -142,9 +143,11 @@ class AsrService with ChangeNotifier {
 
   double get previewRms => 0;
   String? get previewDeviceId => null;
+  String? get previewError => null;
   Future<List<InputDevice>> listInputDevices() async => const [];
   Future<void> startInputPreview(String? deviceId) async {}
   Future<void> stopInputPreview() async {}
+  Future<void> openMicrophonePrivacySettings() async {}
 
   Future<void> stop() async {}
 

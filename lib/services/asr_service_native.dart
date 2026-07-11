@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
@@ -50,7 +51,7 @@ class AsrModels {
       downloadUrl:
           'https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20.tar.bz2',
       mirrorUrl: null,
-      approximateSizeMB: 322,
+      approximateSizeMB: 487,
       languages: '中文、英文',
       scenario: '中英混合稿件与高准确率场景',
       accuracy: '很高',
@@ -64,7 +65,7 @@ class AsrModels {
       downloadUrl:
           'https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-streaming-zipformer-zh-14M-2023-02-23.tar.bz2',
       mirrorUrl: null,
-      approximateSizeMB: 74,
+      approximateSizeMB: 70,
       scenario: '资源受限设备和低延迟跟随',
       accuracy: '标准',
       latency: '很低',
@@ -82,6 +83,40 @@ class _SystemProxyConfig {
 
   final String Function(Uri uri) findProxy;
   final String description;
+}
+
+Future<void> _extractModelArchiveWorker(List<Object> args) async {
+  final sendPort = args[0] as SendPort;
+  final archivePath = args[1] as String;
+  final outputPath = args[2] as String;
+  try {
+    await extractFileToDisk(archivePath, outputPath);
+    final valid = await _hasRequiredModelFiles(Directory(outputPath));
+    sendPort.send({
+      'success': valid,
+      if (!valid) 'error': '模型包缺少 tokens、encoder 或 decoder 文件',
+    });
+  } catch (error, stackTrace) {
+    sendPort.send({
+      'success': false,
+      'error': error.toString(),
+      'stackTrace': stackTrace.toString(),
+    });
+  }
+}
+
+Future<bool> _hasRequiredModelFiles(Directory directory) async {
+  var hasTokens = false;
+  var hasEncoder = false;
+  var hasDecoder = false;
+  await for (final entity in directory.list(recursive: true)) {
+    if (entity is! File) continue;
+    final name = entity.uri.pathSegments.last.toLowerCase();
+    hasTokens |= name == 'tokens.txt';
+    hasEncoder |= name.contains('encoder') && name.endsWith('.onnx');
+    hasDecoder |= name.contains('decoder') && name.endsWith('.onnx');
+  }
+  return hasTokens && hasEncoder && hasDecoder;
 }
 
 /// 单个模型的下载状态
@@ -142,6 +177,7 @@ class AsrService with ChangeNotifier {
   void Function(String text)? onPartial;
   void Function(String text)? onFinal;
   void Function(double rms)? onRms;
+  void Function(Object error)? onError;
 
   // ─── 下载状态跟踪 ──────────────────────────────────────
   final Map<String, DownloadProgress> _downloadProgress = {};
@@ -150,8 +186,11 @@ class AsrService with ChangeNotifier {
   String? _currentDownloadModelId;
   bool _currentDownloadCancelled = false;
   http.Client? _currentDownloadClient;
+  Isolate? _currentExtractionIsolate;
+  ReceivePort? _currentExtractionPort;
   double _previewRms = 0;
   String? _previewDeviceId;
+  String? _previewError;
 
   /// 获取指定模型的下载进度
   DownloadProgress getDownloadProgress(String modelId) {
@@ -171,6 +210,10 @@ class AsrService with ChangeNotifier {
       await subscription?.cancel();
       _currentDownloadClient?.close();
       _currentDownloadClient = null;
+      _currentExtractionIsolate?.kill(priority: Isolate.immediate);
+      _currentExtractionIsolate = null;
+      _currentExtractionPort?.close();
+      _currentExtractionPort = null;
       if (_currentDownloadCompleter?.isCompleted == false) {
         _currentDownloadCompleter!.complete();
       }
@@ -214,15 +257,27 @@ class AsrService with ChangeNotifier {
   bool get isRunning => _isRunning;
   double get previewRms => _previewRms;
   String? get previewDeviceId => _previewDeviceId;
+  String? get previewError => _previewError;
 
   Future<List<InputDevice>> listInputDevices() async {
-    if (!await _previewRecorder.hasPermission()) return const [];
+    if (!await _previewRecorder.hasPermission(request: true)) return const [];
     return _previewRecorder.listInputDevices();
+  }
+
+  Future<void> openMicrophonePrivacySettings() async {
+    if (!Platform.isWindows) return;
+    await Process.start(
+      'cmd',
+      ['/c', 'start', '', 'ms-settings:privacy-microphone'],
+      mode: ProcessStartMode.detached,
+      runInShell: false,
+    );
   }
 
   Future<void> startInputPreview(String? deviceId) async {
     await stopInputPreview();
-    if (!await _previewRecorder.hasPermission()) {
+    _previewError = null;
+    if (!await _previewRecorder.hasPermission(request: true)) {
       throw StateError('没有麦克风权限');
     }
     final devices = await _previewRecorder.listInputDevices();
@@ -245,10 +300,28 @@ class AsrService with ChangeNotifier {
         device: device,
       ),
     );
-    _previewSubscription = stream.listen((bytes) {
-      _previewRms = _calculatePcm16Rms(bytes);
-      notifyListeners();
-    });
+    final firstAudio = Completer<void>();
+    _previewSubscription = stream.listen(
+      (bytes) {
+        if (!firstAudio.isCompleted) firstAudio.complete();
+        _previewRms = _calculatePcm16Rms(bytes);
+        notifyListeners();
+      },
+      onError: (Object error, StackTrace stackTrace) {
+        _previewError = error.toString();
+        _previewRms = 0;
+        notifyListeners();
+        if (!firstAudio.isCompleted) {
+          firstAudio.completeError(error, stackTrace);
+        }
+      },
+    );
+    try {
+      await firstAudio.future.timeout(const Duration(seconds: 3));
+    } catch (error) {
+      await stopInputPreview();
+      throw StateError('麦克风已打开但未收到音频数据：$error');
+    }
     notifyListeners();
   }
 
@@ -260,6 +333,7 @@ class AsrService with ChangeNotifier {
     } catch (_) {}
     _previewRms = 0;
     _previewDeviceId = null;
+    _previewError = null;
     notifyListeners();
   }
 
@@ -467,22 +541,12 @@ class AsrService with ChangeNotifier {
         if (await stagingDir.exists()) await stagingDir.delete(recursive: true);
         await stagingDir.create(recursive: true);
 
-        var extractedFiles = 0;
-        await extractFileToDisk(
+        updateProgress(0.85, '正在后台解压并验证模型...');
+        await _extractArchiveInBackground(
           tempPath,
           stagingDir.path,
-          callback: (entry) {
-            if (_currentDownloadCancelled) {
-              throw StateError('模型下载已取消');
-            }
-            extractedFiles++;
-            updateProgress(0.9, '解压中: $extractedFiles 个文件');
-          },
+          cancelable: true,
         );
-        if (!await _containsRequiredModelFiles(stagingDir)) {
-          await stagingDir.delete(recursive: true);
-          throw const FormatException('下载的模型缺少 tokens、encoder 或 decoder 文件');
-        }
         if (_currentDownloadCancelled) {
           await stagingDir.delete(recursive: true);
           if (await tempFile.exists()) await tempFile.delete();
@@ -670,10 +734,7 @@ class AsrService with ChangeNotifier {
     if (await staging.exists()) await staging.delete(recursive: true);
     await staging.create(recursive: true);
     try {
-      await extractFileToDisk(archivePath, staging.path);
-      if (!await _containsRequiredModelFiles(staging)) {
-        throw const FormatException('模型包缺少 tokens、encoder 或 decoder 文件');
-      }
+      await _extractArchiveInBackground(archivePath, staging.path);
       if (await target.exists()) await target.delete(recursive: true);
       await staging.rename(target.path);
     } catch (_) {
@@ -690,17 +751,42 @@ class AsrService with ChangeNotifier {
   }
 
   Future<bool> _containsRequiredModelFiles(Directory directory) async {
-    var hasTokens = false;
-    var hasEncoder = false;
-    var hasDecoder = false;
-    await for (final entity in directory.list(recursive: true)) {
-      if (entity is! File) continue;
-      final name = entity.uri.pathSegments.last.toLowerCase();
-      hasTokens |= name == 'tokens.txt';
-      hasEncoder |= name.contains('encoder') && name.endsWith('.onnx');
-      hasDecoder |= name.contains('decoder') && name.endsWith('.onnx');
+    return _hasRequiredModelFiles(directory);
+  }
+
+  Future<void> _extractArchiveInBackground(
+    String archivePath,
+    String outputPath, {
+    bool cancelable = false,
+  }) async {
+    final receivePort = ReceivePort();
+    final isolate = await Isolate.spawn<List<Object>>(
+      _extractModelArchiveWorker,
+      [receivePort.sendPort, archivePath, outputPath],
+      debugName: 'asr-model-extractor',
+    );
+    if (cancelable) {
+      _currentExtractionIsolate = isolate;
+      _currentExtractionPort = receivePort;
+      if (_currentDownloadCancelled) {
+        isolate.kill(priority: Isolate.immediate);
+        receivePort.close();
+        throw StateError('模型下载已取消');
+      }
     }
-    return hasTokens && hasEncoder && hasDecoder;
+    try {
+      final result = Map<String, dynamic>.from(await receivePort.first as Map);
+      if (result['success'] != true) {
+        throw FormatException(result['error'] as String? ?? '模型解压失败');
+      }
+    } finally {
+      isolate.kill(priority: Isolate.immediate);
+      receivePort.close();
+      if (identical(_currentExtractionIsolate, isolate)) {
+        _currentExtractionIsolate = null;
+        _currentExtractionPort = null;
+      }
+    }
   }
 
   /// 加载模型
@@ -834,6 +920,7 @@ class AsrService with ChangeNotifier {
     required void Function(String text) onFinalResult,
     void Function(double rms)? onRmsUpdate,
     String? inputDeviceId,
+    void Function(Object error)? onError,
   }) async {
     if (_isRunning) return;
     if (!_isModelLoaded || _recognizer == null) {
@@ -843,10 +930,11 @@ class AsrService with ChangeNotifier {
     onPartial = onPartialResult;
     onFinal = onFinalResult;
     onRms = onRmsUpdate;
+    this.onError = onError;
 
     try {
       _stream = _recognizer!.createStream();
-      if (!await _recorder.hasPermission()) {
+      if (!await _recorder.hasPermission(request: true)) {
         throw StateError('没有麦克风权限，无法启动语音识别');
       }
       if (!await _recorder.isEncoderSupported(AudioEncoder.pcm16bits)) {
@@ -882,6 +970,7 @@ class AsrService with ChangeNotifier {
         _processPcm16Chunk,
         onError: (Object error, StackTrace stackTrace) {
           debugPrint('[AsrService] 麦克风音频流错误: $error');
+          this.onError?.call(error);
           unawaited(stop());
         },
       );

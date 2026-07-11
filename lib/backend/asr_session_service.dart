@@ -174,6 +174,7 @@ class AsrSessionService {
         onFinalResult: (text) => _handleTranscript(text, true),
         onRmsUpdate: _handleRms,
         inputDeviceId: settings.asrInputDeviceId,
+        onError: _handleRecognizerError,
       );
       _status = AsrSessionStatus.running;
       _broadcastStatus();
@@ -263,6 +264,13 @@ class AsrSessionService {
         },
       ),
     );
+  }
+
+  void _handleRecognizerError(Object error) {
+    _status = AsrSessionStatus.error;
+    _error = '麦克风采集失败: $error';
+    _rms = 0;
+    _broadcastStatus();
   }
 
   Map<String, dynamic> _statusData({bool? success}) => {

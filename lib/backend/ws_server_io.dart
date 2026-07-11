@@ -84,12 +84,13 @@ class WsServer {
     debugPrint('[WsServer] 正在停止服务器...');
 
     // 关闭所有客户端连接
-    for (final ws in _clients.values) {
+    final clients = _clients.values.toList(growable: false);
+    _clients.clear();
+    for (final ws in clients) {
       try {
         await ws.close();
       } catch (_) {}
     }
-    _clients.clear();
 
     // 关闭服务器
     await _server?.close(force: true);
