@@ -62,7 +62,6 @@ class _TeleprompterPageState extends State<TeleprompterPage>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || _isTextInputFocused()) return;
       _pageFocusNode.requestFocus();
-      unawaited(_ensureAsrModelSelected());
     });
   }
 

@@ -77,6 +77,13 @@ class AsrModels {
 typedef DownloadProgressCallback =
     void Function(double progress, String message);
 
+class _SystemProxyConfig {
+  const _SystemProxyConfig(this.findProxy, this.description);
+
+  final String Function(Uri uri) findProxy;
+  final String description;
+}
+
 /// 单个模型的下载状态
 class DownloadProgress {
   final double progress; // 0.0 ~ 1.0
@@ -345,6 +352,9 @@ class AsrService with ChangeNotifier {
 
     final modelDir = await _getModelDir();
     final urls = <String>[];
+    final proxyConfig = useSystemProxy
+        ? await _resolveSystemProxyConfig()
+        : _SystemProxyConfig((_) => 'DIRECT', '直连');
 
     // 优先使用自定义镜像 URL（包装原始下载地址）
     if (useMirror && customMirrorUrl != null && customMirrorUrl.isNotEmpty) {
@@ -368,7 +378,10 @@ class AsrService with ChangeNotifier {
       final url = urls[attempt];
       final sourceLabel = url == modelInfo.downloadUrl ? '原始' : '镜像';
 
-      updateProgress(0, '[$sourceLabel] 开始下载: ${modelInfo.name}');
+      updateProgress(
+        0,
+        '[$sourceLabel] ${proxyConfig.description} · 开始下载: ${modelInfo.name}',
+      );
 
       // 临时下载文件路径
       final tempPath = '$modelDir/${modelInfo.id}.tar.bz2';
@@ -378,9 +391,7 @@ class AsrService with ChangeNotifier {
         // ── 流式下载：分块写入磁盘 ──
         final request = http.Request('GET', Uri.parse(url));
         final client = useSystemProxy
-            ? IOClient(
-                HttpClient()..findProxy = HttpClient.findProxyFromEnvironment,
-              )
+            ? IOClient(HttpClient()..findProxy = proxyConfig.findProxy)
             : http.Client();
         _currentDownloadClient = client;
         final response = await client.send(request);
@@ -509,6 +520,115 @@ class AsrService with ChangeNotifier {
     // 所有地址都失败
     failProgress(lastError);
     throw Exception('所有下载地址均失败: $lastError');
+  }
+
+  Future<_SystemProxyConfig> _resolveSystemProxyConfig() async {
+    if (Platform.isWindows) {
+      final windowsProxy = await _readWindowsSystemProxy();
+      if (windowsProxy != null) return windowsProxy;
+    } else if (Platform.isMacOS) {
+      final macProxy = await _readMacSystemProxy();
+      if (macProxy != null) return macProxy;
+    }
+
+    final environmentFinder = HttpClient.findProxyFromEnvironment;
+    final detected = environmentFinder(Uri.parse('https://github.com'));
+    return _SystemProxyConfig(
+      environmentFinder,
+      detected == 'DIRECT' ? '未检测到系统代理，直连' : '环境代理 $detected',
+    );
+  }
+
+  Future<_SystemProxyConfig?> _readWindowsSystemProxy() async {
+    const key =
+        r'HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings';
+    try {
+      final enableResult = await Process.run('reg', [
+        'query',
+        key,
+        '/v',
+        'ProxyEnable',
+      ]);
+      final enabled = RegExp(
+        r'ProxyEnable\s+REG_DWORD\s+0x1',
+        caseSensitive: false,
+      ).hasMatch(enableResult.stdout.toString());
+      if (!enabled) return null;
+
+      final serverResult = await Process.run('reg', [
+        'query',
+        key,
+        '/v',
+        'ProxyServer',
+      ]);
+      final match = RegExp(
+        r'ProxyServer\s+REG_SZ\s+(.+)$',
+        caseSensitive: false,
+        multiLine: true,
+      ).firstMatch(serverResult.stdout.toString());
+      final value = match?.group(1)?.trim();
+      if (value == null || value.isEmpty) return null;
+      final proxies = _parseSystemProxyValue(value);
+      final displayedProxy =
+          proxies['https'] ?? proxies['all'] ?? proxies['http'];
+      return _SystemProxyConfig((uri) {
+        final proxy = proxies[uri.scheme] ?? proxies['all'];
+        return proxy == null ? 'DIRECT' : 'PROXY $proxy';
+      }, 'Windows 系统代理 ${displayedProxy ?? value}');
+    } catch (error) {
+      debugPrint('[AsrService] 读取 Windows 系统代理失败: $error');
+      return null;
+    }
+  }
+
+  Future<_SystemProxyConfig?> _readMacSystemProxy() async {
+    try {
+      final result = await Process.run('/usr/sbin/scutil', ['--proxy']);
+      final output = result.stdout.toString();
+      String? value(String key) => RegExp(
+        '^\\s*$key\\s*:\\s*(.+)\\s*\$',
+        multiLine: true,
+      ).firstMatch(output)?.group(1)?.trim();
+
+      final proxies = <String, String>{};
+      if (value('HTTPEnable') == '1') {
+        final host = value('HTTPProxy');
+        final port = value('HTTPPort');
+        if (host != null && port != null) proxies['http'] = '$host:$port';
+      }
+      if (value('HTTPSEnable') == '1') {
+        final host = value('HTTPSProxy');
+        final port = value('HTTPSPort');
+        if (host != null && port != null) proxies['https'] = '$host:$port';
+      }
+      if (proxies.isEmpty) return null;
+      final displayedProxy = proxies['https'] ?? proxies['http'];
+      return _SystemProxyConfig((uri) {
+        final proxy = proxies[uri.scheme];
+        return proxy == null ? 'DIRECT' : 'PROXY $proxy';
+      }, 'macOS 系统代理 $displayedProxy');
+    } catch (error) {
+      debugPrint('[AsrService] 读取 macOS 系统代理失败: $error');
+      return null;
+    }
+  }
+
+  Map<String, String> _parseSystemProxyValue(String value) {
+    String normalize(String proxy) => proxy.trim().replaceFirst(
+      RegExp(r'^https?://', caseSensitive: false),
+      '',
+    );
+
+    if (!value.contains('=')) return {'all': normalize(value)};
+    final proxies = <String, String>{};
+    for (final entry in value.split(';')) {
+      final separator = entry.indexOf('=');
+      if (separator <= 0) continue;
+      final scheme = entry.substring(0, separator).trim().toLowerCase();
+      final proxy = normalize(entry.substring(separator + 1));
+      if (proxy.isNotEmpty) proxies[scheme] = proxy;
+    }
+    return proxies;
   }
 
   /// 删除已下载的模型
