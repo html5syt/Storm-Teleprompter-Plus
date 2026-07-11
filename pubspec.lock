@@ -702,13 +702,13 @@ packages:
     source: hosted
     version: "2.1.0"
   record_windows:
-    dependency: transitive
+    dependency: "direct overridden"
     description:
       name: record_windows
-      sha256: "39ca03e7ae4df5e2512bc3c92b0ef9a7b148d9295ae8ac92df6beb4daf939d94"
+      sha256: a1db1c0b996acd4161a93cc412b81a2a09a4fd7161c6353f32bf97683003b52f
       url: "https://pub.flutter-io.cn"
     source: hosted
-    version: "2.2.0"
+    version: "2.1.0"
   screen_retriever:
     dependency: transitive
     description:

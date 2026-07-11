@@ -2,6 +2,10 @@
 cmake_minimum_required(VERSION 3.14)
 project(storm_teleprompter_plus LANGUAGES CXX)
 
+if(MSVC)
+  add_compile_options(/utf-8)
+endif()
+
 # The name of the executable created for the application. Change this to change
 # the on-disk name of your application.
 set(BINARY_NAME "storm_teleprompter_plus")
