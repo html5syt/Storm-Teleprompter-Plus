@@ -40,6 +40,13 @@
       "args": ["-ExecutionPolicy", "Bypass", "-File", "tool/flutter_build.ps1", "-Target", "appbundle", "-Mode", "release", "-Version", "${input:releaseVersion}"],
       "group": "build",
       "problemMatcher": []
+    },
+    {
+      "label": "Generate App Icons",
+      "type": "shell",
+      "command": "powershell",
+      "args": ["-ExecutionPolicy", "Bypass", "-File", "tool/generate_icons.ps1"],
+      "problemMatcher": []
     }
   ],
   "inputs": [

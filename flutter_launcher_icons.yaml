@@ -1,0 +1,35 @@
+# This generates application/launcher icons, not an in-app image asset.
+# Place the final square PNG at lib/favicon.png, then run:
+# powershell -ExecutionPolicy Bypass -File tool/generate_icons.ps1
+flutter_launcher_icons:
+  image_path: lib/favicon.png
+
+  # Android launcher icon, including Android 8+ adaptive icon layers.
+  android: true
+  min_sdk_android: 21
+  adaptive_icon_background: "#000000"
+  adaptive_icon_foreground: lib/favicon.png
+  adaptive_icon_foreground_inset: 16
+
+  # iPhone/iPad home-screen icon. Apple icons cannot contain alpha.
+  ios: true
+  remove_alpha_ios: true
+  background_color_ios: "#000000"
+
+  # Browser favicon and installable PWA icons.
+  web:
+    generate: true
+    image_path: lib/favicon.png
+    background_color: "#000000"
+    theme_color: "#DB9D16"
+
+  # Windows executable, taskbar, Start menu, and title-bar icon.
+  windows:
+    generate: true
+    image_path: lib/favicon.png
+    icon_size: 256
+
+  # macOS application bundle and Dock icon.
+  macos:
+    generate: true
+    image_path: lib/favicon.png
