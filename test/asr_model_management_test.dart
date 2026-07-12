@@ -51,6 +51,15 @@ void main() {
       );
       expect(importedModel.isImported, isTrue);
       expect(importedModel.name, 'fixture');
+      expect(
+        await FileSystemEntity.type(
+          '${appDataDirectoryOverride!.path}${Platform.pathSeparator}'
+          'asr_models${Platform.pathSeparator}$modelId'
+          '${Platform.pathSeparator}fixture${Platform.pathSeparator}test_wavs',
+          followLinks: false,
+        ),
+        FileSystemEntityType.notFound,
+      );
 
       await service.deleteModel(modelId);
       expect(await service.isModelDownloaded(modelId), isFalse);

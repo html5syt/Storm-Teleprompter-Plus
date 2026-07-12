@@ -162,21 +162,16 @@ Future<void> _extractModelArchiveToDisk(
     final outputRoot = p.absolute(outputPath);
     await Directory(outputRoot).create(recursive: true);
     for (final entry in archive) {
-      if (entry.isSymbolicLink) continue;
+      if (!entry.isFile || entry.isSymbolicLink) continue;
 
       final normalizedName = p.normalize(
         entry.name.replaceAll('\\', p.separator),
       );
       if (!_isSafeModelArchivePath(normalizedName)) continue;
+      if (!_isRequiredModelArchiveFile(normalizedName)) continue;
 
       final destinationPath = p.absolute(p.join(outputRoot, normalizedName));
       if (!p.isWithin(outputRoot, destinationPath)) continue;
-
-      if (entry.isDirectory) {
-        await Directory(destinationPath).create(recursive: true);
-        continue;
-      }
-      if (!entry.isFile) continue;
 
       await File(destinationPath).parent.create(recursive: true);
       final output = OutputFileStream(destinationPath);
@@ -201,16 +196,42 @@ bool _isSafeModelArchivePath(String path) {
   return !RegExp(r'[<>:"|?*]').hasMatch(path);
 }
 
+bool _isRequiredModelArchiveFile(String path) {
+  final name = p.basename(path).toLowerCase();
+  return name == 'tokens.txt' || name.endsWith('.onnx');
+}
+
+Future<List<File>> _listModelFiles(Directory root) async {
+  final files = <File>[];
+  final pendingDirectories = <Directory>[root];
+  while (pendingDirectories.isNotEmpty) {
+    final current = pendingDirectories.removeLast();
+    await for (final entity in current.list(followLinks: false)) {
+      final type = await FileSystemEntity.type(entity.path, followLinks: false);
+      switch (type) {
+        case FileSystemEntityType.file:
+          files.add(File(entity.path));
+          break;
+        case FileSystemEntityType.directory:
+          pendingDirectories.add(Directory(entity.path));
+          break;
+        case FileSystemEntityType.link:
+        case FileSystemEntityType.notFound:
+        case FileSystemEntityType.pipe:
+        case FileSystemEntityType.unixDomainSock:
+          break;
+      }
+    }
+  }
+  return files;
+}
+
 Future<bool> _hasRequiredModelFiles(Directory directory) async {
   var hasTokens = false;
   var hasEncoder = false;
   var hasDecoder = false;
-  await for (final entity in directory.list(
-    recursive: true,
-    followLinks: false,
-  )) {
-    if (entity is! File) continue;
-    final name = entity.uri.pathSegments.last.toLowerCase();
+  for (final file in await _listModelFiles(directory)) {
+    final name = p.basename(file.path).toLowerCase();
     hasTokens |= name == 'tokens.txt';
     hasEncoder |= name.contains('encoder') && name.endsWith('.onnx');
     hasDecoder |= name.contains('decoder') && name.endsWith('.onnx');
@@ -623,7 +644,7 @@ class AsrService with ChangeNotifier {
       );
 
       // 临时下载文件路径
-      final tempPath = '$modelDir/${modelInfo.id}.tar.bz2';
+      final tempPath = p.join(modelDir, '${modelInfo.id}.tar.bz2');
       final tempFile = File(tempPath);
 
       try {
@@ -700,9 +721,11 @@ class AsrService with ChangeNotifier {
 
         updateProgress(0.8, '下载完成，正在解压...');
 
-        final targetDir = '$modelDir/${modelInfo.id}';
+        final targetDir = p.join(modelDir, modelInfo.id);
         final dir = Directory(targetDir);
-        final stagingDir = Directory('$targetDir.importing');
+        final stagingDir = Directory(
+          p.join(modelDir, '${modelInfo.id}.importing'),
+        );
         if (await stagingDir.exists()) await stagingDir.delete(recursive: true);
         await stagingDir.create(recursive: true);
 
@@ -738,7 +761,9 @@ class AsrService with ChangeNotifier {
         if (await tempFile.exists()) {
           await tempFile.delete();
         }
-        final stagingDir = Directory('$modelDir/${modelInfo.id}.importing');
+        final stagingDir = Directory(
+          p.join(modelDir, '${modelInfo.id}.importing'),
+        );
         if (await stagingDir.exists()) {
           await stagingDir.delete(recursive: true);
         }
@@ -906,7 +931,7 @@ class AsrService with ChangeNotifier {
     }
 
     final modelRoot = await _getModelDir();
-    final target = Directory('$modelRoot/$resolvedId');
+    final target = Directory(p.join(modelRoot, resolvedId));
     final staging = Directory('${target.path}.importing');
     if (await staging.exists()) await staging.delete(recursive: true);
     await staging.create(recursive: true);
@@ -964,6 +989,10 @@ class AsrService with ChangeNotifier {
     try {
       final result = Map<String, dynamic>.from(await receivePort.first as Map);
       if (result['success'] != true) {
+        final stackTrace = result['stackTrace'] as String?;
+        if (stackTrace != null && stackTrace.isNotEmpty) {
+          debugPrint('[AsrService] 模型解压失败堆栈:\n$stackTrace');
+        }
         throw FormatException(result['error'] as String? ?? '模型解压失败');
       }
     } finally {
@@ -1000,7 +1029,7 @@ class AsrService with ChangeNotifier {
     }
 
     final modelDir = await _getModelDir();
-    final targetDir = '$modelDir/$modelId';
+    final targetDir = p.join(modelDir, modelId);
 
     final dir = Directory(targetDir);
     if (!await dir.exists()) {
@@ -1009,17 +1038,14 @@ class AsrService with ChangeNotifier {
 
     try {
       // 查找模型文件 —— 按文件名关键词匹配
-      final files = await dir
-          .list(recursive: true, followLinks: false)
-          .toList();
+      final files = await _listModelFiles(dir);
       String? tokensPath;
       String? encoderPath;
       String? decoderPath;
       String? joinerPath;
 
       for (final file in files) {
-        if (file is! File) continue;
-        final name = file.path.split(Platform.pathSeparator).last;
+        final name = p.basename(file.path);
         final lower = name.toLowerCase();
 
         if (lower == 'tokens.txt') {
