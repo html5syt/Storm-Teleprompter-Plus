@@ -41,6 +41,11 @@ enum WsMessageType {
   settingsReset('settings:reset'),
   settingsResetResponse('settings:reset_response'),
 
+  appBackupExport('app:backup_export'),
+  appBackupExportResponse('app:backup_export_response'),
+  appBackupRestore('app:backup_restore'),
+  appBackupRestoreResponse('app:backup_restore_response'),
+
   // ─── 提词器会话 ────────────────────────────────────────
   teleprompterStartSession('teleprompter:start_session'),
   teleprompterStartSessionResponse('teleprompter:start_session_response'),

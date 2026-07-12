@@ -6,6 +6,7 @@ import 'article_service.dart';
 import 'settings_service.dart';
 import 'teleprompter_session.dart';
 import 'asr_session_service.dart';
+import 'backup_service.dart';
 
 /// 后端主控
 ///
@@ -31,6 +32,10 @@ class BackendServer {
   final SettingsService settingsService = SettingsService();
   final TeleprompterSession teleprompterSession = TeleprompterSession();
   late final AsrSessionService asrSessionService;
+  late final BackupService backupService = BackupService(
+    articleService,
+    settingsService,
+  );
 
   bool _isRunning = false;
   int _port = 0;
@@ -76,6 +81,7 @@ class BackendServer {
         settingsService.registerHandlers(wsServer);
         teleprompterSession.registerHandlers(wsServer);
         asrSessionService.registerHandlers(wsServer);
+        backupService.registerHandlers(wsServer);
         _handlersRegistered = true;
       }
 

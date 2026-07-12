@@ -490,7 +490,7 @@ mixin HomeLogic on State<HomePage> {
   Future<void> _importFilesFromMenu() async {
     final files = await openFiles(
       acceptedTypeGroups: const [
-        XTypeGroup(label: '稿件文件', extensions: ['txt', 'docx']),
+        XTypeGroup(label: '稿件文件', extensions: ['txt', 'docx', 'html', 'htm']),
       ],
     );
     if (files.isEmpty) return;
@@ -914,7 +914,7 @@ mixin HomeLogic on State<HomePage> {
         _showItemPropertiesDialog(item);
         break;
       case 'delete':
-        _deleteItemDialog(item);
+        unawaited(_deleteSelected());
         break;
       case 'moveToFolder':
         unawaited(_moveSelectedToFolderDialog());
@@ -1200,39 +1200,46 @@ mixin HomeLogic on State<HomePage> {
     if (item != null) _renameItemDialog(item);
   }
 
-  void _deleteSelected() {
+  Future<void> _deleteSelected() async {
     if (_selectedItems.isEmpty) return;
-    showDialog(
+    final selectedIds = Set<String>.from(_selectedItems);
+    final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('删除'),
-        content: Text('确定要删除选中的 ${_selectedItems.length} 个项目吗？'),
+        content: Text('确定要删除选中的 ${selectedIds.length} 个项目吗？此操作不可撤销。'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(ctx),
+            onPressed: () => Navigator.pop(ctx, false),
             child: const Text('取消'),
           ),
           TextButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              final folderProvider = context.read<FolderProvider>();
-              final articleProvider = context.read<ArticleProvider>();
-              for (final id in _selectedItems) {
-                final folder = folderProvider.getFolderById(id);
-                if (folder != null) {
-                  folderProvider.deleteFolder(id);
-                } else {
-                  articleProvider.deleteArticle(id);
-                }
-              }
-              setState(() => _selectedItems.clear());
-            },
+            onPressed: () => Navigator.pop(ctx, true),
             style: TextButton.styleFrom(foregroundColor: AppColors.error),
             child: const Text('删除'),
           ),
         ],
       ),
     );
+    if (confirmed != true || !mounted) return;
+
+    final folderProvider = context.read<FolderProvider>();
+    final articleProvider = context.read<ArticleProvider>();
+    final folderIds = selectedIds
+        .where((id) => folderProvider.getFolderById(id) != null)
+        .toList();
+    final articleIds = selectedIds
+        .where((id) => folderProvider.getFolderById(id) == null)
+        .toList();
+
+    for (final id in articleIds) {
+      await articleProvider.deleteArticle(id);
+    }
+    for (final id in folderIds) {
+      await folderProvider.deleteFolder(id);
+    }
+    if (!mounted) return;
+    setState(() => _selectedItems.removeAll(selectedIds));
   }
 
   // ─── 设置 ─────────────────────────────────────────────
@@ -1462,7 +1469,7 @@ mixin HomeLogic on State<HomePage> {
         _currentFolderId != null) {
       _navigateUp();
     } else if (key == LogicalKeyboardKey.delete) {
-      _deleteSelected();
+      unawaited(_deleteSelected());
     } else if (key == LogicalKeyboardKey.f2) {
       _renameSelected();
     } else if (!ctrl &&

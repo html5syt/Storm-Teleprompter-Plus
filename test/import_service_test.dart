@@ -5,6 +5,20 @@ import 'package:path/path.dart' as p;
 import 'package:storm_teleprompter_plus/services/import_service_io.dart';
 
 void main() {
+  test('imports exported HTML without changing rich text', () async {
+    final temp = await Directory.systemTemp.createTemp('storm_html_test_');
+    addTearDown(() => temp.delete(recursive: true));
+    final file = File(p.join(temp.path, 'speech.html'));
+    const html = '<p><strong>Hello</strong> world</p>\n<p>第二行</p>';
+    await file.writeAsString(html);
+
+    final result = await ImportService().importFile(file.path);
+
+    expect(result, isNotNull);
+    expect(result!.title, 'speech');
+    expect(result.content, html);
+  });
+
   test('imports multiple folders while preserving their hierarchy', () async {
     final temp = await Directory.systemTemp.createTemp('storm_import_test_');
     addTearDown(() => temp.delete(recursive: true));

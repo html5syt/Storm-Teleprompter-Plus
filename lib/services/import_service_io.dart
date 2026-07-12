@@ -8,7 +8,7 @@ import 'package:xml/xml.dart';
 import 'import_batch.dart';
 
 class ImportService {
-  static const supportedExtensions = {'.txt', '.docx'};
+  static const supportedExtensions = {'.txt', '.docx', '.html', '.htm'};
 
   Future<ImportedArticleDraft?> importFile(String path) async {
     final file = File(path);
@@ -17,6 +17,9 @@ class ImportService {
     final lower = path.toLowerCase();
     if (lower.endsWith('.txt')) return _importTxt(file);
     if (lower.endsWith('.docx')) return _importDocx(file);
+    if (lower.endsWith('.html') || lower.endsWith('.htm')) {
+      return _importHtml(file);
+    }
     return null;
   }
 
@@ -191,6 +194,14 @@ class ImportService {
     return ImportedArticleDraft(
       title: _titleFromPath(file.path),
       content: paragraphs.where((p) => p.trim().isNotEmpty).join('\n'),
+    );
+  }
+
+  Future<ImportedArticleDraft> _importHtml(File file) async {
+    final content = utf8.decode(await file.readAsBytes(), allowMalformed: true);
+    return ImportedArticleDraft(
+      title: _titleFromPath(file.path),
+      content: content,
     );
   }
 

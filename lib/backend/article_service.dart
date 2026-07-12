@@ -486,6 +486,9 @@ class ArticleService {
     await _prefs.setString(AppConstants.prefKeyArticles, jsonStr);
   }
 
+  Future<void> replaceArticles(List<Article> articles) =>
+      _saveArticles(articles);
+
   /// 创建新稿件
   Future<Article> createArticle({
     required String title,
@@ -577,6 +580,8 @@ class ArticleService {
     final jsonStr = jsonEncode(folders.map((f) => f.toJson()).toList());
     await _prefs.setString(AppConstants.prefKeyFolders, jsonStr);
   }
+
+  Future<void> replaceFolders(List<Folder> folders) => _saveFolders(folders);
 
   /// 创建新文件夹
   Future<Folder> createFolder({required String name, String? parentId}) async {
