@@ -51,15 +51,37 @@ void main() {
       );
       expect(importedModel.isImported, isTrue);
       expect(importedModel.name, 'fixture');
+      final installedModelRoot =
+          '${appDataDirectoryOverride!.path}${Platform.pathSeparator}'
+          'asr_models${Platform.pathSeparator}$modelId';
+      expect(
+        await File(
+          '$installedModelRoot${Platform.pathSeparator}encoder.onnx',
+        ).exists(),
+        isTrue,
+      );
       expect(
         await FileSystemEntity.type(
-          '${appDataDirectoryOverride!.path}${Platform.pathSeparator}'
-          'asr_models${Platform.pathSeparator}$modelId'
-          '${Platform.pathSeparator}fixture${Platform.pathSeparator}test_wavs',
+          '$installedModelRoot${Platform.pathSeparator}fixture',
           followLinks: false,
         ),
         FileSystemEntityType.notFound,
       );
+
+      final nestedDirectory = Directory(
+        '$installedModelRoot${Platform.pathSeparator}legacy-layout',
+      );
+      await nestedDirectory.create();
+      final rootEncoder = File(
+        '$installedModelRoot${Platform.pathSeparator}encoder.onnx',
+      );
+      final nestedEncoder = await rootEncoder.rename(
+        '${nestedDirectory.path}${Platform.pathSeparator}encoder.onnx',
+      );
+      expect(await nestedEncoder.exists(), isTrue);
+      expect(await service.isModelDownloaded(modelId), isTrue);
+      expect(await rootEncoder.exists(), isTrue);
+      expect(await nestedEncoder.exists(), isFalse);
 
       await service.deleteModel(modelId);
       expect(await service.isModelDownloaded(modelId), isFalse);

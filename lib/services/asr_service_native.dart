@@ -161,6 +161,7 @@ Future<void> _extractModelArchiveToDisk(
 
     final outputRoot = p.absolute(outputPath);
     await Directory(outputRoot).create(recursive: true);
+    final modelEntries = <({ArchiveFile entry, String path})>[];
     for (final entry in archive) {
       if (!entry.isFile || entry.isSymbolicLink) continue;
 
@@ -169,6 +170,15 @@ Future<void> _extractModelArchiveToDisk(
       );
       if (!_isSafeModelArchivePath(normalizedName)) continue;
       if (!_isRequiredModelArchiveFile(normalizedName)) continue;
+      modelEntries.add((entry: entry, path: normalizedName));
+    }
+
+    final outputNames = <String>{};
+    for (final item in modelEntries) {
+      final normalizedName = p.basename(item.path);
+      if (!outputNames.add(normalizedName.toLowerCase())) {
+        throw FormatException('模型包包含重复文件名: $normalizedName');
+      }
 
       final destinationPath = p.absolute(p.join(outputRoot, normalizedName));
       if (!p.isWithin(outputRoot, destinationPath)) continue;
@@ -176,7 +186,7 @@ Future<void> _extractModelArchiveToDisk(
       await File(destinationPath).parent.create(recursive: true);
       final output = OutputFileStream(destinationPath);
       try {
-        entry.writeContent(output);
+        item.entry.writeContent(output);
       } finally {
         await output.close();
       }
@@ -224,6 +234,21 @@ Future<List<File>> _listModelFiles(Directory root) async {
     }
   }
   return files;
+}
+
+Future<void> _flattenInstalledModelFiles(Directory root) async {
+  final rootPath = p.normalize(p.absolute(root.path));
+  final files = await _listModelFiles(root);
+  for (final file in files) {
+    if (!_isRequiredModelArchiveFile(file.path)) continue;
+    if (p.equals(p.dirname(p.absolute(file.path)), rootPath)) continue;
+
+    final destination = File(p.join(rootPath, p.basename(file.path)));
+    if (await destination.exists()) {
+      throw FileSystemException('模型目录包含重复文件名', destination.path);
+    }
+    await file.rename(destination.path);
+  }
 }
 
 Future<bool> _hasRequiredModelFiles(Directory directory) async {
@@ -491,8 +516,9 @@ class AsrService with ChangeNotifier {
   Future<bool> isModelDownloaded(String modelId) async {
     final modelDir = await _getModelDir();
     final targetDir = Directory(p.join(modelDir, modelId));
-    return await targetDir.exists() &&
-        await _containsRequiredModelFiles(targetDir);
+    if (!await targetDir.exists()) return false;
+    await _flattenInstalledModelFiles(targetDir);
+    return _containsRequiredModelFiles(targetDir);
   }
 
   /// Returns built-in models plus valid models imported from local archives.
@@ -1037,6 +1063,7 @@ class AsrService with ChangeNotifier {
     }
 
     try {
+      await _flattenInstalledModelFiles(dir);
       // 查找模型文件 —— 按文件名关键词匹配
       final files = await _listModelFiles(dir);
       String? tokensPath;
