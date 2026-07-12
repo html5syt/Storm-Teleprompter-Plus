@@ -1,17 +1,20 @@
-import '../models/app_settings.dart';
-import '../models/article.dart';
-import '../models/folder.dart';
+import '../models/app_backup.dart';
 import 'article_service.dart';
 import 'settings_service.dart';
 import 'ws_protocol.dart';
 import 'ws_server.dart';
 
+/// 处理应用完整备份的后端服务。
+///
+/// 该服务只协调稿件、文件夹和设置服务，不直接接触文件系统。客户端负责选择
+/// 备份文件，服务端负责提供和恢复当前连接后端中的真实数据。
 class BackupService {
   BackupService(this._articles, this._settings);
 
   final ArticleService _articles;
   final SettingsService _settings;
 
+  /// 注册备份导出和恢复请求。
   void registerHandlers(WsServer server) {
     server.requests.listen((request) async {
       switch (request.message.type) {
@@ -26,46 +29,30 @@ class BackupService {
   }
 
   Future<void> _export(WsServer server, WsRequest request) async {
-    final articles = await _articles.loadArticles();
-    final folders = await _articles.loadFolders();
-    final settings = await _settings.loadSettings();
+    final backup = AppBackup(
+      createdAt: DateTime.now(),
+      articles: await _articles.loadArticles(),
+      folders: await _articles.loadFolders(),
+      settings: await _settings.loadSettings(),
+    );
     server.respond(
       request.clientId,
       WsMessage(
         type: WsMessageType.appBackupExportResponse,
         id: request.message.id,
-        data: {
-          'format': 'storm-teleprompter-backup',
-          'version': 1,
-          'createdAt': DateTime.now().toUtc().toIso8601String(),
-          'articles': articles.map((item) => item.toJson()).toList(),
-          'folders': folders.map((item) => item.toJson()).toList(),
-          'settings': settings.toJson(),
-        },
+        data: backup.toJson(),
       ),
     );
   }
 
   Future<void> _restore(WsServer server, WsRequest request) async {
     try {
-      final data = request.message.data;
-      if (data['format'] != 'storm-teleprompter-backup' ||
-          data['version'] != 1) {
-        throw const FormatException('不是受支持的飓风提词器备份文件');
-      }
-      final articles = (data['articles'] as List<dynamic>)
-          .map((item) => Article.fromJson(item as Map<String, dynamic>))
-          .toList();
-      final folders = (data['folders'] as List<dynamic>)
-          .map((item) => Folder.fromJson(item as Map<String, dynamic>))
-          .toList();
-      final settings = AppSettings.fromJson(
-        data['settings'] as Map<String, dynamic>,
-      );
+      // 先完整解析，确认所有字段有效后再替换当前数据。
+      final backup = AppBackup.fromJson(request.message.data);
 
-      await _articles.replaceFolders(folders);
-      await _articles.replaceArticles(articles);
-      await _settings.saveSettings(settings);
+      await _articles.replaceFolders(backup.folders);
+      await _articles.replaceArticles(backup.articles);
+      await _settings.saveSettings(backup.settings);
       server.respond(
         request.clientId,
         WsMessage(

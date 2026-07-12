@@ -7,6 +7,7 @@ import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:provider/provider.dart';
 import 'package:record/record.dart';
+import '../models/app_backup.dart';
 import '../models/app_settings.dart';
 import '../providers/settings_provider.dart';
 import '../providers/connection_provider.dart';
@@ -21,16 +22,16 @@ import '../theme/app_colors.dart';
 import '../widgets/about_settings_section.dart';
 
 part 'settings_asr_advanced_dialog.dart';
+part 'settings_backup_section.dart';
 
 /// 应用设置页面
 ///
-/// 严格按思维导图结构：
-/// - 应用主题（全功能颜色选取器）
-/// - 应用字体
-/// - 下载ASR模型
-/// - 后端共享配置（公开到局域网、连接信息查看、已连接设备查看）
-/// - 重置所有设置（可选包括提词器设置）
-/// - 关于/帮助/检查更新/License
+/// 页面按功能区域组织：
+/// - 应用主题与字体
+/// - 语音识别模型管理
+/// - 服务连接信息
+/// - 完整备份与恢复
+/// - 设置重置与关于信息
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key});
 
@@ -114,106 +115,6 @@ class SettingsPage extends StatelessWidget {
   // ═══════════════════════════════════════════════════════
   // 应用主题 - 全功能颜色选取器
   // ═══════════════════════════════════════════════════════
-
-  Widget _buildBackupSection(
-    BuildContext context,
-    ConnectionProvider connection,
-  ) {
-    return Column(
-      children: [
-        ListTile(
-          leading: const Icon(Icons.backup_outlined),
-          title: const Text('导出完整备份'),
-          subtitle: const Text('包含全部稿件、文件夹和应用设置'),
-          onTap: connection.isConnected
-              ? () => _exportBackup(context, connection)
-              : null,
-        ),
-        ListTile(
-          leading: const Icon(Icons.restore_outlined),
-          title: const Text('从备份恢复'),
-          subtitle: const Text('使用备份内容替换当前全部数据'),
-          onTap: connection.isConnected
-              ? () => _restoreBackup(context, connection)
-              : null,
-        ),
-      ],
-    );
-  }
-
-  Future<void> _exportBackup(
-    BuildContext context,
-    ConnectionProvider connection,
-  ) async {
-    try {
-      final response = await connection.request(WsMessageType.appBackupExport);
-      if (response.type != WsMessageType.appBackupExportResponse) {
-        throw Exception(response.data['message'] ?? '服务端未返回备份数据');
-      }
-      final saved = await BackupFileService().save(response.data);
-      if (saved && context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('完整备份已导出')));
-      }
-    } catch (error) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('导出备份失败：$error')));
-    }
-  }
-
-  Future<void> _restoreBackup(
-    BuildContext context,
-    ConnectionProvider connection,
-  ) async {
-    try {
-      final backup = await BackupFileService().open();
-      if (backup == null || !context.mounted) return;
-      final confirmed = await showDialog<bool>(
-        context: context,
-        builder: (dialogContext) => AlertDialog(
-          title: const Text('恢复完整备份'),
-          content: const Text('当前服务端的全部稿件、文件夹和设置将被备份内容替换。此操作无法撤销。'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('取消'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(dialogContext, true),
-              child: const Text('恢复'),
-            ),
-          ],
-        ),
-      );
-      if (confirmed != true || !context.mounted) return;
-
-      final response = await connection.request(
-        WsMessageType.appBackupRestore,
-        data: backup,
-      );
-      if (response.type != WsMessageType.appBackupRestoreResponse) {
-        throw Exception(response.data['message'] ?? '服务端拒绝恢复备份');
-      }
-      await Future.wait([
-        context.read<ArticleProvider>().loadArticles(),
-        context.read<FolderProvider>().loadFolders(),
-        context.read<SettingsProvider>().loadSettings(),
-      ]);
-      if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('备份已恢复')));
-      }
-    } catch (error) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('恢复备份失败：$error')));
-    }
-  }
 
   Widget _buildThemeColorTile(
     BuildContext context,

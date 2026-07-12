@@ -7,6 +7,10 @@ import 'package:xml/xml.dart';
 
 import 'import_batch.dart';
 
+/// 原生平台稿件导入服务。
+///
+/// 单文件解析统一生成 HTML 正文；批量导入在此基础上扫描目录并记录相对路径，
+/// 由页面层负责在后端中创建对应的文件夹和稿件。
 class ImportService {
   static const supportedExtensions = {'.txt', '.docx', '.html', '.htm'};
 
@@ -198,6 +202,7 @@ class ImportService {
   }
 
   Future<ImportedArticleDraft> _importHtml(File file) async {
+    // 应用导出的稿件本身就是编辑器可读取的 HTML，无需再次转换样式。
     final content = utf8.decode(await file.readAsBytes(), allowMalformed: true);
     return ImportedArticleDraft(
       title: _titleFromPath(file.path),

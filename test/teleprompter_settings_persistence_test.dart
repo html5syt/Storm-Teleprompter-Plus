@@ -1,6 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:storm_teleprompter_plus/models/app_backup.dart';
 import 'package:storm_teleprompter_plus/models/app_settings.dart';
 import 'package:storm_teleprompter_plus/models/article.dart';
+import 'package:storm_teleprompter_plus/models/folder.dart';
 import 'package:storm_teleprompter_plus/providers/settings_provider.dart';
 
 void main() {
@@ -87,5 +89,31 @@ void main() {
     final restored = Article.fromJson(article.toJson());
 
     expect(restored.teleprompterSettings, settings);
+  });
+
+  test('complete backup survives JSON round trip', () {
+    final now = DateTime.utc(2026, 7, 12, 8, 30);
+    final article = Article(
+      id: 'article-1',
+      title: 'Test',
+      content: '<p>Content</p>',
+      createdAt: now,
+      updatedAt: now,
+      folderId: 'folder-1',
+      teleprompterSettings: const AppSettings().toTeleprompterMap(),
+    );
+    final backup = AppBackup(
+      createdAt: now,
+      articles: [article],
+      folders: [Folder(id: 'folder-1', name: 'Folder', createdAt: now)],
+      settings: const AppSettings(fontSize: 76),
+    );
+
+    final restored = AppBackup.fromJson(backup.toJson());
+
+    expect(restored.createdAt, now);
+    expect(restored.articles.single.toJson(), article.toJson());
+    expect(restored.folders.single.id, 'folder-1');
+    expect(restored.settings.fontSize, 76);
   });
 }

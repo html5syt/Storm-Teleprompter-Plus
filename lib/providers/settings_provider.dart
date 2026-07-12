@@ -120,126 +120,12 @@ class SettingsProvider with ChangeNotifier {
   /// 内部辅助：在当前稿件覆盖激活时写入覆盖层，否则写入全局设置
   Future<void> _setAndSave({required Map<String, dynamic> overrideData}) async {
     if (_articleOverridesActive) {
-      // 稿件覆盖模式：写入覆盖层，不保存到全局
+      // 播放稿件时只更新当前稿件的完整设置快照。
       _articleOverrides.addAll(overrideData);
       notifyListeners();
     } else {
-      // 全局模式：更新全局设置并保存
-      var updated = _settings;
-      if (overrideData.containsKey('fontSize')) {
-        updated = updated.copyWith(
-          fontSize: (overrideData['fontSize'] as num).toDouble(),
-        );
-      }
-      if (overrideData.containsKey('lineHeight')) {
-        updated = updated.copyWith(
-          lineHeight: (overrideData['lineHeight'] as num).toDouble(),
-        );
-      }
-      if (overrideData.containsKey('wpm')) {
-        updated = updated.copyWith(wpm: overrideData['wpm'] as int);
-      }
-      if (overrideData.containsKey('mirrorMode')) {
-        updated = updated.copyWith(
-          mirrorMode: overrideData['mirrorMode'] as bool,
-        );
-      }
-      if (overrideData.containsKey('paddingX')) {
-        updated = updated.copyWith(
-          paddingX: (overrideData['paddingX'] as num).toDouble(),
-        );
-      }
-      if (overrideData.containsKey('readingLineOffset')) {
-        updated = updated.copyWith(
-          readingLineOffset: (overrideData['readingLineOffset'] as num)
-              .toDouble(),
-        );
-      }
-      if (overrideData.containsKey('highlightCurrentChar')) {
-        updated = updated.copyWith(
-          highlightCurrentChar: overrideData['highlightCurrentChar'] as bool,
-        );
-      }
-      if (overrideData.containsKey('defaultBold')) {
-        updated = updated.copyWith(
-          defaultBold: overrideData['defaultBold'] as bool,
-        );
-      }
-      if (overrideData.containsKey('progressInfoSizeRatio')) {
-        updated = updated.copyWith(
-          progressInfoSizeRatio: (overrideData['progressInfoSizeRatio'] as num)
-              .toDouble(),
-        );
-      }
-      if (overrideData.containsKey('fontFamily')) {
-        updated = updated.copyWith(
-          teleprompterFontFamily: overrideData['fontFamily'] as String,
-        );
-      }
-      if (overrideData.containsKey('teleprompterFontFamily')) {
-        updated = updated.copyWith(
-          teleprompterFontFamily:
-              overrideData['teleprompterFontFamily'] as String,
-        );
-      }
-      if (overrideData.containsKey('grayReadChars')) {
-        updated = updated.copyWith(
-          grayReadChars: overrideData['grayReadChars'] as bool,
-        );
-      }
-      if (overrideData.containsKey('textColor')) {
-        updated = updated.copyWith(textColor: overrideData['textColor'] as int);
-      }
-      if (overrideData.containsKey('letterSpacing')) {
-        updated = updated.copyWith(
-          letterSpacing: (overrideData['letterSpacing'] as num).toDouble(),
-        );
-      }
-      if (overrideData.containsKey('teleprompterBgColor')) {
-        updated = updated.copyWith(
-          teleprompterBgColor: overrideData['teleprompterBgColor'] as int,
-        );
-      }
-      if (overrideData.containsKey('underlineCurrentChar')) {
-        updated = updated.copyWith(
-          underlineCurrentChar: overrideData['underlineCurrentChar'] as bool,
-        );
-      }
-      if (overrideData.containsKey('readingAreaBorderWidth')) {
-        updated = updated.copyWith(
-          readingAreaBorderWidth:
-              (overrideData['readingAreaBorderWidth'] as num).toDouble(),
-        );
-      }
-      if (overrideData.containsKey('progressShowTime')) {
-        updated = updated.copyWith(
-          progressShowTime: overrideData['progressShowTime'] as bool,
-        );
-      }
-      if (overrideData.containsKey('progressShowPercentage')) {
-        updated = updated.copyWith(
-          progressShowPercentage:
-              overrideData['progressShowPercentage'] as bool,
-        );
-      }
-      if (overrideData.containsKey('progressShowSpeed')) {
-        updated = updated.copyWith(
-          progressShowSpeed: overrideData['progressShowSpeed'] as bool,
-        );
-      }
-      if (overrideData.containsKey('progressShowCurrentTime')) {
-        updated = updated.copyWith(
-          progressShowCurrentTime:
-              overrideData['progressShowCurrentTime'] as bool,
-        );
-      }
-      if (overrideData.containsKey('appBrightnessMode')) {
-        updated = updated.copyWith(
-          appBrightnessMode:
-              overrideData['appBrightnessMode'] as AppBrightnessMode,
-        );
-      }
-      _settings = updated;
+      // AppSettings 是提词器字段转换的唯一入口，避免 Provider 重复维护映射。
+      _settings = _settings.mergeOverrides(overrideData);
       notifyListeners();
       await _saveSettings();
     }

@@ -41,6 +41,7 @@ enum WsMessageType {
   settingsReset('settings:reset'),
   settingsResetResponse('settings:reset_response'),
 
+  // ─── 应用完整备份 ──────────────────────────────────────
   appBackupExport('app:backup_export'),
   appBackupExportResponse('app:backup_export_response'),
   appBackupRestore('app:backup_restore'),
