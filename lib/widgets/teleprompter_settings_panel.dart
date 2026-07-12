@@ -121,14 +121,19 @@ class _TeleprompterSettingsPanelState extends State<TeleprompterSettingsPanel> {
                           const Padding(
                             padding: EdgeInsets.only(left: 4, bottom: 4),
                             child: Text(
-                              '播放中已锁定字间距和行距，暂停后可调整',
+                              '播放中已锁定字间距、行距和正文边距，暂停后可调整',
                               style: TextStyle(
                                 fontSize: 12,
                                 color: AppColors.textMuted,
                               ),
                             ),
                           ),
-                        _buildTextPaddingSlider(context, provider, settings),
+                        _buildTextPaddingSlider(
+                          context,
+                          provider,
+                          settings,
+                          enabled: !isPlaying,
+                        ),
                         const Divider(height: 24),
 
                         // ── 4. 阅读区域框设置 ──
@@ -783,8 +788,9 @@ class _TeleprompterSettingsPanelState extends State<TeleprompterSettingsPanel> {
   Widget _buildTextPaddingSlider(
     BuildContext context,
     SettingsProvider provider,
-    AppSettings settings,
-  ) {
+    AppSettings settings, {
+    bool enabled = true,
+  }) {
     return _buildSlider(
       context,
       icon: Icons.format_indent_increase,
@@ -794,8 +800,8 @@ class _TeleprompterSettingsPanelState extends State<TeleprompterSettingsPanel> {
       max: 40,
       divisions: 40,
       displayFormatter: (v) => '${v.round()}%',
-      onChanged: (v) => provider.setPaddingX(v),
-      onReset: () => provider.setPaddingX(5.0),
+      onChanged: enabled ? (v) => provider.setPaddingX(v) : null,
+      onReset: enabled ? () => provider.setPaddingX(5.0) : null,
     );
   }
 

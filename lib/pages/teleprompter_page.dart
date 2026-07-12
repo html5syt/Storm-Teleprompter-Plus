@@ -1312,6 +1312,8 @@ class _TeleprompterPageState extends State<TeleprompterPage>
     if (isFullScreen) {
       await exitFullScreen();
     }
+    _articleSettingsSaveTimer?.cancel();
+    await _saveArticleOverrides();
     await _endRemoteSessionIfMaster();
     if (context.mounted) Navigator.pop(context);
   }

@@ -18,6 +18,7 @@ mixin TeleprompterPageLogic<T extends StatefulWidget>
   bool _remoteSessionEndSent = false;
   bool _viewportProgressUpdateScheduled = false;
   double? _pendingViewportProgress;
+  Timer? _articleSettingsSaveTimer;
 
   @override
   void initState() {
@@ -35,6 +36,7 @@ mixin TeleprompterPageLogic<T extends StatefulWidget>
       article.teleprompterSettings,
       notify: false,
     );
+    _settingsProvider!.addListener(_scheduleArticleSettingsSave);
 
     // 监听窗口最大化/还原事件，确保标题栏正确显示
     if (_isDesktop) {
@@ -65,6 +67,8 @@ mixin TeleprompterPageLogic<T extends StatefulWidget>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _settingsProvider?.removeListener(_scheduleArticleSettingsSave);
+    _articleSettingsSaveTimer?.cancel();
     if (_windowListener != null) {
       windowManager.removeListener(_windowListener!);
     }
@@ -73,7 +77,7 @@ mixin TeleprompterPageLogic<T extends StatefulWidget>
       unawaited(exitFullScreen(updateState: false));
     }
     // 保存稿件覆盖设置到稿件
-    _saveArticleOverrides();
+    unawaited(_saveArticleOverrides());
     _sendRemoteSessionEndIfMaster();
     // 清除稿件覆盖
     _settingsProvider?.clearArticleOverrides();
@@ -84,7 +88,19 @@ mixin TeleprompterPageLogic<T extends StatefulWidget>
   }
 
   /// 将稿件覆盖设置保存回稿件
-  void _saveArticleOverrides() {
+  void _scheduleArticleSettingsSave() {
+    final connection = _connectionProvider;
+    if (connection == null || connection.isRemote || !connection.isConnected) {
+      return;
+    }
+    _articleSettingsSaveTimer?.cancel();
+    _articleSettingsSaveTimer = Timer(
+      const Duration(milliseconds: 350),
+      () => unawaited(_saveArticleOverrides()),
+    );
+  }
+
+  Future<void> _saveArticleOverrides() async {
     final connection = _connectionProvider;
     if (connection == null) return;
     if (connection.isRemote || connection.canRetryRemoteConnection) return;
@@ -93,7 +109,7 @@ mixin TeleprompterPageLogic<T extends StatefulWidget>
     if (overrides != null && overrides.isNotEmpty) {
       try {
         final article = (widget as TeleprompterPage).article;
-        _articleProvider?.updateArticleTeleprompterSettings(
+        await _articleProvider?.updateArticleTeleprompterSettings(
           article.id,
           Map<String, dynamic>.from(overrides),
         );

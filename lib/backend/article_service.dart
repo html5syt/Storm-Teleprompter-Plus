@@ -164,6 +164,9 @@ class ArticleService {
       id,
       title: data['title'] as String?,
       content: data['content'] as String?,
+      teleprompterSettings: data['teleprompterSettings'] == null
+          ? null
+          : Map<String, dynamic>.from(data['teleprompterSettings'] as Map),
     );
 
     server.respond(
@@ -516,6 +519,7 @@ class ArticleService {
     String id, {
     String? title,
     String? content,
+    Map<String, dynamic>? teleprompterSettings,
   }) async {
     final articles = await loadArticles();
     final index = articles.indexWhere((a) => a.id == id);
@@ -524,6 +528,7 @@ class ArticleService {
     final updated = articles[index].copyWith(
       title: title,
       content: content,
+      teleprompterSettings: teleprompterSettings,
       updatedAt: DateTime.now(),
     );
     articles[index] = updated;

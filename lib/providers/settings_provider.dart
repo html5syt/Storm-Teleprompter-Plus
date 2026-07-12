@@ -52,7 +52,9 @@ class SettingsProvider with ChangeNotifier {
     Map<String, dynamic>? overrides, {
     bool notify = true,
   }) {
-    final next = Map<String, dynamic>.from(overrides ?? const {});
+    final next = _settings
+        .mergeOverrides(Map<String, dynamic>.from(overrides ?? const {}))
+        .toTeleprompterMap();
     final unchanged =
         _articleOverridesActive && _mapEquals(_articleOverrides, next);
     _articleOverridesActive = true;
@@ -62,7 +64,7 @@ class SettingsProvider with ChangeNotifier {
   }
 
   void applyRemoteTeleprompterSettings(Map<String, dynamic> settings) {
-    final next = Map<String, dynamic>.from(settings);
+    final next = _settings.mergeOverrides(settings).toTeleprompterMap();
     final unchanged =
         _articleOverridesActive && _mapEquals(_articleOverrides, next);
     _articleOverridesActive = true;
