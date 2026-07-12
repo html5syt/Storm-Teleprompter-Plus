@@ -1,11 +1,11 @@
 {
-    "name": "storm_teleprompter_plus",
-    "short_name": "storm_teleprompter_plus",
+    "name": "Storm Teleprompter+",
+    "short_name": "Storm Teleprompter+",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#000000",
     "theme_color": "#DB9D16",
-    "description": "A new Flutter project.",
+    "description": "飓风提词器 Plus - 跨平台智能提词器",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

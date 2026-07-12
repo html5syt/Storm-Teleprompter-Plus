@@ -267,7 +267,7 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
       title: isNarrow
           ? null
           : const Text(
-              '飓风提词器',
+              '飓风提词器 Plus',
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
             ),
       titleSpacing: 0,

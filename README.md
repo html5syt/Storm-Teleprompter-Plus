@@ -1,4 +1,6 @@
-# 飓风提词器 Plus
+<img align="right" width="120" height="120" src="lib/favicon.png" />
+<h1 align="center">飓风提词器 Plus</h1>
+<p align="center"><strong>Storm Teleprompter+</strong></p>
 
 基于 Flutter 开发的跨平台提词器，提供富文本稿件管理、自动滚动、离线语音跟随、分光镜镜像显示，以及局域网多设备同步。
 
