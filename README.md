@@ -91,11 +91,11 @@
 
 内置模型包括：
 
-| 模型 | 适用场景 |
-| --- | --- |
-| Zipformer 中英双语 | 中英混合稿件和高准确率场景 |
-| Zipformer2 CED 中文 | 中文、低延迟和资源受限设备 |
-| Zipformer English | 纯英文演讲和英文低延迟跟随 |
+| 模型 | 适用场景 | 下载链接 |
+| --- | --- | --- |
+| Zipformer 中英双语 | 中英混合稿件和高准确率场景 | [下载](https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20.tar.bz2) |
+| Zipformer2 CED 中文 | 中文、低延迟和资源受限设备 | [下载](https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-streaming-zipformer-zh-14M-2023-02-23.tar.bz2) |
+| Zipformer English | 纯英文演讲和英文低延迟跟随 | [下载](https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-streaming-zipformer-en-2023-06-21.tar.bz2) |
 
 模型文件体积较大。下载设置支持系统代理和自定义镜像；解压过程在后台执行。
 
