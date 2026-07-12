@@ -144,6 +144,10 @@ jobs:
           done
 
           printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > html5syt.jks
+          if [ ! -s html5syt.jks ]; then
+            echo "::error::Decoded Android keystore is empty. Check ANDROID_KEYSTORE_BASE64."
+            exit 1
+          fi
           {
             echo "storeFile=../html5syt.jks"
             echo "storePassword=$ANDROID_KEYSTORE_PASSWORD"
@@ -330,4 +334,5 @@ jobs:
           draft: ${{ needs.release_metadata.outputs.draft }}
           prerelease: ${{ needs.release_metadata.outputs.prerelease }}
           target_commitish: ${{ github.sha }}
+          generate_release_notes: true
           files: dist/*

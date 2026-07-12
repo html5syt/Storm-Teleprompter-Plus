@@ -1,3 +1,4 @@
+import java.io.File
 import java.util.Properties
 
 plugins {
@@ -51,7 +52,7 @@ android {
     signingConfigs {
         if (hasReleaseSigningConfig) {
             create("release") {
-                val configuredStoreFile = file(releaseStoreFile!!)
+                val configuredStoreFile = File(releaseStoreFile!!)
                 storeFile =
                     if (configuredStoreFile.isAbsolute) {
                         configuredStoreFile
