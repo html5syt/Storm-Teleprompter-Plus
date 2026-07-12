@@ -995,35 +995,6 @@ mixin HomeLogic on State<HomePage> {
     );
   }
 
-  void _deleteItemDialog(_ContentItem item) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('删除${item.isFolder ? "文件夹" : "稿件"}'),
-        content: Text('确定要删除「${item.name}」吗？此操作不可撤销。'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('取消'),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              if (item.isFolder) {
-                context.read<FolderProvider>().deleteFolder(item.id);
-              } else {
-                context.read<ArticleProvider>().deleteArticle(item.id);
-              }
-              setState(() => _selectedItems.remove(item.id));
-            },
-            style: TextButton.styleFrom(foregroundColor: AppColors.error),
-            child: const Text('删除'),
-          ),
-        ],
-      ),
-    );
-  }
-
   Future<void> _moveSelectedToFolderDialog() async {
     final items = _getContentItemsByIds(_selectedItems);
     if (items.isEmpty) return;
