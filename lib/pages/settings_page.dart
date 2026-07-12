@@ -489,204 +489,282 @@ class SettingsPage extends StatelessWidget {
     SettingsProvider provider,
   ) async {
     final asr = AsrService.instance;
+    var models = await asr.listAvailableModels();
+    var downloadedModelIds = <String>{};
+    final downloadedStates = await Future.wait(
+      models.map((model) => asr.isModelDownloaded(model.id)),
+    );
+    for (var index = 0; index < models.length; index++) {
+      if (downloadedStates[index]) downloadedModelIds.add(models[index].id);
+    }
+
     var currentModelId = provider.settings.asrModelId;
     if (currentModelId.isNotEmpty &&
-        !await asr.isModelDownloaded(currentModelId)) {
+        !downloadedModelIds.contains(currentModelId)) {
       await provider.clearAsrModel();
       currentModelId = '';
     }
     if (!context.mounted) return;
     final recommendedModelId = asr.recommendModel().id;
-    final downloadedChecks = <String, Future<bool>>{};
 
-    showModalBottomSheet(
+    await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      builder: (ctx) => AnimatedBuilder(
-        animation: asr,
-        builder: (ctx, _) => DraggableScrollableSheet(
-          initialChildSize: 0.6,
-          minChildSize: 0.3,
-          maxChildSize: 0.9,
-          expand: false,
-          builder: (ctx, scrollController) {
-            return Column(
-              children: [
-                const Padding(
-                  padding: EdgeInsets.all(16),
-                  child: Text(
-                    '选择 ASR 模型',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) => AnimatedBuilder(
+          animation: asr,
+          builder: (ctx, _) => DraggableScrollableSheet(
+            initialChildSize: 0.6,
+            minChildSize: 0.3,
+            maxChildSize: 0.9,
+            expand: false,
+            builder: (ctx, scrollController) {
+              return Column(
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Text(
+                      '选择 ASR 模型',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                   ),
-                ),
-                const Divider(height: 1),
-                Expanded(
-                  child: ListView.builder(
-                    controller: scrollController,
-                    itemCount: AsrModels.availableModels.length,
-                    itemBuilder: (ctx, index) {
-                      final model = AsrModels.availableModels[index];
-                      final isSelected = model.id == currentModelId;
-                      final progress = asr.getDownloadProgress(model.id);
-                      final anyDownloading = asr.allDownloadProgress.values.any(
-                        (item) => item.isDownloading,
-                      );
+                  const Divider(height: 1),
+                  Expanded(
+                    child: ListView.builder(
+                      controller: scrollController,
+                      itemCount: models.length,
+                      itemBuilder: (ctx, index) {
+                        final model = models[index];
+                        final isSelected = model.id == currentModelId;
+                        final progress = asr.getDownloadProgress(model.id);
+                        final anyDownloading = asr.allDownloadProgress.values
+                            .any((item) => item.isDownloading);
+                        final isDownloaded =
+                            downloadedModelIds.contains(model.id) ||
+                            progress.isCompleted;
+                        final modelDetails = model.isImported
+                            ? '${model.languages} · ${model.scenario}'
+                                  '${model.approximateSizeMB > 0 ? ' · 约 ${model.approximateSizeMB} MB' : ''}'
+                            : '${model.languages} · ${model.scenario}\n'
+                                  '准确率 ${model.accuracy} · 延迟 ${model.latency} · '
+                                  '约 ${model.approximateSizeMB} MB · '
+                                  '建议内存 ${model.recommendedMemoryMB} MB';
 
-                      return FutureBuilder<bool>(
-                        future: downloadedChecks.putIfAbsent(
-                          model.id,
-                          () => asr.isModelDownloaded(model.id),
-                        ),
-                        builder: (context, downloadedSnapshot) {
-                          final isDownloaded =
-                              downloadedSnapshot.data == true ||
-                              progress.isCompleted;
-                          return InkWell(
-                            onTap: isSelected || !isDownloaded
-                                ? null
-                                : () {
-                                    provider.setAsrModel(model.id, model.name);
-                                    Navigator.pop(ctx);
-                                  },
-                            child: Padding(
-                              padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
-                              child: Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          model.name,
-                                          style: Theme.of(
-                                            ctx,
-                                          ).textTheme.titleMedium,
-                                        ),
-                                        const SizedBox(height: 3),
-                                        Text(model.description),
-                                        const SizedBox(height: 3),
-                                        Text(
-                                          '${model.languages} · ${model.scenario}\n'
-                                          '准确率 ${model.accuracy} · 延迟 ${model.latency} · '
-                                          '约 ${model.approximateSizeMB} MB · 建议内存 ${model.recommendedMemoryMB} MB',
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            color: AppColors.textMutedFor(ctx),
-                                          ),
-                                        ),
-                                        if (progress.isDownloading) ...[
-                                          const SizedBox(height: 6),
-                                          LinearProgressIndicator(
-                                            value: progress.progress,
-                                          ),
-                                          const SizedBox(height: 3),
-                                          Text(
-                                            progress.message,
-                                            style: const TextStyle(
-                                              fontSize: 11,
-                                            ),
-                                          ),
-                                        ],
-                                        if (isDownloaded)
-                                          const Text(
-                                            '已下载',
-                                            style: TextStyle(
-                                              fontSize: 12,
-                                              color: AppColors.success,
-                                            ),
-                                          ),
-                                        if (!isDownloaded &&
-                                            !progress.isDownloading)
-                                          Text(
-                                            progress.error == null
-                                                ? '未下载'
-                                                : progress.message,
-                                            style: TextStyle(
-                                              fontSize: 12,
-                                              color: progress.error == null
-                                                  ? AppColors.textMutedFor(ctx)
-                                                  : AppColors.error,
-                                            ),
-                                          ),
-                                        if (model.id == recommendedModelId)
-                                          const Text(
-                                            '根据本机处理器性能推荐',
-                                            style: TextStyle(
-                                              fontSize: 12,
-                                              color: AppColors.success,
-                                            ),
-                                          ),
-                                      ],
-                                    ),
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Row(
-                                    mainAxisSize: MainAxisSize.min,
+                        return InkWell(
+                          onTap: isSelected || !isDownloaded
+                              ? null
+                              : () async {
+                                  await provider.setAsrModel(
+                                    model.id,
+                                    model.name,
+                                  );
+                                  if (ctx.mounted) Navigator.pop(ctx);
+                                },
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
-                                      if (isSelected)
-                                        const Icon(
-                                          Icons.check_circle,
-                                          color: AppColors.success,
+                                      Text(
+                                        model.name,
+                                        style: Theme.of(
+                                          ctx,
+                                        ).textTheme.titleMedium,
+                                      ),
+                                      const SizedBox(height: 3),
+                                      Text(model.description),
+                                      const SizedBox(height: 3),
+                                      Text(
+                                        modelDetails,
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: AppColors.textMutedFor(ctx),
+                                        ),
+                                      ),
+                                      if (progress.isDownloading) ...[
+                                        const SizedBox(height: 6),
+                                        LinearProgressIndicator(
+                                          value: progress.progress,
+                                        ),
+                                        const SizedBox(height: 3),
+                                        Text(
+                                          progress.message,
+                                          style: const TextStyle(fontSize: 11),
+                                        ),
+                                      ],
+                                      if (isDownloaded)
+                                        Text(
+                                          model.isImported ? '已导入' : '已下载',
+                                          style: const TextStyle(
+                                            fontSize: 12,
+                                            color: AppColors.success,
+                                          ),
                                         ),
                                       if (!isDownloaded &&
                                           !progress.isDownloading)
-                                        IconButton(
-                                          icon: const Icon(Icons.download),
-                                          tooltip: '下载模型',
-                                          onPressed: anyDownloading
-                                              ? null
-                                              : () async {
-                                                  await _downloadAsrModel(
-                                                    ctx,
-                                                    asr,
-                                                    provider,
-                                                    model,
-                                                  );
-                                                },
+                                        Text(
+                                          progress.error == null
+                                              ? '未下载'
+                                              : progress.message,
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: progress.error == null
+                                                ? AppColors.textMutedFor(ctx)
+                                                : AppColors.error,
+                                          ),
                                         ),
-                                      if (isDownloaded &&
-                                          !progress.isDownloading)
-                                        IconButton(
-                                          icon: const Icon(Icons.refresh),
-                                          tooltip: '重新下载或更新',
-                                          onPressed: anyDownloading
-                                              ? null
-                                              : () async {
-                                                  await _downloadAsrModel(
-                                                    ctx,
-                                                    asr,
-                                                    provider,
-                                                    model,
-                                                  );
-                                                },
-                                        ),
-                                      if (progress.isDownloading)
-                                        IconButton(
-                                          icon: const Icon(Icons.close),
-                                          tooltip: '取消下载',
-                                          onPressed: () {
-                                            unawaited(asr.cancelDownload());
-                                          },
+                                      if (model.id == recommendedModelId)
+                                        const Text(
+                                          '根据本机处理器性能推荐',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: AppColors.success,
+                                          ),
                                         ),
                                     ],
                                   ),
-                                ],
-                              ),
+                                ),
+                                const SizedBox(width: 6),
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    if (isSelected)
+                                      const Icon(
+                                        Icons.check_circle,
+                                        color: AppColors.success,
+                                      ),
+                                    if (!isDownloaded &&
+                                        !progress.isDownloading &&
+                                        !model.isImported)
+                                      IconButton(
+                                        icon: const Icon(Icons.download),
+                                        tooltip: '下载模型',
+                                        onPressed: anyDownloading
+                                            ? null
+                                            : () async {
+                                                await _downloadAsrModel(
+                                                  ctx,
+                                                  asr,
+                                                  provider,
+                                                  model,
+                                                );
+                                                if (!ctx.mounted) return;
+                                                if (await asr.isModelDownloaded(
+                                                  model.id,
+                                                )) {
+                                                  setSheetState(
+                                                    () => downloadedModelIds
+                                                        .add(model.id),
+                                                  );
+                                                }
+                                              },
+                                      ),
+                                    if (isDownloaded &&
+                                        !progress.isDownloading &&
+                                        !model.isImported)
+                                      IconButton(
+                                        icon: const Icon(Icons.refresh),
+                                        tooltip: '重新下载或更新',
+                                        onPressed: anyDownloading
+                                            ? null
+                                            : () => _downloadAsrModel(
+                                                ctx,
+                                                asr,
+                                                provider,
+                                                model,
+                                              ),
+                                      ),
+                                    if (isDownloaded && !progress.isDownloading)
+                                      IconButton(
+                                        icon: const Icon(Icons.delete_outline),
+                                        tooltip: '删除模型文件',
+                                        onPressed: anyDownloading
+                                            ? null
+                                            : () async {
+                                                if (!await _confirmDeleteAsrModel(
+                                                  ctx,
+                                                  model,
+                                                )) {
+                                                  return;
+                                                }
+                                                await asr.deleteModel(model.id);
+                                                if (currentModelId ==
+                                                    model.id) {
+                                                  await provider
+                                                      .clearAsrModel();
+                                                  currentModelId = '';
+                                                }
+                                                models = await asr
+                                                    .listAvailableModels();
+                                                downloadedModelIds = {
+                                                  for (final item in models)
+                                                    if (await asr
+                                                        .isModelDownloaded(
+                                                          item.id,
+                                                        ))
+                                                      item.id,
+                                                };
+                                                if (ctx.mounted) {
+                                                  setSheetState(() {});
+                                                }
+                                              },
+                                      ),
+                                    if (progress.isDownloading)
+                                      IconButton(
+                                        icon: const Icon(Icons.close),
+                                        tooltip: '取消下载',
+                                        onPressed: () {
+                                          unawaited(asr.cancelDownload());
+                                        },
+                                      ),
+                                  ],
+                                ),
+                              ],
                             ),
-                          );
-                        },
-                      );
-                    },
+                          ),
+                        );
+                      },
+                    ),
                   ),
-                ),
-              ],
-            );
-          },
+                ],
+              );
+            },
+          ),
         ),
       ),
     );
+  }
+
+  static Future<bool> _confirmDeleteAsrModel(
+    BuildContext context,
+    AsrModelInfo model,
+  ) async {
+    return await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('删除模型'),
+            content: Text('确定删除“${model.name}”的全部本地模型文件吗？'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('取消'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text('删除'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
   }
 
   static Future<void> _downloadAsrModel(
@@ -902,8 +980,17 @@ class SettingsPage extends StatelessWidget {
       ),
     );
     try {
-      final id = await AsrService.instance.importModelArchive(file.path);
-      await provider.setAsrModel(id, file.name);
+      final asr = AsrService.instance;
+      final id = await asr.importModelArchive(file.path);
+      final models = await asr.listAvailableModels();
+      var importedName = file.name;
+      for (final model in models) {
+        if (model.id == id) {
+          importedName = model.name;
+          break;
+        }
+      }
+      await provider.setAsrModel(id, importedName);
       if (!context.mounted) return;
       Navigator.of(context, rootNavigator: true).pop();
       ScaffoldMessenger.of(

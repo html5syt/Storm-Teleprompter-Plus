@@ -13,6 +13,7 @@ class AsrModelInfo {
   final String accuracy;
   final String latency;
   final int recommendedMemoryMB;
+  final bool isImported;
 
   const AsrModelInfo({
     required this.id,
@@ -26,6 +27,7 @@ class AsrModelInfo {
     this.accuracy = '标准',
     this.latency = '低',
     this.recommendedMemoryMB = 1024,
+    this.isImported = false,
   });
 }
 
@@ -99,6 +101,8 @@ class AsrService with ChangeNotifier {
   Future<void> cancelDownload() async {}
 
   Future<bool> isModelDownloaded(String modelId) async => false;
+
+  Future<List<AsrModelInfo>> listAvailableModels() async => const [];
 
   Future<void> downloadModel(
     AsrModelInfo modelInfo, {

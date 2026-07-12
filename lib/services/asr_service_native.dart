@@ -1,14 +1,16 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
 import 'package:archive/archive_io.dart';
+import 'package:path/path.dart' as p;
 import 'package:record/record.dart';
 import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa;
+import 'app_data_directory.dart';
 import 'pcm_resampler.dart';
 
 /// ASR 模型信息
@@ -24,6 +26,7 @@ class AsrModelInfo {
   final String accuracy;
   final String latency;
   final int recommendedMemoryMB;
+  final bool isImported;
 
   const AsrModelInfo({
     required this.id,
@@ -37,6 +40,7 @@ class AsrModelInfo {
     this.accuracy = '标准',
     this.latency = '低',
     this.recommendedMemoryMB = 1024,
+    this.isImported = false,
   });
 }
 
@@ -105,7 +109,7 @@ Future<void> _extractModelArchiveWorker(List<Object> args) async {
   final archivePath = args[1] as String;
   final outputPath = args[2] as String;
   try {
-    await extractFileToDisk(archivePath, outputPath);
+    await _extractModelArchiveToDisk(archivePath, outputPath);
     final valid = await _hasRequiredModelFiles(Directory(outputPath));
     sendPort.send({
       'success': valid,
@@ -118,6 +122,83 @@ Future<void> _extractModelArchiveWorker(List<Object> args) async {
       'stackTrace': stackTrace.toString(),
     });
   }
+}
+
+Future<void> _extractModelArchiveToDisk(
+  String archivePath,
+  String outputPath,
+) async {
+  Directory? temporaryDirectory;
+  InputStream? archiveInput;
+  try {
+    var decodedArchivePath = archivePath;
+    final lowerPath = archivePath.toLowerCase();
+    if (lowerPath.endsWith('.tar.bz2') || lowerPath.endsWith('.tbz')) {
+      temporaryDirectory = await Directory.systemTemp.createTemp(
+        'storm_asr_model_',
+      );
+      decodedArchivePath = p.join(temporaryDirectory.path, 'model.tar');
+      final compressedInput = InputFileStream(archivePath);
+      final tarOutput = OutputFileStream(decodedArchivePath);
+      try {
+        BZip2Decoder().decodeStream(compressedInput, tarOutput);
+      } finally {
+        await compressedInput.close();
+        await tarOutput.close();
+      }
+    }
+
+    final Archive archive;
+    if (decodedArchivePath.toLowerCase().endsWith('.tar')) {
+      archiveInput = InputFileStream(decodedArchivePath);
+      archive = TarDecoder().decodeStream(archiveInput);
+    } else if (lowerPath.endsWith('.zip')) {
+      archiveInput = InputFileStream(archivePath);
+      archive = ZipDecoder().decodeStream(archiveInput);
+    } else {
+      throw const FormatException('仅支持 .zip、.tar.bz2 和 .tbz 模型包');
+    }
+
+    final outputRoot = p.absolute(outputPath);
+    await Directory(outputRoot).create(recursive: true);
+    for (final entry in archive) {
+      if (entry.isSymbolicLink) continue;
+
+      final normalizedName = p.normalize(
+        entry.name.replaceAll('\\', p.separator),
+      );
+      if (!_isSafeModelArchivePath(normalizedName)) continue;
+
+      final destinationPath = p.absolute(p.join(outputRoot, normalizedName));
+      if (!p.isWithin(outputRoot, destinationPath)) continue;
+
+      if (entry.isDirectory) {
+        await Directory(destinationPath).create(recursive: true);
+        continue;
+      }
+      if (!entry.isFile) continue;
+
+      await File(destinationPath).parent.create(recursive: true);
+      final output = OutputFileStream(destinationPath);
+      try {
+        entry.writeContent(output);
+      } finally {
+        await output.close();
+      }
+    }
+  } finally {
+    await archiveInput?.close();
+    if (temporaryDirectory != null && await temporaryDirectory.exists()) {
+      await temporaryDirectory.delete(recursive: true);
+    }
+  }
+}
+
+bool _isSafeModelArchivePath(String path) {
+  if (path.isEmpty || p.isAbsolute(path)) return false;
+  final segments = p.split(path);
+  if (segments.any((segment) => segment == '..')) return false;
+  return !RegExp(r'[<>:"|?*]').hasMatch(path);
 }
 
 Future<bool> _hasRequiredModelFiles(Directory directory) async {
@@ -179,8 +260,8 @@ class AsrService with ChangeNotifier {
 
   sherpa.OnlineRecognizer? _recognizer;
   sherpa.OnlineStream? _stream;
-  final AudioRecorder _recorder = AudioRecorder();
-  final AudioRecorder _previewRecorder = AudioRecorder();
+  AudioRecorder? _recorderInstance;
+  AudioRecorder? _previewRecorderInstance;
   StreamSubscription<Uint8List>? _audioSubscription;
   StreamSubscription<Uint8List>? _previewSubscription;
   bool _isRunning = false;
@@ -209,6 +290,10 @@ class AsrService with ChangeNotifier {
   int _captureSampleRate = 16000;
   int _captureNumChannels = 1;
   final PcmResampler _resampler = PcmResampler(targetSampleRate: 16000);
+
+  AudioRecorder get _recorder => _recorderInstance ??= AudioRecorder();
+  AudioRecorder get _previewRecorder =>
+      _previewRecorderInstance ??= AudioRecorder();
 
   /// 获取指定模型的下载进度
   DownloadProgress getDownloadProgress(String modelId) {
@@ -370,8 +455,8 @@ class AsrService with ChangeNotifier {
 
   /// 获取模型存储目录
   Future<String> _getModelDir() async {
-    final appDir = await getApplicationSupportDirectory();
-    final modelDir = Directory('${appDir.path}/asr_models');
+    final appDir = await getAppDataDirectory();
+    final modelDir = Directory(p.join(appDir.path, 'asr_models'));
     if (!await modelDir.exists()) {
       await modelDir.create(recursive: true);
     }
@@ -381,9 +466,65 @@ class AsrService with ChangeNotifier {
   /// 检查模型是否已下载
   Future<bool> isModelDownloaded(String modelId) async {
     final modelDir = await _getModelDir();
-    final targetDir = Directory('$modelDir/$modelId');
+    final targetDir = Directory(p.join(modelDir, modelId));
     return await targetDir.exists() &&
         await _containsRequiredModelFiles(targetDir);
+  }
+
+  /// Returns built-in models plus valid models imported from local archives.
+  Future<List<AsrModelInfo>> listAvailableModels() async {
+    final models = <AsrModelInfo>[...AsrModels.availableModels];
+    final builtInIds = AsrModels.availableModels
+        .map((model) => model.id)
+        .toSet();
+    final modelRoot = Directory(await _getModelDir());
+    final importedModels = <AsrModelInfo>[];
+
+    await for (final entity in modelRoot.list()) {
+      if (entity is! Directory) continue;
+      final id = p.basename(entity.path);
+      if (builtInIds.contains(id) || id.endsWith('.importing')) continue;
+      if (!await _containsRequiredModelFiles(entity)) continue;
+
+      var name = id;
+      var approximateSizeMB = 0;
+      final metadataFile = File(p.join(entity.path, '.model.json'));
+      if (await metadataFile.exists()) {
+        try {
+          final metadata = jsonDecode(await metadataFile.readAsString());
+          if (metadata is Map<String, dynamic>) {
+            final storedName = metadata['name'];
+            final storedSize = metadata['approximateSizeMB'];
+            if (storedName is String && storedName.trim().isNotEmpty) {
+              name = storedName.trim();
+            }
+            if (storedSize is num) approximateSizeMB = storedSize.round();
+          }
+        } catch (error) {
+          debugPrint('[AsrService] 读取导入模型元数据失败 ($id): $error');
+        }
+      }
+
+      importedModels.add(
+        AsrModelInfo(
+          id: id,
+          name: name,
+          description: '从本地压缩包导入的 Sherpa-Onnx 流式模型',
+          downloadUrl: '',
+          approximateSizeMB: approximateSizeMB,
+          languages: '由模型决定',
+          scenario: '本地导入',
+          accuracy: '由模型决定',
+          latency: '由模型决定',
+          recommendedMemoryMB: 0,
+          isImported: true,
+        ),
+      );
+    }
+
+    importedModels.sort((a, b) => a.name.compareTo(b.name));
+    models.addAll(importedModels);
+    return List.unmodifiable(models);
   }
 
   /// 下载并解压 ASR 模型
@@ -718,11 +859,19 @@ class AsrService with ChangeNotifier {
 
   /// 删除已下载的模型
   Future<void> deleteModel(String modelId) async {
+    if (_currentDownloadModelId == modelId) await cancelDownload();
+    if (_currentModelId == modelId) await unloadModel();
     final modelDir = await _getModelDir();
-    final dir = Directory('$modelDir/$modelId');
+    final dir = Directory(p.join(modelDir, modelId));
     if (await dir.exists()) {
       await dir.delete(recursive: true);
     }
+    final stagingDir = Directory(p.join(modelDir, '$modelId.importing'));
+    if (await stagingDir.exists()) {
+      await stagingDir.delete(recursive: true);
+    }
+    final archive = File(p.join(modelDir, '$modelId.tar.bz2'));
+    if (await archive.exists()) await archive.delete();
     _downloadProgress.remove(modelId);
     notifyListeners();
   }
@@ -735,12 +884,16 @@ class AsrService with ChangeNotifier {
     final source = File(archivePath);
     if (!await source.exists()) throw ArgumentError('模型文件不存在');
     final lower = archivePath.toLowerCase();
-    final resolvedId = (modelId == null || modelId.trim().isEmpty)
-        ? source.uri.pathSegments.last
-              .replaceFirst(RegExp(r'\.tar\.bz2$', caseSensitive: false), '')
-              .replaceFirst(RegExp(r'\.zip$', caseSensitive: false), '')
-              .replaceAll(RegExp(r'[^a-zA-Z0-9_-]+'), '-')
-        : modelId.trim();
+    final archiveName = source.uri.pathSegments.last;
+    final displayName = archiveName
+        .replaceFirst(RegExp(r'\.tar\.bz2$', caseSensitive: false), '')
+        .replaceFirst(RegExp(r'\.zip$', caseSensitive: false), '')
+        .replaceFirst(RegExp(r'\.tbz$', caseSensitive: false), '');
+    final resolvedId =
+        ((modelId == null || modelId.trim().isEmpty)
+                ? displayName
+                : modelId.trim())
+            .replaceAll(RegExp(r'[^a-zA-Z0-9_-]+'), '-');
     if (resolvedId.isEmpty) throw ArgumentError('无法确定模型 ID');
 
     if (!lower.endsWith('.zip') &&
@@ -756,6 +909,16 @@ class AsrService with ChangeNotifier {
     await staging.create(recursive: true);
     try {
       await _extractArchiveInBackground(archivePath, staging.path);
+      final archiveSize = await source.length();
+      await File(p.join(staging.path, '.model.json')).writeAsString(
+        jsonEncode({
+          'id': resolvedId,
+          'name': displayName,
+          'source': 'imported',
+          'approximateSizeMB': (archiveSize / (1024 * 1024)).round(),
+        }),
+        flush: true,
+      );
       if (await target.exists()) await target.delete(recursive: true);
       await staging.rename(target.path);
     } catch (_) {
@@ -1140,8 +1303,10 @@ class AsrService with ChangeNotifier {
     _isReleased = true;
     await unloadModel();
     await stopInputPreview();
-    await _recorder.dispose();
-    await _previewRecorder.dispose();
+    await _recorderInstance?.dispose();
+    await _previewRecorderInstance?.dispose();
+    _recorderInstance = null;
+    _previewRecorderInstance = null;
     _instance = null;
   }
 

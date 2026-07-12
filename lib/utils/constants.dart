@@ -23,7 +23,7 @@ class AppConstants {
   static const String defaultModelOriginal =
       'https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/';
 
-  /// SharedPreferences 键名
+  /// 应用持久化存储键名
   static const String prefKeySettings = 'app_settings';
   static const String prefKeyArticles = 'articles_data';
   static const String prefKeyFolders = 'folders_data';

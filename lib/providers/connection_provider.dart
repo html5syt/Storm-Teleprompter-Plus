@@ -1,11 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../backend/backend_server.dart';
 import '../backend/ws_protocol.dart';
 import '../frontend/ws_client.dart';
 import '../services/network_info_service.dart';
+import '../services/app_preferences.dart';
 
 /// 连接模式
 enum ConnectionMode {
@@ -147,7 +147,7 @@ class ConnectionProvider with ChangeNotifier {
 
   Future<void> _loadRemoteConnectionHistory() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = await AppPreferences.getInstance();
       final raw = prefs.getString(_historyPrefsKey);
       if (raw == null || raw.isEmpty) return;
       final list = jsonDecode(raw) as List<dynamic>;
@@ -167,7 +167,7 @@ class ConnectionProvider with ChangeNotifier {
   }
 
   Future<void> _saveRemoteConnectionHistory() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferences.getInstance();
     await prefs.setString(
       _historyPrefsKey,
       jsonEncode(

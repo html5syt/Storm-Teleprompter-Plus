@@ -1,7 +1,7 @@
 import 'dart:convert';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../models/article.dart';
 import '../models/folder.dart';
+import '../services/app_preferences.dart';
 import '../utils/constants.dart';
 import 'ws_protocol.dart';
 import 'ws_server.dart';
@@ -9,13 +9,13 @@ import 'ws_server.dart';
 /// 稿件与文件夹管理后端服务
 ///
 /// 处理稿件和文件夹的 CRUD 操作，通过 WebSocket 向前端提供数据。
-/// 底层使用 SharedPreferences 持久化。
+/// 底层使用统一应用数据存储持久化。
 class ArticleService {
-  late SharedPreferences _prefs;
+  late AppPreferences _prefs;
 
   /// 初始化存储
   Future<void> init() async {
-    _prefs = await SharedPreferences.getInstance();
+    _prefs = await AppPreferences.getInstance();
   }
 
   /// 注册消息处理器到 WsServer

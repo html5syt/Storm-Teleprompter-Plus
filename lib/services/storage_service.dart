@@ -1,5 +1,5 @@
 import 'dart:convert';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'app_preferences.dart';
 import '../models/article.dart';
 import '../models/app_settings.dart';
 import '../models/folder.dart';
@@ -7,11 +7,11 @@ import '../utils/constants.dart';
 
 /// 本地存储服务
 ///
-/// 使用 SharedPreferences 实现稿件和设置的本地持久化。
+/// 使用统一应用数据存储实现稿件和设置的本地持久化。
 /// 无需后端服务，单次运行即可使用。
 class StorageService {
   static StorageService? _instance;
-  late SharedPreferences _prefs;
+  late AppPreferences _prefs;
 
   StorageService._();
 
@@ -19,7 +19,7 @@ class StorageService {
   static Future<StorageService> getInstance() async {
     if (_instance == null) {
       _instance = StorageService._();
-      _instance!._prefs = await SharedPreferences.getInstance();
+      _instance!._prefs = await AppPreferences.getInstance();
     }
     return _instance!;
   }

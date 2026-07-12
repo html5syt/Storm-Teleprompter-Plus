@@ -1,6 +1,6 @@
 import 'dart:convert';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../models/app_settings.dart';
+import '../services/app_preferences.dart';
 import '../utils/constants.dart';
 import 'ws_protocol.dart';
 import 'ws_server.dart';
@@ -9,11 +9,11 @@ import 'ws_server.dart';
 ///
 /// 处理应用设置和提词器设置的读取、保存和重置。
 class SettingsService {
-  late SharedPreferences _prefs;
+  late AppPreferences _prefs;
 
   /// 初始化存储
   Future<void> init() async {
-    _prefs = await SharedPreferences.getInstance();
+    _prefs = await AppPreferences.getInstance();
   }
 
   /// 注册消息处理器到 WsServer
