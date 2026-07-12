@@ -958,7 +958,15 @@ class SettingsPage extends StatelessWidget {
   ) async {
     final file = await openFile(
       acceptedTypeGroups: const [
-        XTypeGroup(label: 'Sherpa-Onnx 模型包', extensions: ['zip', 'bz2', 'tbz']),
+        XTypeGroup(
+          label: 'Sherpa-Onnx 模型包',
+          extensions: ['zip', 'bz2', 'tbz'],
+          mimeTypes: [
+            'application/zip',
+            'application/x-bzip2',
+            'application/x-bzip',
+          ],
+        ),
       ],
     );
     if (file == null || !context.mounted) return;
@@ -981,7 +989,10 @@ class SettingsPage extends StatelessWidget {
     );
     try {
       final asr = AsrService.instance;
-      final id = await asr.importModelArchive(file.path);
+      final id = await asr.importModelArchive(
+        file.path,
+        archiveName: file.name,
+      );
       final models = await asr.listAvailableModels();
       var importedName = file.name;
       for (final model in models) {
@@ -1035,61 +1046,48 @@ class SettingsPage extends StatelessWidget {
     BuildContext context,
     ConnectionProvider connection,
   ) {
-    return Consumer<SettingsProvider>(
-      builder: (context, settingsProvider, _) {
-        return Column(
-          children: [
-            SwitchListTile(
-              secondary: const Icon(Icons.wifi),
-              title: const Text('允许局域网连接'),
-              value: settingsProvider.settings.isLanPublished,
-              onChanged: (value) {
-                settingsProvider.setLanPublished(value);
-              },
-            ),
+    return Column(
+      children: [
+        ListTile(
+          leading: const Icon(Icons.info_outline),
+          title: const Text(
+            '服务端连接信息',
+            style: TextStyle(fontWeight: FontWeight.w800),
+          ),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => _showConnectionInfoDialog(context, connection),
+        ),
 
-            ListTile(
-              leading: const Icon(Icons.info_outline),
-              title: const Text(
-                '服务端连接信息',
-                style: TextStyle(fontWeight: FontWeight.w800),
-              ),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => _showConnectionInfoDialog(context, connection),
-            ),
-
-            ListTile(
-              leading: const Icon(Icons.devices),
-              title: const Text('已连接客户端'),
-              trailing: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 2,
-                    ),
-                    decoration: BoxDecoration(
-                      color: AppColors.primary.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      '${connection.deviceCount}',
-                      style: const TextStyle(
-                        color: AppColors.primary,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
+        ListTile(
+          leading: const Icon(Icons.devices),
+          title: const Text('已连接客户端'),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 2,
+                ),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  '${connection.deviceCount}',
+                  style: const TextStyle(
+                    color: AppColors.primary,
+                    fontWeight: FontWeight.w600,
                   ),
-                  const SizedBox(width: 8),
-                  const Icon(Icons.chevron_right),
-                ],
+                ),
               ),
-              onTap: () => _showDevicesDialog(context, connection),
-            ),
-          ],
-        );
-      },
+              const SizedBox(width: 8),
+              const Icon(Icons.chevron_right),
+            ],
+          ),
+          onTap: () => _showDevicesDialog(context, connection),
+        ),
+      ],
     );
   }
 

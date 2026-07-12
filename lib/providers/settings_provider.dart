@@ -520,13 +520,6 @@ class SettingsProvider with ChangeNotifier {
     );
   }
 
-  /// 设置局域网发布状态
-  Future<void> setLanPublished(bool value) async {
-    _settings = _settings.copyWith(isLanPublished: value);
-    notifyListeners();
-    await _saveSettings();
-  }
-
   Future<void> setAppBrightnessMode(AppBrightnessMode mode) async {
     _settings = _settings.copyWith(appBrightnessMode: mode);
     notifyListeners();

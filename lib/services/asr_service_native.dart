@@ -104,6 +104,32 @@ class _SystemProxyConfig {
   final String description;
 }
 
+enum _ModelArchiveFormat { zip, tarBzip2 }
+
+Future<_ModelArchiveFormat> _detectModelArchiveFormat(File file) async {
+  final input = await file.open();
+  try {
+    final header = await input.read(4);
+    if (header.length >= 3 &&
+        header[0] == 0x42 &&
+        header[1] == 0x5a &&
+        header[2] == 0x68) {
+      return _ModelArchiveFormat.tarBzip2;
+    }
+    if (header.length >= 4 &&
+        header[0] == 0x50 &&
+        header[1] == 0x4b &&
+        ((header[2] == 0x03 && header[3] == 0x04) ||
+            (header[2] == 0x05 && header[3] == 0x06) ||
+            (header[2] == 0x07 && header[3] == 0x08))) {
+      return _ModelArchiveFormat.zip;
+    }
+  } finally {
+    await input.close();
+  }
+  throw const FormatException('无法识别模型压缩包格式，仅支持 ZIP 和 TAR.BZ2');
+}
+
 Future<void> _extractModelArchiveWorker(List<Object> args) async {
   final sendPort = args[0] as SendPort;
   final archivePath = args[1] as String;
@@ -131,9 +157,9 @@ Future<void> _extractModelArchiveToDisk(
   Directory? temporaryDirectory;
   InputStream? archiveInput;
   try {
+    final format = await _detectModelArchiveFormat(File(archivePath));
     var decodedArchivePath = archivePath;
-    final lowerPath = archivePath.toLowerCase();
-    if (lowerPath.endsWith('.tar.bz2') || lowerPath.endsWith('.tbz')) {
+    if (format == _ModelArchiveFormat.tarBzip2) {
       temporaryDirectory = await Directory.systemTemp.createTemp(
         'storm_asr_model_',
       );
@@ -149,14 +175,12 @@ Future<void> _extractModelArchiveToDisk(
     }
 
     final Archive archive;
-    if (decodedArchivePath.toLowerCase().endsWith('.tar')) {
+    if (format == _ModelArchiveFormat.tarBzip2) {
       archiveInput = InputFileStream(decodedArchivePath);
       archive = TarDecoder().decodeStream(archiveInput);
-    } else if (lowerPath.endsWith('.zip')) {
+    } else {
       archiveInput = InputFileStream(archivePath);
       archive = ZipDecoder().decodeStream(archiveInput);
-    } else {
-      throw const FormatException('仅支持 .zip、.tar.bz2 和 .tbz 模型包');
     }
 
     final outputRoot = p.absolute(outputPath);
@@ -934,27 +958,25 @@ class AsrService with ChangeNotifier {
   Future<String> importModelArchive(
     String archivePath, {
     String? modelId,
+    String? archiveName,
   }) async {
     final source = File(archivePath);
     if (!await source.exists()) throw ArgumentError('模型文件不存在');
-    final lower = archivePath.toLowerCase();
-    final archiveName = source.uri.pathSegments.last;
-    final displayName = archiveName
+    await _detectModelArchiveFormat(source);
+    final sourceName = archiveName?.trim().isNotEmpty == true
+        ? archiveName!.trim()
+        : source.uri.pathSegments.last;
+    final displayName = sourceName
         .replaceFirst(RegExp(r'\.tar\.bz2$', caseSensitive: false), '')
         .replaceFirst(RegExp(r'\.zip$', caseSensitive: false), '')
-        .replaceFirst(RegExp(r'\.tbz$', caseSensitive: false), '');
+        .replaceFirst(RegExp(r'\.tbz$', caseSensitive: false), '')
+        .replaceFirst(RegExp(r'\.bz2$', caseSensitive: false), '');
     final resolvedId =
         ((modelId == null || modelId.trim().isEmpty)
                 ? displayName
                 : modelId.trim())
             .replaceAll(RegExp(r'[^a-zA-Z0-9_-]+'), '-');
     if (resolvedId.isEmpty) throw ArgumentError('无法确定模型 ID');
-
-    if (!lower.endsWith('.zip') &&
-        !lower.endsWith('.tar.bz2') &&
-        !lower.endsWith('.tbz')) {
-      throw const FormatException('仅支持 .zip、.tar.bz2 和 .tbz 模型包');
-    }
 
     final modelRoot = await _getModelDir();
     final target = Directory(p.join(modelRoot, resolvedId));

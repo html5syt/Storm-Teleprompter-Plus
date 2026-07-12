@@ -15,7 +15,7 @@ void main() {
         'storm_asr_model_test_',
       );
       final archiveFile = File(
-        '${temporaryDirectory.path}${Platform.pathSeparator}fixture.tar.bz2',
+        '${temporaryDirectory.path}${Platform.pathSeparator}android-cache-file',
       );
       final modelId =
           'test-imported-model-${DateTime.now().microsecondsSinceEpoch}';
@@ -41,7 +41,11 @@ void main() {
       await archiveFile.writeAsBytes(BZip2Encoder().encodeBytes(tarBytes));
 
       expect(
-        await service.importModelArchive(archiveFile.path, modelId: modelId),
+        await service.importModelArchive(
+          archiveFile.path,
+          modelId: modelId,
+          archiveName: 'fixture.tar.bz2',
+        ),
         modelId,
       );
       expect(await service.isModelDownloaded(modelId), isTrue);

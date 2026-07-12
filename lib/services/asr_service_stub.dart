@@ -119,6 +119,7 @@ class AsrService with ChangeNotifier {
   Future<String> importModelArchive(
     String archivePath, {
     String? modelId,
+    String? archiveName,
   }) async {
     throw UnsupportedError('ASR is not supported on Web.');
   }

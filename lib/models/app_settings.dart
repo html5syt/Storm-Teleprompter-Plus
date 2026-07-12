@@ -112,9 +112,6 @@ class AppSettings {
   /// 进度条显示 - 当前时间
   final bool progressShowCurrentTime;
 
-  /// 是否公开到局域网
-  final bool isLanPublished;
-
   /// 应用亮暗模式（不影响提词器播放页和编辑器页）
   final AppBrightnessMode appBrightnessMode;
 
@@ -155,7 +152,6 @@ class AppSettings {
     this.progressShowPercentage = true,
     this.progressShowSpeed = true,
     this.progressShowCurrentTime = true,
-    this.isLanPublished = false,
     this.appBrightnessMode = AppBrightnessMode.dark,
   });
 
@@ -207,7 +203,6 @@ class AppSettings {
       progressShowPercentage: json['progressShowPercentage'] as bool? ?? true,
       progressShowSpeed: json['progressShowSpeed'] as bool? ?? true,
       progressShowCurrentTime: json['progressShowCurrentTime'] as bool? ?? true,
-      isLanPublished: json['isLanPublished'] as bool? ?? false,
       appBrightnessMode: AppBrightnessMode.values.firstWhere(
         (e) => e.name == json['appBrightnessMode'],
         orElse: () => AppBrightnessMode.dark,
@@ -254,7 +249,6 @@ class AppSettings {
       'progressShowPercentage': progressShowPercentage,
       'progressShowSpeed': progressShowSpeed,
       'progressShowCurrentTime': progressShowCurrentTime,
-      'isLanPublished': isLanPublished,
       'appBrightnessMode': appBrightnessMode.name,
     };
   }
@@ -297,7 +291,6 @@ class AppSettings {
     bool? progressShowPercentage,
     bool? progressShowSpeed,
     bool? progressShowCurrentTime,
-    bool? isLanPublished,
     AppBrightnessMode? appBrightnessMode,
   }) {
     return AppSettings(
@@ -345,7 +338,6 @@ class AppSettings {
       progressShowSpeed: progressShowSpeed ?? this.progressShowSpeed,
       progressShowCurrentTime:
           progressShowCurrentTime ?? this.progressShowCurrentTime,
-      isLanPublished: isLanPublished ?? this.isLanPublished,
       appBrightnessMode: appBrightnessMode ?? this.appBrightnessMode,
     );
   }
@@ -416,7 +408,6 @@ class AppSettings {
       progressShowCurrentTime:
           overrides['progressShowCurrentTime'] as bool? ??
           progressShowCurrentTime,
-      isLanPublished: isLanPublished,
       appBrightnessMode: appBrightnessMode,
     );
   }
