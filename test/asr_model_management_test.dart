@@ -36,7 +36,7 @@ void main() {
         ..addFile(ArchiveFile.string('fixture/tokens.txt', 'a 0'))
         ..addFile(ArchiveFile('fixture/encoder.onnx', 1, [0]))
         ..addFile(ArchiveFile('fixture/decoder.onnx', 1, [0]))
-        ..addFile(ArchiveFile.symlink('fixture/test_wavs/*', '0.wav'));
+        ..addFile(ArchiveFile.symlink('fixture/test_wavs', '*'));
       final tarBytes = TarEncoder().encodeBytes(archive);
       await archiveFile.writeAsBytes(BZip2Encoder().encodeBytes(tarBytes));
 

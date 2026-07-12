@@ -205,7 +205,10 @@ Future<bool> _hasRequiredModelFiles(Directory directory) async {
   var hasTokens = false;
   var hasEncoder = false;
   var hasDecoder = false;
-  await for (final entity in directory.list(recursive: true)) {
+  await for (final entity in directory.list(
+    recursive: true,
+    followLinks: false,
+  )) {
     if (entity is! File) continue;
     final name = entity.uri.pathSegments.last.toLowerCase();
     hasTokens |= name == 'tokens.txt';
@@ -1006,7 +1009,9 @@ class AsrService with ChangeNotifier {
 
     try {
       // 查找模型文件 —— 按文件名关键词匹配
-      final files = await dir.list(recursive: true).toList();
+      final files = await dir
+          .list(recursive: true, followLinks: false)
+          .toList();
       String? tokensPath;
       String? encoderPath;
       String? decoderPath;
