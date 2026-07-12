@@ -685,7 +685,6 @@ class _TeleprompterSettingsPanelState extends State<TeleprompterSettingsPanel> {
       dense: true,
       secondary: const Icon(Icons.format_bold, size: 20),
       title: const Text('默认加粗', style: TextStyle(fontSize: 14)),
-      subtitle: const Text('正文字体默认加粗', style: TextStyle(fontSize: 12)),
       value: settings.defaultBold,
       onChanged: (_) => provider.toggleDefaultBold(),
     );
@@ -724,10 +723,6 @@ class _TeleprompterSettingsPanelState extends State<TeleprompterSettingsPanel> {
           dense: true,
           secondary: const Icon(Icons.format_bold, size: 20),
           title: const Text('当前字加粗', style: TextStyle(fontSize: 14)),
-          subtitle: const Text(
-            '高亮加粗当前正在阅读的字（默认关）',
-            style: TextStyle(fontSize: 12),
-          ),
           value: settings.highlightCurrentChar,
           onChanged: (_) => provider.toggleHighlightCurrentChar(),
         ),
@@ -736,10 +731,6 @@ class _TeleprompterSettingsPanelState extends State<TeleprompterSettingsPanel> {
           dense: true,
           secondary: const Icon(Icons.format_underlined, size: 20),
           title: const Text('当前字加下划线', style: TextStyle(fontSize: 14)),
-          subtitle: const Text(
-            '为当前字添加下划线效果（默认关）',
-            style: TextStyle(fontSize: 12),
-          ),
           value: settings.underlineCurrentChar,
           onChanged: (_) => provider.toggleUnderlineCurrentChar(),
         ),

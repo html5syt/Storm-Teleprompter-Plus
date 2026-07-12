@@ -64,6 +64,10 @@ dependency_overrides:
   # 2.2.0 starts capture but emits no stream data on Windows audio devices.
   record_windows:
     path: third_party/record_windows
+  # Upstream duplicates selected files into a byte[] before returning the streamed cache path,
+  # which causes Android OOM failures for large ASR model archives.
+  file_selector_android:
+    path: third_party/file_selector_android
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

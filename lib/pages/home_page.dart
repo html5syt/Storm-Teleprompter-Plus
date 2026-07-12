@@ -1266,7 +1266,6 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
               ListTile(
                 leading: const Icon(Icons.upload_file),
                 title: const Text('导入文件'),
-                subtitle: const Text('批量选择 TXT / DOCX 稿件'),
                 onTap: () {
                   Navigator.pop(ctx);
                   unawaited(_importFilesFromMenu());
@@ -1275,7 +1274,6 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
               ListTile(
                 leading: const Icon(Icons.folder_copy),
                 title: const Text('导入文件夹'),
-                subtitle: const Text('可多选并保留原目录层级'),
                 onTap: () {
                   Navigator.pop(ctx);
                   unawaited(_importFoldersFromMenu());

@@ -12,6 +12,7 @@ import '../providers/settings_provider.dart';
 import '../providers/connection_provider.dart';
 import '../services/asr_service.dart';
 import '../services/font_service.dart';
+import '../services/selected_file_cleanup.dart';
 import '../theme/app_colors.dart';
 import '../widgets/about_settings_section.dart';
 
@@ -456,7 +457,6 @@ class SettingsPage extends StatelessWidget {
         ListTile(
           leading: const Icon(Icons.file_upload_outlined),
           title: const Text('从本地导入模型'),
-          subtitle: const Text('支持 Sherpa-Onnx .zip、.tar.bz2 模型包'),
           onTap: () => _importAsrModel(context, provider),
         ),
         ListTile(
@@ -1002,6 +1002,8 @@ class SettingsPage extends StatelessWidget {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('导入失败：$error')));
+    } finally {
+      await cleanupTemporarySelectedFile(file.path);
     }
   }
 
@@ -1040,11 +1042,6 @@ class SettingsPage extends StatelessWidget {
             SwitchListTile(
               secondary: const Icon(Icons.wifi),
               title: const Text('允许局域网连接'),
-              subtitle: Text(
-                settingsProvider.settings.isLanPublished
-                    ? '服务端可被局域网访问'
-                    : '仅本机使用',
-              ),
               value: settingsProvider.settings.isLanPublished,
               onChanged: (value) {
                 settingsProvider.setLanPublished(value);
@@ -1057,7 +1054,6 @@ class SettingsPage extends StatelessWidget {
                 '服务端连接信息',
                 style: TextStyle(fontWeight: FontWeight.w800),
               ),
-              subtitle: Text(connection.connectionInfoText),
               trailing: const Icon(Icons.chevron_right),
               onTap: () => _showConnectionInfoDialog(context, connection),
             ),
@@ -1152,7 +1148,6 @@ class SettingsPage extends StatelessWidget {
                     ListTile(
                       leading: const Icon(Icons.computer, size: 20),
                       title: Text('本机 (${connection.clientId ?? "未知"})'),
-                      subtitle: const Text('本机客户端'),
                       dense: true,
                     ),
                     if (remoteDeviceIds.isNotEmpty) const Divider(),
@@ -1160,7 +1155,6 @@ class SettingsPage extends StatelessWidget {
                       (deviceId) => ListTile(
                         leading: const Icon(Icons.devices_other, size: 20),
                         title: Text(deviceId),
-                        subtitle: const Text('客户端'),
                         dense: true,
                       ),
                     ),
@@ -1168,7 +1162,6 @@ class SettingsPage extends StatelessWidget {
                       const ListTile(
                         leading: Icon(Icons.info_outline, size: 20),
                         title: Text('暂无传入连接'),
-                        subtitle: Text('当前设备'),
                         dense: true,
                       ),
                   ],
