@@ -2,7 +2,7 @@
 <!-- <h1 align="center">飓风提词器 Plus</h1> -->
 <p align="center"><strong>Storm Teleprompter+</strong></p>
 
-<p align="center"><img style="width: 400px; height: auto;;" src="head_pic.png" /></p>
+<p align="center"><img style="width: 400px; height: auto;" src="head_pic.png" /></p>
 
 <p align="center">
   <a href="https://github.com/html5syt/Storm-Teleprompter-Plus/actions/workflows/debug.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/html5syt/Storm-Teleprompter-Plus/debug.yml?branch=v2&amp;style=flat-square&amp;logo=githubactions&amp;logoColor=white&amp;label=build" /></a>
