@@ -15,6 +15,7 @@ import 'providers/connection_provider.dart';
 import 'theme/app_colors.dart';
 import 'theme/app_theme.dart';
 import 'pages/home_page.dart';
+import 'utils/constants.dart';
 
 /// 全局 BackendServer 实例（用于多客户端检测）
 late BackendServer globalBackendServer;
@@ -125,7 +126,7 @@ class StormTeleprompterApp extends StatelessWidget {
                 AppBrightnessMode.dark => ThemeMode.dark,
               };
           return MaterialApp(
-            title: '飓风提词器 Plus',
+            title: AppConstants.displayName,
             debugShowCheckedModeBanner: false,
             localizationsDelegates:
                 quill.FlutterQuillLocalizations.localizationsDelegates,

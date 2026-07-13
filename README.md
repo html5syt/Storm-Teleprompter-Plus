@@ -1,6 +1,17 @@
-<img align="right" width="120" height="120" src="lib/favicon.png" />
-<h1 align="center">飓风提词器 Plus</h1>
+<!-- <img align="right" width="120" height="120" src="lib/favicon.png" /> -->
+<!-- <h1 align="center">飓风提词器 Plus</h1> -->
 <p align="center"><strong>Storm Teleprompter+</strong></p>
+
+<p align="center"><img style="width: 400px; height: auto;;" src="head_pic.png" /></p>
+
+<p align="center">
+  <a href="https://github.com/html5syt/Storm-Teleprompter-Plus/actions/workflows/debug.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/html5syt/Storm-Teleprompter-Plus/debug.yml?branch=v2&amp;style=flat-square&amp;logo=githubactions&amp;logoColor=white&amp;label=build" /></a>
+  <a href="https://flutter.dev/"><img alt="Flutter 3.44.1" src="https://img.shields.io/badge/Flutter-3.44.1-02569B?style=flat-square&amp;logo=flutter&amp;logoColor=white" /></a>
+  <a href="https://github.com/html5syt/Storm-Teleprompter-Plus/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/html5syt/Storm-Teleprompter-Plus?style=flat-square&amp;display_name=tag&amp;sort=semver" /></a>
+  <a href="https://github.com/html5syt/Storm-Teleprompter-Plus/releases"><img alt="Total downloads" src="https://img.shields.io/github/downloads/html5syt/Storm-Teleprompter-Plus/total?style=flat-square&amp;logo=github" /></a>
+  <a href="LICENSE"><img alt="License" src="https://img.shields.io/github/license/html5syt/Storm-Teleprompter-Plus?style=flat-square" /></a>
+  <a href="https://github.com/html5syt/Storm-Teleprompter-Plus/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/html5syt/Storm-Teleprompter-Plus?style=flat-square&amp;logo=github" /></a>
+</p>
 
 基于 Flutter 开发的跨平台提词器，提供富文本稿件管理、自动滚动、离线语音跟随、分光镜镜像显示，以及局域网多设备同步。
 

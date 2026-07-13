@@ -3,9 +3,9 @@ import 'package:storm_teleprompter_plus/backend/asr_session_service.dart';
 import 'package:storm_teleprompter_plus/backend/ws_protocol.dart';
 import 'package:storm_teleprompter_plus/models/app_settings.dart';
 import 'package:storm_teleprompter_plus/providers/settings_provider.dart';
-import 'package:storm_teleprompter_plus/services/alignment_engine.dart';
+import 'package:storm_teleprompter_plus/services/asr/alignment_engine.dart';
 import 'package:storm_teleprompter_plus/services/asr_service.dart';
-import 'package:storm_teleprompter_plus/services/asr_transcript_normalizer.dart';
+import 'package:storm_teleprompter_plus/services/asr/asr_transcript_normalizer.dart';
 
 void main() {
   group('ASR settings', () {

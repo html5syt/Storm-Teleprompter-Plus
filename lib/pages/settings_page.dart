@@ -19,10 +19,10 @@ import '../services/backup_file_service.dart';
 import '../services/font_service.dart';
 import '../services/selected_file_cleanup.dart';
 import '../theme/app_colors.dart';
-import '../widgets/about_settings_section.dart';
+import '../widgets/settings/about_settings_section.dart';
 
-part 'settings_asr_advanced_dialog.dart';
-part 'settings_backup_section.dart';
+part 'settings/settings_asr_advanced_dialog.dart';
+part 'settings/settings_backup_section.dart';
 
 /// 应用设置页面
 ///

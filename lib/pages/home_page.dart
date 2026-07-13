@@ -20,16 +20,17 @@ import '../models/article.dart';
 import '../models/app_settings.dart';
 import '../models/folder.dart';
 import '../theme/app_colors.dart';
+import '../utils/constants.dart';
 import '../main.dart';
 import 'teleprompter_page.dart';
 import 'editor_page.dart';
 import 'settings_page.dart';
 
-part 'home_logic.dart';
-part 'home_breadcrumb_bar.dart';
-part 'home_move_dialog.dart';
-part 'home_auxiliary_widgets.dart';
-part 'home_import_overlay.dart';
+part 'home/home_logic.dart';
+part 'home/home_breadcrumb_bar.dart';
+part 'home/home_move_dialog.dart';
+part 'home/home_auxiliary_widgets.dart';
+part 'home/home_import_overlay.dart';
 
 /// 视图模式
 enum ViewMode { largeIcons, smallIcons, list, details }
@@ -222,7 +223,8 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
     BuildContext context,
     ConnectionProvider connection,
   ) {
-    final isNarrow = MediaQuery.sizeOf(context).width < 600;
+    final isNarrow =
+        MediaQuery.sizeOf(context).width < LayoutConstants.compactBreakpoint;
 
     return AppBar(
       leadingWidth: 120,
@@ -267,7 +269,7 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
       title: isNarrow
           ? null
           : const Text(
-              '飓风提词器 Plus',
+              AppConstants.displayName,
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
             ),
       titleSpacing: 0,

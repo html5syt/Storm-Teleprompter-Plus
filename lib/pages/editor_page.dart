@@ -23,7 +23,7 @@ import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
 import 'teleprompter_page.dart';
 
-part 'editor_logic.dart';
+part 'editor/editor_logic.dart';
 
 class EditorPage extends StatefulWidget {
   final Article? article;

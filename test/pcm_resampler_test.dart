@@ -1,7 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:storm_teleprompter_plus/services/pcm_resampler.dart';
+import 'package:storm_teleprompter_plus/services/asr/pcm_resampler.dart';
 
 void main() {
   test('resamples 48 kHz PCM to 16 kHz', () {

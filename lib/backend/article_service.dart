@@ -468,7 +468,7 @@ class ArticleService {
 
   /// 获取所有稿件列表
   Future<List<Article>> loadArticles() async {
-    final jsonStr = _prefs.getString(AppConstants.prefKeyArticles);
+    final jsonStr = _prefs.getString(StorageConstants.articlesKey);
     if (jsonStr == null || jsonStr.isEmpty) return [];
 
     try {
@@ -486,7 +486,7 @@ class ArticleService {
   /// 保存全部稿件
   Future<void> _saveArticles(List<Article> articles) async {
     final jsonStr = jsonEncode(articles.map((a) => a.toJson()).toList());
-    await _prefs.setString(AppConstants.prefKeyArticles, jsonStr);
+    await _prefs.setString(StorageConstants.articlesKey, jsonStr);
   }
 
   Future<void> replaceArticles(List<Article> articles) =>
@@ -567,7 +567,7 @@ class ArticleService {
 
   /// 获取所有文件夹
   Future<List<Folder>> loadFolders() async {
-    final jsonStr = _prefs.getString(AppConstants.prefKeyFolders);
+    final jsonStr = _prefs.getString(StorageConstants.foldersKey);
     if (jsonStr == null || jsonStr.isEmpty) return [];
 
     try {
@@ -583,7 +583,7 @@ class ArticleService {
   /// 保存全部文件夹
   Future<void> _saveFolders(List<Folder> folders) async {
     final jsonStr = jsonEncode(folders.map((f) => f.toJson()).toList());
-    await _prefs.setString(AppConstants.prefKeyFolders, jsonStr);
+    await _prefs.setString(StorageConstants.foldersKey, jsonStr);
   }
 
   Future<void> replaceFolders(List<Folder> folders) => _saveFolders(folders);

@@ -6,6 +6,7 @@ import '../backend/ws_protocol.dart';
 import '../frontend/ws_client.dart';
 import '../services/network_info_service.dart';
 import '../services/app_preferences.dart';
+import '../utils/constants.dart';
 
 /// 连接模式
 enum ConnectionMode {
@@ -25,8 +26,6 @@ enum ConnectionMode {
 /// 前端默认连接到程序自身创建的后端。
 /// 改连接到远程后端时，停止本机持有的后端实例。
 class ConnectionProvider with ChangeNotifier {
-  static const _historyPrefsKey = 'remote_connection_history';
-  static const _maxRemoteConnectionHistory = 5;
   final WsClient client = WsClient();
 
   ConnectionMode _mode = ConnectionMode.disconnected;
@@ -148,7 +147,7 @@ class ConnectionProvider with ChangeNotifier {
   Future<void> _loadRemoteConnectionHistory() async {
     try {
       final prefs = await AppPreferences.getInstance();
-      final raw = prefs.getString(_historyPrefsKey);
+      final raw = prefs.getString(StorageConstants.remoteConnectionHistoryKey);
       if (raw == null || raw.isEmpty) return;
       final list = jsonDecode(raw) as List<dynamic>;
       _remoteConnectionHistory = list
@@ -158,7 +157,7 @@ class ConnectionProvider with ChangeNotifier {
             ),
           )
           .where((record) => record.host.isNotEmpty && record.port > 0)
-          .take(_maxRemoteConnectionHistory)
+          .take(NetworkConstants.maxRemoteConnectionHistory)
           .toList(growable: false);
       notifyListeners();
     } catch (e) {
@@ -169,7 +168,7 @@ class ConnectionProvider with ChangeNotifier {
   Future<void> _saveRemoteConnectionHistory() async {
     final prefs = await AppPreferences.getInstance();
     await prefs.setString(
-      _historyPrefsKey,
+      StorageConstants.remoteConnectionHistoryKey,
       jsonEncode(
         _remoteConnectionHistory.map((item) => item.toJson()).toList(),
       ),
@@ -187,7 +186,7 @@ class ConnectionProvider with ChangeNotifier {
       ..._remoteConnectionHistory.where(
         (item) => item.host != normalizedHost || item.port != port,
       ),
-    ].take(_maxRemoteConnectionHistory).toList(growable: false);
+    ].take(NetworkConstants.maxRemoteConnectionHistory).toList(growable: false);
     notifyListeners();
     await _saveRemoteConnectionHistory();
   }
@@ -197,12 +196,12 @@ class ConnectionProvider with ChangeNotifier {
     if (client.isConnected || canRetryRemoteConnection) {
       await client.disconnect();
     }
-    _remoteHost = 'localhost';
+    _remoteHost = NetworkConstants.loopbackHost;
     _remotePort = port;
     _lastError = null;
 
     try {
-      await client.connect(host: 'localhost', port: port);
+      await client.connect(host: NetworkConstants.loopbackHost, port: port);
       _mode = ConnectionMode.local;
       _lastError = null;
       _setupMessageListener();

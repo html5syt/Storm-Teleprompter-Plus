@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
-import 'package:storm_teleprompter_plus/services/import_service_io.dart';
+import 'package:storm_teleprompter_plus/services/files/import_service_io.dart';
 
 void main() {
   test('imports exported HTML without changing rich text', () async {

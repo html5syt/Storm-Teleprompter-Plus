@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import '../backend/ws_protocol.dart';
+import '../utils/constants.dart';
 
 /// WebSocket 客户端
 ///
@@ -36,7 +37,10 @@ class WsClient {
   ///
   /// [host] 服务器地址，默认 localhost
   /// [port] 服务器端口
-  Future<void> connect({String host = 'localhost', required int port}) async {
+  Future<void> connect({
+    String host = NetworkConstants.loopbackHost,
+    required int port,
+  }) async {
     if (_isConnected) {
       debugPrint('[WsClient] 已连接，先断开');
       await disconnect();

@@ -17,11 +17,11 @@ import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
 import '../services/asr_service.dart';
 import '../utils/constants.dart';
-import '../widgets/teleprompter_text_layer.dart';
-import '../widgets/teleprompter_settings_panel.dart';
+import '../widgets/teleprompter/teleprompter_text_layer.dart';
+import '../widgets/teleprompter/teleprompter_settings_panel.dart';
 import 'settings_page.dart';
 
-part 'teleprompter_logic.dart';
+part 'teleprompter/teleprompter_logic.dart';
 
 /// 提词器主页面
 ///
@@ -714,7 +714,7 @@ class _TeleprompterPageState extends State<TeleprompterPage>
   }) {
     final settings = settingsProvider.mergedSettings;
     final screenWidth = MediaQuery.sizeOf(context).width;
-    final isCompact = screenWidth < 600;
+    final isCompact = screenWidth < LayoutConstants.compactBreakpoint;
     final horizontalInset = isCompact ? 8.0 : 32.0;
 
     return AnimatedPositioned(
@@ -949,7 +949,7 @@ class _TeleprompterPageState extends State<TeleprompterPage>
     showModalBottomSheet(
       context: context,
       builder: (ctx) {
-        final presets = [60, 80, 100, 120, 150, 180, 200, 250, 300, 400];
+        const presets = TeleprompterConstants.speedPresets;
         return SafeArea(
           child: ConstrainedBox(
             constraints: BoxConstraints(
@@ -1378,9 +1378,10 @@ class _TeleprompterPageState extends State<TeleprompterPage>
   Widget _buildReadingLine(BuildContext context, AppSettings settings) {
     final screenHeight = MediaQuery.of(context).size.height;
     final screenWidth = MediaQuery.of(context).size.width;
-    final isMobile = screenWidth < 600;
-    // 使用可配置的阅读线偏移，默认 0.25（桌面）或 0.30（移动）
-    final defaultRatio = isMobile ? 0.30 : 0.25;
+    final isMobile = screenWidth < LayoutConstants.compactBreakpoint;
+    final defaultRatio = isMobile
+        ? TeleprompterConstants.readingLineRatioMobile
+        : TeleprompterConstants.readingLineRatioDesktop;
     final readingLineY =
         screenHeight *
         (settings.readingLineOffset > 0
@@ -1391,7 +1392,9 @@ class _TeleprompterPageState extends State<TeleprompterPage>
     // 阅读区域高度 = 3 行（与原版一致，修正 padding 的影响）
     final areaHeight = perLineHeight * 3 - 2; // 略减2px避免与上下行边界重叠
     // 水平边距计算（与文本层一致）
-    final basePadding = isMobile ? 16.0 : 64.0;
+    final basePadding = isMobile
+        ? TeleprompterConstants.mobileHorizontalPadding
+        : TeleprompterConstants.desktopHorizontalPadding;
     final extraPadding = screenWidth * settings.paddingX / 100;
     final horizontalPadding = basePadding + extraPadding;
 

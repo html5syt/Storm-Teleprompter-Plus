@@ -1,7 +1,7 @@
 import 'dart:async';
 
-import '../services/alignment_engine.dart';
-import '../services/asr_transcript_normalizer.dart';
+import '../services/asr/alignment_engine.dart';
+import '../services/asr/asr_transcript_normalizer.dart';
 import '../services/asr_service.dart';
 import '../services/text_parser.dart';
 import 'settings_service.dart';

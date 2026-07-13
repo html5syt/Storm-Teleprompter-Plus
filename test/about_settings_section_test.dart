@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:storm_teleprompter_plus/services/app_release_service.dart';
-import 'package:storm_teleprompter_plus/widgets/about_settings_section.dart';
+import 'package:storm_teleprompter_plus/widgets/settings/about_settings_section.dart';
 
 void main() {
   test('local development version resolves to the Git commit hash', () async {

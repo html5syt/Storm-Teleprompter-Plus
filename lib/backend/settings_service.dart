@@ -102,7 +102,7 @@ class SettingsService {
 
   /// 加载应用设置
   Future<AppSettings> loadSettings() async {
-    final jsonStr = _prefs.getString(AppConstants.prefKeySettings);
+    final jsonStr = _prefs.getString(StorageConstants.settingsKey);
     if (jsonStr == null || jsonStr.isEmpty) return const AppSettings();
 
     try {
@@ -116,6 +116,6 @@ class SettingsService {
   /// 保存应用设置
   Future<void> saveSettings(AppSettings settings) async {
     final jsonStr = jsonEncode(settings.toJson());
-    await _prefs.setString(AppConstants.prefKeySettings, jsonStr);
+    await _prefs.setString(StorageConstants.settingsKey, jsonStr);
   }
 }

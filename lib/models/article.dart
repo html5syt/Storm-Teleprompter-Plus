@@ -1,7 +1,6 @@
 /// 稿件数据模型
 ///
-/// 对应原始项目中的 Article 接口，存储提词器稿件信息。
-/// 本地使用 JSON 文件持久化，无需后端服务。
+/// 存储提词器稿件信息。
 class Article {
   final String id;
   final String title;

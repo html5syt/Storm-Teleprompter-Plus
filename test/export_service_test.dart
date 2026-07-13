@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:storm_teleprompter_plus/models/article.dart';
 import 'package:storm_teleprompter_plus/models/folder.dart';
-import 'package:storm_teleprompter_plus/services/export_service_io.dart';
+import 'package:storm_teleprompter_plus/services/files/export_service_io.dart';
 
 void main() {
   test('exports selected folders with descendants and hierarchy', () async {
