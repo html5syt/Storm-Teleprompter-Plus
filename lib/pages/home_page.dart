@@ -49,6 +49,12 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
   bool _isClosingWindow = false;
 
+  bool get _isDesktopPlatform =>
+      !kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.windows ||
+          defaultTargetPlatform == TargetPlatform.macOS ||
+          defaultTargetPlatform == TargetPlatform.linux);
+
   IconData get _viewModeIcon {
     switch (_viewMode) {
       case ViewMode.largeIcons:
@@ -65,10 +71,7 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
   @override
   void initState() {
     super.initState();
-    if (!kIsWeb &&
-        (defaultTargetPlatform == TargetPlatform.windows ||
-            defaultTargetPlatform == TargetPlatform.macOS ||
-            defaultTargetPlatform == TargetPlatform.linux)) {
+    if (_isDesktopPlatform) {
       unawaited(_initWindowCloseGuard());
     }
   }
@@ -81,10 +84,7 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
 
   @override
   void dispose() {
-    if (!kIsWeb &&
-        (defaultTargetPlatform == TargetPlatform.windows ||
-            defaultTargetPlatform == TargetPlatform.macOS ||
-            defaultTargetPlatform == TargetPlatform.linux)) {
+    if (_isDesktopPlatform) {
       windowManager.removeListener(this);
     }
     super.dispose();
@@ -97,14 +97,20 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
 
   Future<void> _handleWindowClose() async {
     if (_isClosingWindow) return;
-    final connection = context.read<ConnectionProvider>();
     final shouldClose = await _confirmLocalBackendShutdown(
       context,
       actionLabel: '关闭服务端',
     );
     if (!shouldClose || !mounted) return;
 
+    await _shutdownAndExitApplication();
+  }
+
+  @override
+  Future<void> _shutdownAndExitApplication() async {
+    if (_isClosingWindow || !mounted) return;
     _isClosingWindow = true;
+    final connection = context.read<ConnectionProvider>();
     unawaited(
       showDialog<void>(
         context: context,
@@ -121,7 +127,11 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
     await Future<void>.delayed(const Duration(milliseconds: 80));
     await connection.stopLocalAndDisconnect();
     await globalBackendServer.shutdownApplication();
-    await windowManager.destroy();
+    if (_isDesktopPlatform) {
+      await windowManager.destroy();
+    } else if (!kIsWeb) {
+      await SystemNavigator.pop();
+    }
   }
 
   String get _viewModeTooltip {

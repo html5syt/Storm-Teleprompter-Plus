@@ -33,6 +33,7 @@ enum _ClipboardOp { cut, copy }
 /// 首页逻辑 mixin
 mixin HomeLogic on State<HomePage> {
   void _showFabMenu(BuildContext context, ConnectionProvider connection);
+  Future<void> _shutdownAndExitApplication();
 
   // ─── 搜索 ─────────────────────────────────────────────
   final TextEditingController searchController = TextEditingController();
@@ -1598,7 +1599,7 @@ mixin HomeLogic on State<HomePage> {
       actionLabel: '退出服务端',
     );
     if (!mounted || !context.mounted || !shouldExit) return;
-    Navigator.pop(context);
+    await _shutdownAndExitApplication();
   }
 
   Future<bool> _confirmLocalBackendShutdown(
