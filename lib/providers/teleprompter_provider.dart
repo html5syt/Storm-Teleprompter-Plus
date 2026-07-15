@@ -131,7 +131,11 @@ class TeleprompterProvider with ChangeNotifier {
     _asrError = message.data['error'] as String?;
     final index = (message.data['currentIndex'] as num?)?.toInt();
     final allowBackward = message.data['allowBackward'] as bool? ?? false;
-    if (index != null &&
+    // 启动、暂停和状态消息中的位置只是服务端快照，可能晚于用户的手动移动。
+    // 只有播放中的真实识别结果可以推进或确认当前字。
+    if (message.type == WsMessageType.asrResult &&
+        isPlaying &&
+        index != null &&
         index >= 0 &&
         (index >= _currentIndex || allowBackward)) {
       _currentIndex = _normalizeRawIndex(index);
@@ -174,40 +178,26 @@ class TeleprompterProvider with ChangeNotifier {
 
   /// 同步当前状态到后端
   void _syncToBackend({bool reliable = false}) {
-    if (_connection == null ||
-        !_connection!.isConnected ||
-        !_connection!.isLocal) {
+    final connection = _connection;
+    if (connection == null || !connection.isConnected || !connection.isLocal) {
       return;
     }
-    if (!reliable && _connection!.remoteDeviceIds.isEmpty) {
+    final asrNeedsAnchorSync = _activeAutoMode == ScrollMode.asr;
+    if (!reliable &&
+        !asrNeedsAnchorSync &&
+        connection.remoteDeviceIds.isEmpty) {
       return;
     }
-    final data = {
-      'currentIndex': _currentIndex,
-      'isPlaying': isPlaying,
-      'articleId': _articleId,
-    };
+    final data = _currentSyncData();
     if (reliable) {
-      _lastRealtimeSyncMs = DateTime.now().millisecondsSinceEpoch;
-      try {
-        unawaited(
-          _connection!
-              .request(
-                WsMessageType.teleprompterSync,
-                data: data,
-                timeout: const Duration(milliseconds: 900),
-              )
-              .then<void>(
-                (_) {},
-                onError: (Object error, StackTrace stackTrace) {
-                  debugPrint('[TeleprompterProvider] 可靠同步失败: $error');
-                  _sendSyncMessage(data);
-                },
-              ),
-        );
-      } catch (error) {
-        debugPrint('[TeleprompterProvider] 启动可靠同步失败: $error');
-      }
+      unawaited(_syncToBackendReliably(data));
+      return;
+    }
+
+    // ASR 对齐依赖服务端游标。手动移动时必须立即更新锚点，不能被面向
+    // 远程客户端的 50ms 实时同步节流跳过。
+    if (asrNeedsAnchorSync) {
+      _sendSyncMessage(data);
       return;
     }
 
@@ -216,6 +206,32 @@ class TeleprompterProvider with ChangeNotifier {
     _lastRealtimeSyncMs = nowMs;
 
     _sendSyncMessage(data);
+  }
+
+  Map<String, dynamic> _currentSyncData() {
+    return {
+      'currentIndex': _currentIndex,
+      'isPlaying': isPlaying,
+      'articleId': _articleId,
+    };
+  }
+
+  Future<void> _syncToBackendReliably(Map<String, dynamic> data) async {
+    final connection = _connection;
+    if (connection == null || !connection.isConnected || !connection.isLocal) {
+      return;
+    }
+    _lastRealtimeSyncMs = DateTime.now().millisecondsSinceEpoch;
+    try {
+      await connection.request(
+        WsMessageType.teleprompterSync,
+        data: data,
+        timeout: const Duration(milliseconds: 900),
+      );
+    } catch (error) {
+      debugPrint('[TeleprompterProvider] 可靠同步失败: $error');
+      _sendSyncMessage(data);
+    }
   }
 
   void _sendSyncMessage(Map<String, dynamic> data) {
@@ -600,16 +616,24 @@ class TeleprompterProvider with ChangeNotifier {
     }
     _asrStatus = 'loading';
     _asrError = null;
-    unawaited(
-      connection
-          .request(WsMessageType.asrStart, timeout: const Duration(minutes: 2))
-          .then(_applyAsrMessage)
-          .catchError((Object error) {
-            _asrStatus = 'error';
-            _asrError = error.toString();
-            notifyListeners();
-          }),
-    );
+    unawaited(_startAsrAfterCursorSync(connection));
+  }
+
+  Future<void> _startAsrAfterCursorSync(ConnectionProvider connection) async {
+    try {
+      // 恢复识别前先等待服务端接受当前字，避免 ASR 使用暂停前的旧锚点。
+      await _syncToBackendReliably(_currentSyncData());
+      if (!isPlaying || _activeAutoMode != ScrollMode.asr) return;
+      final response = await connection.request(
+        WsMessageType.asrStart,
+        timeout: const Duration(minutes: 2),
+      );
+      _applyAsrMessage(response);
+    } catch (error) {
+      _asrStatus = 'error';
+      _asrError = error.toString();
+      notifyListeners();
+    }
   }
 
   void _stopAsr() {
