@@ -1347,7 +1347,7 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
                   title: const Text('粘贴'),
                   onTap: () {
                     Navigator.pop(ctx);
-                    _pasteItems();
+                    unawaited(_pasteItems());
                   },
                 ),
               ],

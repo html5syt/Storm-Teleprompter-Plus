@@ -82,7 +82,9 @@ class _EditorPageState extends State<EditorPage> with EditorLogic {
               child: Tooltip(
                 message: '开始提词 (Ctrl+Alt+S)',
                 child: FilledButton.icon(
-                  onPressed: isSaving ? null : quickStartTeleprompter,
+                  onPressed: canStartTeleprompter
+                      ? quickStartTeleprompter
+                      : null,
                   icon: const Icon(Icons.play_arrow),
                   label: const Text('开始提词'),
                 ),

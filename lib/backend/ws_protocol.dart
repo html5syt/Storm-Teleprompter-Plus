@@ -30,6 +30,10 @@ enum WsMessageType {
   folderRenameResponse('folder:rename_response'),
   folderDelete('folder:delete'),
   folderDeleteResponse('folder:delete_response'),
+  folderMove('folder:move'),
+  folderMoveResponse('folder:move_response'),
+  folderCopy('folder:copy'),
+  folderCopyResponse('folder:copy_response'),
   folderMoveArticle('folder:move_article'),
   folderMoveArticleResponse('folder:move_article_response'),
 

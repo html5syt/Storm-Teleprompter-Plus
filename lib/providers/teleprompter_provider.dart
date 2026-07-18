@@ -54,6 +54,7 @@ class TeleprompterProvider with ChangeNotifier {
   String? _asrError;
   StreamSubscription<WsMessage>? _asrResultSubscription;
   StreamSubscription<WsMessage>? _asrStatusSubscription;
+  bool _disposed = false;
 
   // ─── 全屏/控制面板 ─────────────────────────────────────
   bool _controlsVisible = true;
@@ -123,6 +124,7 @@ class TeleprompterProvider with ChangeNotifier {
   }
 
   void _applyAsrMessage(WsMessage message) {
+    if (_disposed) return;
     final articleId = message.data['articleId'] as String? ?? '';
     if (articleId.isNotEmpty && articleId != _articleId) return;
     _asrStatus = message.data['status'] as String? ?? _asrStatus;
@@ -628,8 +630,10 @@ class TeleprompterProvider with ChangeNotifier {
         WsMessageType.asrStart,
         timeout: const Duration(minutes: 2),
       );
+      if (_disposed) return;
       _applyAsrMessage(response);
     } catch (error) {
+      if (_disposed) return;
       _asrStatus = 'error';
       _asrError = error.toString();
       notifyListeners();
@@ -642,7 +646,9 @@ class TeleprompterProvider with ChangeNotifier {
       unawaited(
         connection
             .request(WsMessageType.asrPause)
-            .then(_applyAsrMessage)
+            .then((message) {
+              if (!_disposed) _applyAsrMessage(message);
+            })
             .catchError((Object error) {
               debugPrint('[Teleprompter] 暂停 ASR 失败: $error');
             }),
@@ -700,6 +706,7 @@ class TeleprompterProvider with ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
     _asrResultSubscription?.cancel();
     _asrStatusSubscription?.cancel();
     _stopAutoScroll();

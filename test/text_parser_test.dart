@@ -24,4 +24,14 @@ void main() {
     expect(lines.first.characters[0].fontSizePx, 42);
     expect(lines.first.characters[1].fontSizePx, isNull);
   });
+
+  test('visible character count ignores whitespace and control characters', () {
+    expect(
+      TextParser.visibleCharacterCount(
+        ' \n\t\u00A0\u200B\u200E\u202A\u2060\u2066\uFEFF',
+      ),
+      0,
+    );
+    expect(TextParser.visibleCharacterCount('中文 A'), 3);
+  });
 }

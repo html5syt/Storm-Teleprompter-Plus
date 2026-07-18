@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:storm_teleprompter_plus/services/app_release_service.dart';
+import 'package:storm_teleprompter_plus/pages/log_viewer_page.dart';
 import 'package:storm_teleprompter_plus/widgets/settings/about_settings_section.dart';
 
 void main() {
@@ -10,7 +11,7 @@ void main() {
     expect(version.value, matches(RegExp(r'^[0-9a-f]{8}$')));
   });
 
-  testWidgets('about section exposes help, updates, and the bundled license', (
+  testWidgets('about page exposes project, updates, license, and logs', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(800, 900);
@@ -31,7 +32,13 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('帮助'), findsOneWidget);
+    expect(find.text('关于飓风提词器 Plus'), findsOneWidget);
+    await tester.tap(find.text('关于飓风提词器 Plus'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('飓风提词器 Plus'), findsOneWidget);
+    expect(find.text('Storm Teleprompter+'), findsOneWidget);
+    expect(find.text('访问 GitHub 项目主页'), findsOneWidget);
     expect(find.text('检查更新'), findsOneWidget);
     expect(find.text('License'), findsOneWidget);
     expect(find.textContaining('版本 1234abcd'), findsNWidgets(2));
@@ -42,5 +49,13 @@ void main() {
     expect(find.text('MIT License'), findsWidgets);
     expect(find.textContaining('Copyright (c) 2026 Html5syt'), findsOneWidget);
     expect(tester.takeException(), isNull);
+
+    await tester.tap(find.text('关闭'));
+    await tester.pumpAndSettle();
+    for (var index = 0; index < 10; index++) {
+      await tester.tap(find.byType(Image));
+    }
+    await tester.pumpAndSettle();
+    expect(find.byType(LogViewerPage), findsOneWidget);
   });
 }

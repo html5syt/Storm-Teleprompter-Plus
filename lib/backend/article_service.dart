@@ -12,6 +12,7 @@ import 'ws_server.dart';
 /// 底层使用统一应用数据存储持久化。
 class ArticleService {
   late AppPreferences _prefs;
+  int _idCounter = 0;
 
   /// 初始化存储
   Future<void> init() async {
@@ -55,6 +56,12 @@ class ArticleService {
           break;
         case WsMessageType.folderDelete:
           _handleFolderDelete(server, request);
+          break;
+        case WsMessageType.folderMove:
+          _handleFolderMove(server, request);
+          break;
+        case WsMessageType.folderCopy:
+          _handleFolderCopy(server, request);
           break;
         case WsMessageType.folderMoveArticle:
           _handleFolderMoveArticle(server, request);
@@ -464,6 +471,68 @@ class ArticleService {
     }
   }
 
+  Future<void> _handleFolderMove(WsServer server, WsRequest request) async {
+    final data = request.message.data;
+    final folderId = data['folderId'] as String?;
+    final parentId = data['parentId'] as String?;
+    if (folderId == null) {
+      _respondError(server, request, '缺少文件夹 ID');
+      return;
+    }
+
+    final folder = await moveFolder(folderId, parentId);
+    server.respond(
+      request.clientId,
+      WsMessage(
+        type: WsMessageType.folderMoveResponse,
+        id: request.message.id,
+        data: {
+          if (folder != null) 'folder': folder.toJson(),
+          'success': folder != null,
+        },
+      ),
+    );
+  }
+
+  Future<void> _handleFolderCopy(WsServer server, WsRequest request) async {
+    final data = request.message.data;
+    final folderId = data['folderId'] as String?;
+    final parentId = data['parentId'] as String?;
+    if (folderId == null) {
+      _respondError(server, request, '缺少文件夹 ID');
+      return;
+    }
+
+    final result = await copyFolder(folderId, parentId);
+    server.respond(
+      request.clientId,
+      WsMessage(
+        type: WsMessageType.folderCopyResponse,
+        id: request.message.id,
+        data: {
+          'success': result != null,
+          if (result != null) ...{
+            'folders': result.folders.map((folder) => folder.toJson()).toList(),
+            'articles': result.articles
+                .map((article) => article.toJson())
+                .toList(),
+          },
+        },
+      ),
+    );
+  }
+
+  void _respondError(WsServer server, WsRequest request, String message) {
+    server.respond(
+      request.clientId,
+      WsMessage(
+        type: WsMessageType.error,
+        id: request.message.id,
+        data: {'message': message},
+      ),
+    );
+  }
+
   // ─── 底层存储操作 ───────────────────────────────────────
 
   /// 获取所有稿件列表
@@ -616,12 +685,126 @@ class ArticleService {
     return updated;
   }
 
+  /// 将文件夹移动到新位置。目标不能是自身或自身的后代。
+  Future<Folder?> moveFolder(String id, String? parentId) async {
+    final folders = await loadFolders();
+    final index = folders.indexWhere((folder) => folder.id == id);
+    if (index == -1 || !_isValidFolderDestination(folders, id, parentId)) {
+      return null;
+    }
+
+    final updated = folders[index].copyWith(
+      parentId: parentId,
+      clearParentId: parentId == null,
+    );
+    folders[index] = updated;
+    await _saveFolders(folders);
+    return updated;
+  }
+
+  /// 递归复制文件夹，保留子文件夹、稿件富文本及每稿提词器设置。
+  Future<FolderCopyResult?> copyFolder(String id, String? parentId) async {
+    final folders = await loadFolders();
+    final source = folders.where((folder) => folder.id == id).firstOrNull;
+    if (source == null || !_isValidFolderDestination(folders, id, parentId)) {
+      return null;
+    }
+
+    final sourceIds = <String>{id};
+    var foundChild = true;
+    while (foundChild) {
+      foundChild = false;
+      for (final folder in folders) {
+        if (folder.parentId != null &&
+            sourceIds.contains(folder.parentId) &&
+            sourceIds.add(folder.id)) {
+          foundChild = true;
+        }
+      }
+    }
+
+    final now = DateTime.now();
+    final idMap = <String, String>{};
+    final copiedFolders = <Folder>[];
+    final pending = folders
+        .where((folder) => sourceIds.contains(folder.id))
+        .toList();
+    while (pending.isNotEmpty) {
+      final copiedInPass = <Folder>[];
+      for (final folder in pending) {
+        final isRoot = folder.id == id;
+        final copiedParentId = isRoot ? parentId : idMap[folder.parentId];
+        if (!isRoot && copiedParentId == null) continue;
+        final copied = Folder(
+          id: _generateId(),
+          name: isRoot ? '${folder.name} - 副本' : folder.name,
+          parentId: copiedParentId,
+          createdAt: now,
+          sortOrder: folder.sortOrder,
+        );
+        idMap[folder.id] = copied.id;
+        copiedFolders.add(copied);
+        copiedInPass.add(folder);
+      }
+      if (copiedInPass.isEmpty) return null;
+      pending.removeWhere(copiedInPass.contains);
+    }
+
+    final articles = await loadArticles();
+    final copiedArticles = <Article>[
+      for (final article in articles)
+        if (article.folderId != null && idMap.containsKey(article.folderId))
+          Article(
+            id: _generateId(),
+            title: article.title,
+            content: article.content,
+            createdAt: now,
+            updatedAt: now,
+            sortOrder: article.sortOrder,
+            teleprompterSettings: article.teleprompterSettings == null
+                ? null
+                : Map<String, dynamic>.from(article.teleprompterSettings!),
+            folderId: idMap[article.folderId],
+          ),
+    ];
+
+    folders.addAll(copiedFolders);
+    articles.insertAll(0, copiedArticles);
+    await _saveFolders(folders);
+    await _saveArticles(articles);
+    return FolderCopyResult(folders: copiedFolders, articles: copiedArticles);
+  }
+
+  bool _isValidFolderDestination(
+    List<Folder> folders,
+    String sourceId,
+    String? parentId,
+  ) {
+    if (parentId == null) return true;
+    if (parentId == sourceId) return false;
+    var current = folders.where((folder) => folder.id == parentId).firstOrNull;
+    if (current == null) return false;
+    while (current != null) {
+      if (current.id == sourceId) return false;
+      final nextId = current.parentId;
+      current = nextId == null
+          ? null
+          : folders.where((folder) => folder.id == nextId).firstOrNull;
+    }
+    return true;
+  }
+
   /// 删除文件夹
   Future<bool> deleteFolder(String id) async {
     final folders = await loadFolders();
     final initialLength = folders.length;
     folders.removeWhere((f) => f.id == id);
     if (folders.length == initialLength) return false;
+    for (var index = 0; index < folders.length; index++) {
+      if (folders[index].parentId == id) {
+        folders[index] = folders[index].copyWith(clearParentId: true);
+      }
+    }
     await _saveFolders(folders);
 
     // 将该文件夹下的稿件移回根目录
@@ -641,7 +824,14 @@ class ArticleService {
   /// 生成简易唯一 ID
   String _generateId() {
     final now = DateTime.now().microsecondsSinceEpoch;
-    final random = (now % 100000).toRadixString(36);
-    return '${now.toRadixString(36)}_$random';
+    _idCounter++;
+    return '${now.toRadixString(36)}_${_idCounter.toRadixString(36)}';
   }
+}
+
+class FolderCopyResult {
+  const FolderCopyResult({required this.folders, required this.articles});
+
+  final List<Folder> folders;
+  final List<Article> articles;
 }

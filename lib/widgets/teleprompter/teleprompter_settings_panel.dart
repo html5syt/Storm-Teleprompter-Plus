@@ -1,6 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:provider/provider.dart';
 import '../../models/app_settings.dart';
 import '../../providers/connection_provider.dart';
@@ -8,6 +6,7 @@ import '../../providers/settings_provider.dart';
 import '../../providers/teleprompter_provider.dart';
 import '../../services/font_service.dart';
 import '../../theme/app_colors.dart';
+import '../common/app_color_picker_dialog.dart';
 
 /// 提词器设置面板（抽屉形式）
 ///
@@ -879,18 +878,19 @@ class _TeleprompterSettingsPanelState extends State<TeleprompterSettingsPanel> {
     );
   }
 
-  void _showColorPicker(
+  Future<void> _showColorPicker(
     BuildContext context, {
     required Color currentColor,
     required ValueChanged<Color> onColorSelected,
-  }) {
-    showDialog<void>(
-      context: context,
-      builder: (ctx) => _TeleprompterColorPickerDialog(
-        currentColor: currentColor,
-        onColorSelected: onColorSelected,
-      ),
+  }) async {
+    final selected = await AppColorPickerDialog.show(
+      context,
+      title: '选择背景色',
+      currentColor: currentColor,
+      resetColor: const Color(0xFF000000),
+      resetLabel: '恢复黑色',
     );
+    if (mounted && selected != null) onColorSelected(selected);
   }
 
   String _formatHex(Color color) =>
@@ -907,125 +907,4 @@ class _TeleprompterSettingsPanelState extends State<TeleprompterSettingsPanel> {
       selection: TextSelection.collapsed(offset: text.length),
     );
   }
-}
-
-class _TeleprompterColorPickerDialog extends StatefulWidget {
-  final Color currentColor;
-  final ValueChanged<Color> onColorSelected;
-
-  const _TeleprompterColorPickerDialog({
-    required this.currentColor,
-    required this.onColorSelected,
-  });
-
-  @override
-  State<_TeleprompterColorPickerDialog> createState() =>
-      _TeleprompterColorPickerDialogState();
-}
-
-class _TeleprompterColorPickerDialogState
-    extends State<_TeleprompterColorPickerDialog> {
-  late Color _pickerColor;
-  late final TextEditingController _hexController;
-  String? _hexError;
-
-  @override
-  void initState() {
-    super.initState();
-    _pickerColor = widget.currentColor;
-    _hexController = TextEditingController(text: _formatHex(_pickerColor));
-  }
-
-  @override
-  void dispose() {
-    _hexController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('选择背景色'),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ColorPicker(
-              pickerColor: _pickerColor,
-              onColorChanged: (color) => setState(() {
-                _pickerColor = color;
-                _hexError = null;
-                _syncHex(color);
-              }),
-              enableAlpha: true,
-              displayThumbColor: true,
-              pickerAreaHeightPercent: 0.8,
-              portraitOnly: true,
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _hexController,
-              decoration: InputDecoration(
-                labelText: 'HEX',
-                hintText: '#AARRGGBB 或 #RRGGBB',
-                errorText: _hexError,
-                border: const OutlineInputBorder(),
-                isDense: true,
-              ),
-              inputFormatters: [
-                FilteringTextInputFormatter.allow(RegExp(r'[0-9a-fA-F#]')),
-              ],
-              maxLength: 9,
-              onChanged: (value) {
-                final parsed = _parseHex(value);
-                setState(() {
-                  _hexError = parsed == null ? '请输入 6 或 8 位十六进制颜色' : null;
-                  if (parsed != null) _pickerColor = parsed;
-                });
-              },
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('取消'),
-        ),
-        TextButton(
-          onPressed: () {
-            widget.onColorSelected(const Color(0xFF000000));
-            Navigator.pop(context);
-          },
-          child: const Text('恢复黑色'),
-        ),
-        FilledButton(
-          onPressed: () {
-            widget.onColorSelected(_pickerColor);
-            Navigator.pop(context);
-          },
-          child: const Text('确定'),
-        ),
-      ],
-    );
-  }
-
-  Color? _parseHex(String value) {
-    final normalized = value.trim().replaceFirst('#', '');
-    if (normalized.length != 6 && normalized.length != 8) return null;
-    final argb = normalized.length == 6 ? 'FF$normalized' : normalized;
-    final parsed = int.tryParse(argb, radix: 16);
-    return parsed == null ? null : Color(parsed);
-  }
-
-  void _syncHex(Color color) {
-    final text = _formatHex(color);
-    _hexController.value = TextEditingValue(
-      text: text,
-      selection: TextSelection.collapsed(offset: text.length),
-    );
-  }
-
-  String _formatHex(Color color) =>
-      '#${color.toARGB32().toRadixString(16).padLeft(8, '0').toUpperCase()}';
 }

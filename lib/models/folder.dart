@@ -42,11 +42,12 @@ class Folder {
     String? parentId,
     DateTime? createdAt,
     int? sortOrder,
+    bool clearParentId = false,
   }) {
     return Folder(
       id: id ?? this.id,
       name: name ?? this.name,
-      parentId: parentId ?? this.parentId,
+      parentId: clearParentId ? null : (parentId ?? this.parentId),
       createdAt: createdAt ?? this.createdAt,
       sortOrder: sortOrder ?? this.sortOrder,
     );

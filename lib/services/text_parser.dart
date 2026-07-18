@@ -7,6 +7,15 @@ import '../models/script_character.dart';
 class TextParser {
   TextParser._();
 
+  static final RegExp _invisibleCharacters = RegExp(
+    r'[\s\u00A0\u200B-\u200F\u202A-\u202E\u2060\u2066-\u2069\uFEFF]',
+  );
+
+  /// 统计去除空白、零宽字符和双向文本控制符后的可见字符数。
+  static int visibleCharacterCount(String text) {
+    return text.replaceAll(_invisibleCharacters, '').runes.length;
+  }
+
   /// 解析 HTML 内容为字符行列表
   ///
   /// 支持的格式标签：

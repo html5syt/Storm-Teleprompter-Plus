@@ -12,8 +12,10 @@ mixin EditorLogic on State<EditorPage> {
 
   Article? _savedArticle;
   Timer? _autosaveTimer;
+  Future<Article?>? _saveOperation;
+  _EditorDraft? _queuedDraft;
   bool _syncingEditorContent = false;
-  bool _saveQueued = false;
+  int _editRevision = 0;
 
   bool isDirty = false;
   bool isSaving = false;
@@ -23,10 +25,10 @@ mixin EditorLogic on State<EditorPage> {
 
   Article? get currentArticle => _savedArticle;
 
-  int get plainTextLength {
-    final text = quillController.document.toPlainText().trim();
-    return text.isEmpty ? 0 : text.length;
-  }
+  int get plainTextLength =>
+      TextParser.visibleCharacterCount(quillController.document.toPlainText());
+
+  bool get canStartTeleprompter => plainTextLength > 0 && !isSaving;
 
   String get saveStatusText {
     if (isSaving) return '保存中';
@@ -76,8 +78,10 @@ mixin EditorLogic on State<EditorPage> {
 
   @override
   void dispose() {
-    flushAutosave();
     _autosaveTimer?.cancel();
+    titleController.removeListener(_markChanged);
+    quillController.removeListener(_onQuillContentChanged);
+    if (isDirty) unawaited(save());
     titleController.dispose();
     contentController.dispose();
     findController.dispose();
@@ -113,6 +117,7 @@ mixin EditorLogic on State<EditorPage> {
 
   void _markChanged() {
     if (!mounted) return;
+    _editRevision++;
     setState(() => isDirty = true);
     _scheduleAutosave();
   }
@@ -132,36 +137,47 @@ mixin EditorLogic on State<EditorPage> {
 
   Future<Article?> save({bool force = false}) async {
     if (!force && !isDirty) return _savedArticle;
-    if (isSaving) {
-      _saveQueued = true;
-      return _savedArticle;
+    final draft = _captureDraft();
+    final activeSave = _saveOperation;
+    if (activeSave != null) {
+      _queuedDraft = draft;
+      return activeSave;
     }
 
+    final operation = _runSave(draft);
+    _saveOperation = operation;
+    try {
+      return await operation;
+    } finally {
+      if (identical(_saveOperation, operation)) _saveOperation = null;
+    }
+  }
+
+  Future<Article?> _runSave(_EditorDraft initialDraft) async {
     if (mounted) setState(() => isSaving = true);
 
     try {
-      do {
-        _saveQueued = false;
-        final plainText = quillController.document.toPlainText().trim();
-        final content = contentController.text.trim();
-        if (plainText.isEmpty && titleController.text.trim().isEmpty) {
+      var draft = initialDraft;
+      while (true) {
+        _queuedDraft = null;
+        if (draft.visibleCharacterCount == 0 && draft.title.trim().isEmpty) {
           return _savedArticle;
         }
 
-        final title = _effectiveTitle(plainText);
+        final title = _effectiveTitle(draft);
         final article = _savedArticle;
         Article? savedArticle;
         if (article == null) {
           savedArticle = await _articleProvider.createArticle(
             title: title,
-            content: content,
+            content: draft.content,
             folderId: widget.initialFolderId,
           );
         } else {
           savedArticle = await _articleProvider.updateArticle(
             article.id,
             title: title,
-            content: content,
+            content: draft.content,
           );
         }
 
@@ -170,10 +186,15 @@ mixin EditorLogic on State<EditorPage> {
           return _savedArticle;
         }
         _savedArticle = savedArticle;
-      } while (_saveQueued);
-
-      if (mounted) setState(() => isDirty = false);
-      return _savedArticle;
+        final queuedDraft = _queuedDraft;
+        if (queuedDraft == null) {
+          if (mounted && _editRevision == draft.revision) {
+            setState(() => isDirty = false);
+          }
+          return _savedArticle;
+        }
+        draft = queuedDraft;
+      }
     } catch (e) {
       debugPrint('[Editor] autosave failed: $e');
       return _savedArticle;
@@ -182,15 +203,32 @@ mixin EditorLogic on State<EditorPage> {
     }
   }
 
-  String _effectiveTitle(String plainText) {
-    final explicit = titleController.text.trim();
+  _EditorDraft _captureDraft() {
+    final plainText = quillController.document.toPlainText();
+    return _EditorDraft(
+      title: titleController.text,
+      plainText: plainText,
+      content: contentController.text.trim(),
+      visibleCharacterCount: TextParser.visibleCharacterCount(plainText),
+      revision: _editRevision,
+    );
+  }
+
+  String _effectiveTitle(_EditorDraft draft) {
+    final explicit = draft.title.trim();
     if (explicit.isNotEmpty) return explicit;
-    final fallback = plainText.replaceAll(RegExp(r'\s+'), ' ').trim();
+    final fallback = draft.plainText.replaceAll(RegExp(r'\s+'), ' ').trim();
     if (fallback.isEmpty) return '无标题';
     return fallback.length > 30 ? fallback.substring(0, 30) : fallback;
   }
 
   Future<void> quickStartTeleprompter() async {
+    if (plainTextLength == 0) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('请输入可见的稿件正文')));
+      return;
+    }
     final article = await save(force: true);
     if (!mounted) return;
 
@@ -737,4 +775,20 @@ mixin EditorLogic on State<EditorPage> {
     final normalized = TextParser.normalizeQuotePairs(decoded);
     return TextParser.encodeHtmlEntities(normalized);
   }
+}
+
+class _EditorDraft {
+  const _EditorDraft({
+    required this.title,
+    required this.plainText,
+    required this.content,
+    required this.visibleCharacterCount,
+    required this.revision,
+  });
+
+  final String title;
+  final String plainText;
+  final String content;
+  final int visibleCharacterCount;
+  final int revision;
 }

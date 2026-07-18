@@ -53,6 +53,7 @@ dependencies:
   path: ^1.9.1
   url_launcher: ^6.3.2
   xml: ^7.0.1
+  logger: ^2.7.0
 
 dev_dependencies:
   flutter_test:
@@ -81,6 +82,7 @@ flutter:
   uses-material-design: true
   assets:
     - LICENSE
+    - lib/favicon.png
 
   # To add assets to your application, add an assets section, like this:
   # assets:

@@ -151,7 +151,7 @@ class FolderProvider with ChangeNotifier {
           // 清除子文件夹的引用
           for (int i = _folders.length - 1; i >= 0; i--) {
             if (_folders[i].parentId == folderId) {
-              _folders[i] = _folders[i].copyWith(parentId: null);
+              _folders[i] = _folders[i].copyWith(clearParentId: true);
             }
           }
           if (_currentFolderId == folderId) _currentFolderId = null;
@@ -173,16 +173,48 @@ class FolderProvider with ChangeNotifier {
   Future<void> moveFolder(String folderId, String? newParentId) async {
     try {
       if (_connection != null && _connection!.isConnected) {
-        // 通过重命名接口无法移动，直接更新 parentId
-        // 暂用本地更新，后端需要新增 moveFolder 消息
-        final idx = _folders.indexWhere((f) => f.id == folderId);
-        if (idx >= 0) {
-          _folders[idx] = _folders[idx].copyWith(parentId: newParentId);
+        final response = await _connection!.request(
+          WsMessageType.folderMove,
+          data: {'folderId': folderId, 'parentId': newParentId},
+        );
+        if (response.type == WsMessageType.folderMoveResponse &&
+            response.data['success'] == true) {
+          final moved = Folder.fromJson(
+            response.data['folder'] as Map<String, dynamic>,
+          );
+          final idx = _folders.indexWhere((folder) => folder.id == folderId);
+          if (idx >= 0) _folders[idx] = moved;
           notifyListeners();
         }
       }
     } catch (e) {
       debugPrint('[FolderProvider] 移动失败: $e');
+    }
+  }
+
+  /// 递归复制文件夹；调用方随后刷新稿件列表以取得复制出的稿件。
+  Future<bool> copyFolder(String folderId, String? newParentId) async {
+    try {
+      if (_connection == null || !_connection!.isConnected) return false;
+      final response = await _connection!.request(
+        WsMessageType.folderCopy,
+        data: {'folderId': folderId, 'parentId': newParentId},
+      );
+      if (response.type != WsMessageType.folderCopyResponse ||
+          response.data['success'] != true) {
+        return false;
+      }
+      final folders = response.data['folders'] as List<dynamic>? ?? const [];
+      _folders.addAll(
+        folders.map(
+          (folder) => Folder.fromJson(folder as Map<String, dynamic>),
+        ),
+      );
+      notifyListeners();
+      return true;
+    } catch (e) {
+      debugPrint('[FolderProvider] 复制失败: $e');
+      return false;
     }
   }
 

@@ -810,7 +810,7 @@ mixin HomeLogic on State<HomePage> {
     String? targetFolderId,
   ) {
     final items = _selectedItems.contains(dragged.id)
-        ? _getContentItemsByIds(_selectedItems)
+        ? _getTopLevelContentItems(_selectedItems)
         : <_ContentItem>[dragged];
     return items.every((item) => _canDropItemOnFolder(item, targetFolderId));
   }
@@ -822,7 +822,7 @@ mixin HomeLogic on State<HomePage> {
     if (!_canDropDraggedItemsOnFolder(dragged, targetFolderId)) return;
 
     final itemsToMove = _selectedItems.contains(dragged.id)
-        ? _getContentItemsByIds(_selectedItems)
+        ? _getTopLevelContentItems(_selectedItems)
         : <_ContentItem>[dragged];
     await _moveItemsToFolder(itemsToMove, targetFolderId);
   }
@@ -902,14 +902,10 @@ mixin HomeLogic on State<HomePage> {
         _renameItemDialog(item);
         break;
       case 'cut':
-        _clipboardOp = _ClipboardOp.cut;
-        _clipboard.clear();
-        _clipboard.add(item);
+        _cutSelected();
         break;
       case 'copy':
-        _clipboardOp = _ClipboardOp.copy;
-        _clipboard.clear();
-        _clipboard.add(item);
+        _copySelected();
         break;
       case 'properties':
         _showItemPropertiesDialog(item);
@@ -997,7 +993,7 @@ mixin HomeLogic on State<HomePage> {
   }
 
   Future<void> _moveSelectedToFolderDialog() async {
-    final items = _getContentItemsByIds(_selectedItems);
+    final items = _getTopLevelContentItems(_selectedItems);
     if (items.isEmpty) return;
     final folderProvider = context.read<FolderProvider>();
     final destinations = <_MoveDestination>[
@@ -1107,45 +1103,81 @@ mixin HomeLogic on State<HomePage> {
 
   // ─── 剪贴板操作 ──────────────────────────────────────
   void _cutSelected() {
-    final items = _getContentItemsByIds(_selectedItems);
+    final items = _getTopLevelContentItems(_selectedItems);
     _clipboard.clear();
     _clipboard.addAll(items);
     _clipboardOp = _ClipboardOp.cut;
   }
 
   void _copySelected() {
-    final items = _getContentItemsByIds(_selectedItems);
+    final items = _getTopLevelContentItems(_selectedItems);
     _clipboard.clear();
     _clipboard.addAll(items);
     _clipboardOp = _ClipboardOp.copy;
   }
 
-  void _pasteItems() {
-    for (final item in _clipboard) {
+  Future<void> _pasteItems() async {
+    final folderProvider = context.read<FolderProvider>();
+    final articleProvider = context.read<ArticleProvider>();
+    var copiedFolder = false;
+    for (final item in List<_ContentItem>.from(_clipboard)) {
       if (_clipboardOp == _ClipboardOp.cut) {
+        if (!_canDropItemOnFolder(item, _currentFolderId)) continue;
         if (item.isFolder) {
-          context.read<FolderProvider>().moveFolder(item.id, _currentFolderId);
+          await folderProvider.moveFolder(item.id, _currentFolderId);
         } else if (item.article != null) {
-          context.read<ArticleProvider>().moveArticleToFolder(
-            item.id,
-            _currentFolderId,
-          );
+          await articleProvider.moveArticleToFolder(item.id, _currentFolderId);
         }
       } else {
-        // 复制操作 - 创建副本
-        if (!item.isFolder && item.article != null) {
-          context.read<ArticleProvider>().createArticle(
+        if (item.isFolder) {
+          copiedFolder =
+              await folderProvider.copyFolder(item.id, _currentFolderId) ||
+              copiedFolder;
+        } else if (item.article != null) {
+          final copied = await articleProvider.createArticle(
             title: '${item.article!.title} - 副本',
             content: item.article!.content,
             folderId: _currentFolderId,
           );
+          if (copied != null && item.article!.teleprompterSettings != null) {
+            await articleProvider.updateArticleTeleprompterSettings(
+              copied.id,
+              item.article!.teleprompterSettings!,
+            );
+          }
         }
       }
     }
+    if (copiedFolder) await articleProvider.loadArticles();
     if (_clipboardOp == _ClipboardOp.cut) {
       _clipboard.clear();
     }
-    setState(() {});
+    if (mounted) setState(() {});
+  }
+
+  List<_ContentItem> _getTopLevelContentItems(Set<String> ids) {
+    final items = _getContentItemsByIds(ids);
+    final selectedFolderIds = items
+        .where((item) => item.isFolder)
+        .map((item) => item.id)
+        .toSet();
+    final folderProvider = context.read<FolderProvider>();
+
+    bool hasSelectedAncestor(String? folderId) {
+      var currentId = folderId;
+      while (currentId != null) {
+        if (selectedFolderIds.contains(currentId)) return true;
+        currentId = folderProvider.getFolderById(currentId)?.parentId;
+      }
+      return false;
+    }
+
+    return items.where((item) {
+      if (item.isFolder) {
+        return !hasSelectedAncestor(item.folder?.parentId);
+      }
+      return !hasSelectedAncestor(item.article?.folderId);
+    }).toList();
   }
 
   List<_ContentItem> _getContentItemsByIds(Set<String> ids) {
@@ -1459,7 +1491,7 @@ mixin HomeLogic on State<HomePage> {
     } else if (ctrl && key == LogicalKeyboardKey.keyC) {
       _copySelected();
     } else if (ctrl && key == LogicalKeyboardKey.keyV) {
-      _pasteItems();
+      unawaited(_pasteItems());
     } else if (alt && key == LogicalKeyboardKey.arrowLeft) {
       _navigateBack();
     } else if (alt && key == LogicalKeyboardKey.arrowRight) {

@@ -15,6 +15,7 @@ import 'providers/connection_provider.dart';
 import 'theme/app_colors.dart';
 import 'theme/app_theme.dart';
 import 'pages/home_page.dart';
+import 'services/system/app_log_service.dart';
 import 'utils/constants.dart';
 
 /// 全局 BackendServer 实例（用于多客户端检测）
@@ -29,6 +30,7 @@ AppLifecycleListener? appLifecycleListener;
 /// 3. 启动 Flutter UI
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  AppLogService.instance.install();
   if (!kIsWeb) {
     await SystemChrome.setPreferredOrientations(DeviceOrientation.values);
     await SystemChrome.setEnabledSystemUIMode(

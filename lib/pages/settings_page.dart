@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:provider/provider.dart';
 import 'package:record/record.dart';
@@ -19,6 +18,7 @@ import '../services/backup_file_service.dart';
 import '../services/font_service.dart';
 import '../services/selected_file_cleanup.dart';
 import '../theme/app_colors.dart';
+import '../widgets/common/app_color_picker_dialog.dart';
 import '../widgets/settings/about_settings_section.dart';
 
 part 'settings/settings_asr_advanced_dialog.dart';
@@ -219,101 +219,22 @@ class SettingsPage extends StatelessWidget {
   }
 
   /// 全功能颜色选取器对话框
-  void _showColorPicker(
+  Future<void> _showColorPicker(
     BuildContext context, {
     required Color currentColor,
     required ValueChanged<Color> onColorSelected,
-  }) {
-    Color pickerColor = currentColor;
-    String? hexError;
-    final hexController = TextEditingController(text: _formatHex(currentColor));
-
-    Color? parseHex(String value) {
-      final normalized = value.trim().replaceFirst('#', '');
-      if (normalized.length != 6 && normalized.length != 8) return null;
-      final argb = normalized.length == 6 ? 'FF$normalized' : normalized;
-      final parsed = int.tryParse(argb, radix: 16);
-      return parsed == null ? null : Color(parsed);
-    }
-
-    void syncHex(Color color) {
-      final text = _formatHex(color);
-      hexController.value = TextEditingValue(
-        text: text,
-        selection: TextSelection.collapsed(offset: text.length),
-      );
-    }
-
-    showDialog(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
-          title: const Text('选择颜色'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                ColorPicker(
-                  pickerColor: pickerColor,
-                  onColorChanged: (color) => setDialogState(() {
-                    pickerColor = color;
-                    hexError = null;
-                    syncHex(color);
-                  }),
-                  enableAlpha: true,
-                  displayThumbColor: true,
-                  pickerAreaHeightPercent: 0.8,
-                  portraitOnly: true,
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: hexController,
-                  decoration: InputDecoration(
-                    labelText: 'HEX',
-                    hintText: '#AARRGGBB 或 #RRGGBB',
-                    errorText: hexError,
-                    border: const OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                  inputFormatters: [
-                    FilteringTextInputFormatter.allow(RegExp(r'[0-9a-fA-F#]')),
-                  ],
-                  maxLength: 9,
-                  onChanged: (value) {
-                    final parsed = parseHex(value);
-                    setDialogState(() {
-                      hexError = parsed == null ? '请输入 6 或 8 位十六进制颜色' : null;
-                      if (parsed != null) pickerColor = parsed;
-                    });
-                  },
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('取消'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                onColorSelected(pickerColor);
-                Navigator.pop(ctx);
-              },
-              child: const Text('确定'),
-            ),
-          ],
-        ),
-      ),
+  }) async {
+    final selected = await AppColorPickerDialog.show(
+      context,
+      title: '选择颜色',
+      currentColor: currentColor,
     );
+    if (selected != null) onColorSelected(selected);
   }
 
   // ═══════════════════════════════════════════════════════
   // 应用字体
   // ═══════════════════════════════════════════════════════
-
-  String _formatHex(Color color) =>
-      '#${color.toARGB32().toRadixString(16).padLeft(8, '0').toUpperCase()}';
 
   Widget _buildFontFamilyTile(
     BuildContext context,
