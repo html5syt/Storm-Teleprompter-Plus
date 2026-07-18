@@ -9,6 +9,7 @@ import 'package:storm_teleprompter_plus/pages/editor_page.dart';
 import 'package:storm_teleprompter_plus/providers/article_provider.dart';
 import 'package:storm_teleprompter_plus/providers/settings_provider.dart';
 import 'package:storm_teleprompter_plus/providers/teleprompter_provider.dart';
+import 'package:storm_teleprompter_plus/widgets/common/app_color_picker_dialog.dart';
 
 class _DelayedArticleProvider extends ArticleProvider {
   final completer = Completer<Article?>();
@@ -40,10 +41,51 @@ void main() {
     await tester.pump(const Duration(milliseconds: 1));
 
     expect(find.byType(EditorPage), findsOneWidget);
+    final toolbar = tester.widget<quill.QuillSimpleToolbar>(
+      find.byType(quill.QuillSimpleToolbar),
+    );
+    expect(toolbar.config.showColorButton, isFalse);
+    expect(toolbar.config.showBackgroundColorButton, isFalse);
+    expect(find.byTooltip('字体颜色'), findsOneWidget);
+    expect(find.byTooltip('文字背景色'), findsOneWidget);
     expect(tester.takeException(), isNull);
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(milliseconds: 1));
+  });
+
+  testWidgets('editor color button opens the shared color picker', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider(create: (_) => ArticleProvider()),
+          ChangeNotifierProvider(create: (_) => SettingsProvider()),
+          ChangeNotifierProvider(create: (_) => TeleprompterProvider()),
+        ],
+        child: MaterialApp(
+          localizationsDelegates:
+              quill.FlutterQuillLocalizations.localizationsDelegates,
+          supportedLocales: quill.FlutterQuillLocalizations.supportedLocales,
+          home: const EditorPage(),
+        ),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 1));
+
+    await tester.tap(find.byTooltip('字体颜色'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(AppColorPickerDialog), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(AppColorPickerDialog),
+        matching: find.byType(TextField),
+      ),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('editor accepts stored px font size html', (tester) async {

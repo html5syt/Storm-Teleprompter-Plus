@@ -21,6 +21,7 @@ import '../services/inline_style_parser.dart';
 import '../services/text_parser.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
+import '../widgets/common/app_color_picker_dialog.dart';
 import 'teleprompter_page.dart';
 
 part 'editor/editor_logic.dart';
@@ -245,6 +246,8 @@ class _EditorPageState extends State<EditorPage> with EditorLogic {
         showFontSize: false,
         showSmallButton: false,
         showInlineCode: false,
+        showColorButton: false,
+        showBackgroundColorButton: false,
         showAlignmentButtons: false,
         showHeaderStyle: false,
         showListNumbers: false,
@@ -279,6 +282,13 @@ class _EditorPageState extends State<EditorPage> with EditorLogic {
                 Center(child: _buildFormatTools()),
                 const SizedBox(width: 8),
                 Center(child: _buildFontSizeInput()),
+                const SizedBox(width: 4),
+                Center(
+                  child: _buildEditorColorTools(
+                    editorTextColor,
+                    editorBackground,
+                  ),
+                ),
                 const SizedBox(width: 8),
                 Center(child: _buildFindButton()),
                 Center(child: _buildReplaceButton()),
@@ -372,6 +382,119 @@ class _EditorPageState extends State<EditorPage> with EditorLogic {
         ),
       ),
     );
+  }
+
+  Widget _buildEditorColorTools(
+    Color defaultTextColor,
+    Color defaultBackgroundColor,
+  ) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _buildEditorColorButton(
+          icon: Icons.format_color_text,
+          tooltip: '字体颜色',
+          attributeKey: quill.Attribute.color.key,
+          fallbackColor: defaultTextColor,
+        ),
+        _buildEditorColorButton(
+          icon: Icons.format_color_fill,
+          tooltip: '文字背景色',
+          attributeKey: quill.Attribute.background.key,
+          fallbackColor: defaultBackgroundColor,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildEditorColorButton({
+    required IconData icon,
+    required String tooltip,
+    required String attributeKey,
+    required Color fallbackColor,
+  }) {
+    final color = _selectionColor(attributeKey, fallbackColor);
+    return Tooltip(
+      message: tooltip,
+      child: Padding(
+        padding: const EdgeInsets.only(right: 4),
+        child: IconButton(
+          onPressed: () => _chooseEditorColor(
+            title: tooltip,
+            attributeKey: attributeKey,
+            fallbackColor: fallbackColor,
+          ),
+          icon: Stack(
+            alignment: Alignment.center,
+            children: [
+              Icon(icon, size: 19),
+              Positioned(
+                bottom: 0,
+                child: Container(
+                  width: 17,
+                  height: 3,
+                  decoration: BoxDecoration(
+                    color: color,
+                    border: Border.all(
+                      color: AppColors.border.withValues(alpha: 0.8),
+                      width: 0.5,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          visualDensity: VisualDensity.compact,
+          style: IconButton.styleFrom(
+            minimumSize: const Size(34, 34),
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            foregroundColor: AppColors.textSecondary,
+            backgroundColor: AppColors.surface.withValues(alpha: 0.55),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(6),
+            ),
+            side: BorderSide(color: AppColors.border.withValues(alpha: 0.6)),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Color _selectionColor(String attributeKey, Color fallbackColor) {
+    final value = quillController
+        .getSelectionStyle()
+        .attributes[attributeKey]
+        ?.value;
+    return value is String
+        ? AppColorHex.parse(value) ?? fallbackColor
+        : fallbackColor;
+  }
+
+  Future<void> _chooseEditorColor({
+    required String title,
+    required String attributeKey,
+    required Color fallbackColor,
+  }) async {
+    final selected = await AppColorPickerDialog.show(
+      context,
+      title: title,
+      currentColor: _selectionColor(attributeKey, fallbackColor),
+      resetLabel: '清除颜色',
+      onReset: () => _clearEditorColor(attributeKey),
+    );
+    if (!mounted || selected == null) return;
+    quillController.formatSelection(
+      quill.Attribute.fromKeyValue(attributeKey, AppColorHex.format(selected))!,
+    );
+    _onQuillContentChanged();
+  }
+
+  void _clearEditorColor(String attributeKey) {
+    if (!mounted) return;
+    quillController.formatSelection(
+      quill.Attribute.fromKeyValue(attributeKey, null)!,
+    );
+    _onQuillContentChanged();
   }
 
   Widget _buildFindButton() {
