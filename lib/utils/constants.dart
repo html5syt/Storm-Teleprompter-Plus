@@ -17,6 +17,7 @@ abstract final class StorageConstants {
   static const String articlesKey = 'articles_data';
   static const String foldersKey = 'folders_data';
   static const String remoteConnectionHistoryKey = 'remote_connection_history';
+  static const String ignoredUpdateVersionKey = 'ignored_update_version';
 
   static const String desktopDataDirectoryName = 'app_data';
   static const String desktopPreferencesFileName = 'application.json';

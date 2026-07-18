@@ -17,6 +17,7 @@ import 'theme/app_theme.dart';
 import 'pages/home_page.dart';
 import 'services/system/app_log_service.dart';
 import 'utils/constants.dart';
+import 'widgets/common/startup_update_checker.dart';
 
 /// 全局 BackendServer 实例（用于多客户端检测）
 late BackendServer globalBackendServer;
@@ -138,7 +139,7 @@ class StormTeleprompterApp extends StatelessWidget {
             themeMode: themeMode,
             themeAnimationDuration: const Duration(milliseconds: 260),
             themeAnimationCurve: Curves.easeOutCubic,
-            home: const HomePage(),
+            home: const StartupUpdateChecker(child: HomePage()),
           );
         },
       ),
