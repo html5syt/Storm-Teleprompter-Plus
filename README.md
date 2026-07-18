@@ -18,6 +18,9 @@
 > [!NOTE]
 > 本项目源自[影视飓风：AI真的好用吗？影视飓风全新工作流分享！](https://www.bilibili.com/video/BV16woRBfEsH/)中提到的**飓风提词器**，本项目将其从飞书妙搭中解耦，使其可以完全本地运行，并扩展了一些功能。你可以在 [notes/ori_code](notes/ori_code) 中查看原始代码。
 
+> [!NOTE]
+> 你也可以查看[开发者亲自写的使用文档](https://wuxiang-media-center.feishu.cn/wiki/AEUowJ2eKijtkNk7Ybkc5eNOn8d)了解使用方法。
+
 ## 功能概览
 
 - 文件夹式稿件管理，支持搜索、排序、多选、拖动、复制、移动和层级导入导出。
