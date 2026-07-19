@@ -314,7 +314,7 @@ flutter test --no-pub
 
 感谢 [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) 项目提供的语音识别技术。
 
-感谢 [LINUX DO](https://liux.do) 及 [AnyRouter](https://anyrouter.top) 提供的各类白嫖 Token 支持。没有它们，本项目根本无法在这么短的时间内实现并落地。
+感谢 [LINUX DO](https://linux.do) 及 [AnyRouter](https://anyrouter.top) 提供的各类白嫖 Token 支持。没有它们，本项目根本无法在这么短的时间内实现并落地。
 
 ## License & Disclaimer
 
