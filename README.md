@@ -308,6 +308,14 @@ flutter test --no-pub
 
 页面不应直接访问持久化服务。UI 通过 Provider 读取状态，Provider 通过 `ConnectionProvider` 与本地或远程后端通信。ASR 音频采集、识别器生命周期、文本对齐和提词器播放状态应保持职责分离。
 
+## 鸣谢
+
+感谢 [Codex](https://openai.com/blog/openai-codex) 提供的代码生成能力。
+
+感谢 [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) 项目提供的语音识别技术。
+
+感谢 [LINUX DO](https://liux.do) 及 [AnyRouter](https://anyrouter.top) 提供的各类白嫖 Token 支持。没有它们，本项目根本无法在这么短的时间内实现并落地。
+
 ## License & Disclaimer
 
 本项目采用 [MIT License](LICENSE)。
