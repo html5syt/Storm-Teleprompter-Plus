@@ -7,7 +7,7 @@ abstract final class AppConstants {
   static const String chineseAboutDescription =
       '基于 Flutter 构建的跨平台智能提词器，支持富文本稿件管理、自动滚动、离线语音识别、分光镜镜像显示，以及局域网多设备同步。';
   static const String englishAboutDescription =
-      'A cross-platform teleprompter built with Flutter, featuring rich-text manuscript management, automatic scrolling, offline speech recognition, mirror display, and LAN device synchronization.';
+      'A cross-platform teleprompter, featuring offline speech recognition, LAN device synchronization and more.';
 }
 
 /// 本地持久化约定。
@@ -63,15 +63,14 @@ abstract final class TeleprompterConstants {
   );
 
   static const List<int> speedPresets = [
-    60,
     80,
-    100,
-    120,
-    150,
-    180,
-    200,
-    250,
-    300,
+    160,
+    240,
+    260,
+    275,
+    295,
+    320,
     400,
+    450
   ];
 }

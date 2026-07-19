@@ -17,9 +17,13 @@
 
 > [!NOTE]
 > 本项目源自[影视飓风：AI真的好用吗？影视飓风全新工作流分享！](https://www.bilibili.com/video/BV16woRBfEsH/)中提到的**飓风提词器**，本项目将其从飞书妙搭中解耦，使其可以完全本地运行，并扩展了一些功能。你可以在 [notes/ori_code](notes/ori_code) 中查看原始代码。
+>
+> 原始版本地址：[飓风提词器](https://mcnt8r4c3f2k.aiforce.cloud/app/app_4k0qhy8j74gpb)
 
 > [!NOTE]
-> 你也可以查看[开发者亲自写的使用文档](https://wuxiang-media-center.feishu.cn/wiki/AEUowJ2eKijtkNk7Ybkc5eNOn8d)了解使用方法。
+> 你也可以查看[开发者亲自编写的使用文档](https://wuxiang-media-center.feishu.cn/wiki/AEUowJ2eKijtkNk7Ybkc5eNOn8d)了解更多使用方法。
+> 
+> 以下描述由 Codex 生成，虽然经过人工校对，但仍可能存在不准确或不完整的地方，请以实际使用为准。
 
 ## 功能概览
 
@@ -312,4 +316,5 @@ flutter test --no-pub
 
 如果你有新功能建议、Bug 报告或其他反馈，请在 [GitHub Issues](https://github.com/html5syt/Storm-Teleprompter-Plus/issues) 中提交。
 
-<h2 style="text-align: right;">Mr. Tim 2026.7</h2>
+<h2 align="right">Made with ❤ by Mr. Tim</h2>
+<h3 align="right">2026.7</h3>
