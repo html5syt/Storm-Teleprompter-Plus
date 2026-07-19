@@ -251,32 +251,32 @@ jobs:
           name: android
           path: artifacts/*
 
-  web:
-    name: Web
-    runs-on: ubuntu-latest
-    needs: release_metadata
-    if: needs.release_metadata.outputs.should_release == 'true'
-    steps:
-      - uses: actions/checkout@v4
+  # web:
+  #   name: Web
+  #   runs-on: ubuntu-latest
+  #   needs: release_metadata
+  #   if: needs.release_metadata.outputs.should_release == 'true'
+  #   steps:
+  #     - uses: actions/checkout@v4
 
-      - uses: subosito/flutter-action@v2
-        with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: stable
-          cache: true
+  #     - uses: subosito/flutter-action@v2
+  #       with:
+  #         flutter-version: ${{ env.FLUTTER_VERSION }}
+  #         channel: stable
+  #         cache: true
 
-      - name: Build Web
-        run: |
-          VERSION='${{ needs.release_metadata.outputs.app_version }}'
-          flutter pub get
-          flutter build web --release --dart-define=APP_VERSION="$VERSION"
-          mkdir -p artifacts
-          tar -czf artifacts/${APP_NAME}-web.tar.gz -C build/web .
+  #     - name: Build Web
+  #       run: |
+  #         VERSION='${{ needs.release_metadata.outputs.app_version }}'
+  #         flutter pub get
+  #         flutter build web --release --dart-define=APP_VERSION="$VERSION"
+  #         mkdir -p artifacts
+  #         tar -czf artifacts/${APP_NAME}-web.tar.gz -C build/web .
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: web
-          path: artifacts/*
+  #     - uses: actions/upload-artifact@v4
+  #       with:
+  #         name: web
+  #         path: artifacts/*
 
   linux:
     name: Linux
@@ -384,7 +384,7 @@ jobs:
     needs:
       - release_metadata
       - android
-      - web
+      # - web
       - linux
       - windows
       - apple
