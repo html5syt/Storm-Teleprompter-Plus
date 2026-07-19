@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -7,6 +8,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../services/app_release_service.dart';
 import '../theme/app_colors.dart';
 import '../utils/constants.dart';
+import '../services/windows_shell_about_service.dart';
 import 'log_viewer_page.dart';
 
 class AboutPage extends StatefulWidget {
@@ -23,6 +25,10 @@ class _AboutPageState extends State<AboutPage> {
   late final Future<AppVersionInfo> _version;
   Timer? _logoTapResetTimer;
   int _logoTapCount = 0;
+  Timer? _chineseNameTapResetTimer;
+  Timer? _englishNameTapResetTimer;
+  int _chineseNameTapCount = 0;
+  int _englishNameTapCount = 0;
   bool _checkingUpdate = false;
 
   @override
@@ -34,6 +40,8 @@ class _AboutPageState extends State<AboutPage> {
   @override
   void dispose() {
     _logoTapResetTimer?.cancel();
+    _chineseNameTapResetTimer?.cancel();
+    _englishNameTapResetTimer?.cancel();
     _releaseService.dispose();
     super.dispose();
   }
@@ -75,18 +83,29 @@ class _AboutPageState extends State<AboutPage> {
                     ),
                   ),
                   const SizedBox(height: 18),
-                  const Text(
-                    AppConstants.displayName,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700),
+                  GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => _handleNameTap(english: false),
+                    child: const Text(
+                      AppConstants.displayName,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
                   ),
                   const SizedBox(height: 4),
-                  Text(
-                    AppConstants.englishName,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: AppColors.textMutedFor(context),
-                      fontSize: 15,
+                  GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => _handleNameTap(english: true),
+                    child: Text(
+                      AppConstants.englishName,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: AppColors.textMutedFor(context),
+                        fontSize: 15,
+                      ),
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -145,6 +164,56 @@ class _AboutPageState extends State<AboutPage> {
       const Duration(seconds: 3),
       () => _logoTapCount = 0,
     );
+  }
+
+  void _handleNameTap({required bool english}) {
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.windows) return;
+
+    Timer? currentTimer = english
+        ? _englishNameTapResetTimer
+        : _chineseNameTapResetTimer;
+    currentTimer?.cancel();
+    if (english) {
+      _englishNameTapCount++;
+    } else {
+      _chineseNameTapCount++;
+    }
+
+    if ((english ? _englishNameTapCount : _chineseNameTapCount) >= 5) {
+      if (english) {
+        _englishNameTapCount = 0;
+      } else {
+        _chineseNameTapCount = 0;
+      }
+      _showNativeAbout(english: english);
+      return;
+    }
+
+    currentTimer = Timer(const Duration(seconds: 2), () {
+      if (english) {
+        _englishNameTapCount = 0;
+      } else {
+        _chineseNameTapCount = 0;
+      }
+    });
+    if (english) {
+      _englishNameTapResetTimer = currentTimer;
+    } else {
+      _chineseNameTapResetTimer = currentTimer;
+    }
+  }
+
+  void _showNativeAbout({required bool english}) {
+    try {
+      WindowsShellAboutService.show(
+        appName: english ? AppConstants.englishName : AppConstants.displayName,
+        description: english
+            ? AppConstants.englishAboutDescription
+            : AppConstants.chineseAboutDescription,
+      );
+    } catch (error) {
+      debugPrint('[About] 调用 Windows 原生关于对话框失败: $error');
+    }
   }
 
   Future<void> _checkForUpdates(AppVersionInfo current) async {

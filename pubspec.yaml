@@ -21,6 +21,7 @@ dependencies:
 
   # 文件/路径
   path_provider: ^2.1.4
+  ffi: ^2.2.0
 
   # HTTP 下载（ASR 模型下载）
   http: ^1.2.2

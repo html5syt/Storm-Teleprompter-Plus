@@ -4,6 +4,10 @@ abstract final class AppConstants {
 
   static const String displayName = '飓风提词器 Plus';
   static const String englishName = 'Storm Teleprompter+';
+  static const String chineseAboutDescription =
+      '基于 Flutter 构建的跨平台智能提词器，支持富文本稿件管理、自动滚动、离线语音识别、分光镜镜像显示，以及局域网多设备同步。';
+  static const String englishAboutDescription =
+      'A cross-platform teleprompter built with Flutter, featuring rich-text manuscript management, automatic scrolling, offline speech recognition, mirror display, and LAN device synchronization.';
 }
 
 /// 本地持久化约定。
