@@ -149,12 +149,9 @@ class TeleprompterSession {
 
   void _handleSync(WsServer server, WsRequest request) {
     final data = request.message.data;
-    final nextCurrentIndex = data['currentIndex'] as int? ?? _currentIndex;
-    if (nextCurrentIndex != _currentIndex) {
-      _currentIndex = nextCurrentIndex;
-      _asrSession?.setCurrentIndex(_currentIndex);
-    }
+    _currentIndex = data['currentIndex'] as int? ?? _currentIndex;
     _isPlaying = data['isPlaying'] as bool? ?? _isPlaying;
+    _asrSession?.setCurrentIndex(_currentIndex);
     _revision++;
 
     _emitState();

@@ -314,10 +314,7 @@ class TeleprompterProvider with ChangeNotifier {
   }
 
   /// 开始/恢复播放
-  void play(
-    AppSettings settings, {
-    ({int startRawIndex, int endRawIndex})? asrSearchWindow,
-  }) {
+  void play(AppSettings settings) {
     if (_state == TeleprompterState.idle ||
         _state == TeleprompterState.completed ||
         _totalChars == 0) {
@@ -327,7 +324,7 @@ class TeleprompterProvider with ChangeNotifier {
     _state = TeleprompterState.playing;
     _playStartTime = DateTime.now();
     _startAutoScrollIfNeeded(settings);
-    _startAsrIfNeeded(settings, asrSearchWindow);
+    _startAsrIfNeeded(settings);
     _scheduleHideControls(settings);
     _syncToBackend(reliable: true);
     notifyListeners();
@@ -349,19 +346,16 @@ class TeleprompterProvider with ChangeNotifier {
   }
 
   /// 切换播放/暂停
-  void togglePlayPause(
-    AppSettings settings, {
-    ({int startRawIndex, int endRawIndex})? asrSearchWindow,
-  }) {
+  void togglePlayPause(AppSettings settings) {
     if (_state == TeleprompterState.completed) {
       reset();
-      play(settings, asrSearchWindow: asrSearchWindow);
+      play(settings);
       return;
     }
     if (isPlaying) {
       pause(settings);
     } else {
-      play(settings, asrSearchWindow: asrSearchWindow);
+      play(settings);
     }
   }
 
@@ -461,15 +455,7 @@ class TeleprompterProvider with ChangeNotifier {
     }
   }
 
-  bool needsAsrStart(AppSettings settings) =>
-      _state == TeleprompterState.playing &&
-      settings.scrollMode == ScrollMode.asr &&
-      _activeAutoMode != ScrollMode.asr;
-
-  void refreshAutoScrollSettings(
-    AppSettings settings, {
-    ({int startRawIndex, int endRawIndex})? asrSearchWindow,
-  }) {
+  void refreshAutoScrollSettings(AppSettings settings) {
     final previousMode = _activeAutoMode;
     final changed =
         _activeAutoWpm != settings.wpm ||
@@ -484,7 +470,7 @@ class TeleprompterProvider with ChangeNotifier {
       _stopAutoScroll();
       _rememberAutoScrollSettings(settings);
       if (previousMode != ScrollMode.asr) {
-        _startAsrIfNeeded(settings, asrSearchWindow);
+        _startAsrIfNeeded(settings);
       }
       return;
     }
@@ -622,10 +608,7 @@ class TeleprompterProvider with ChangeNotifier {
 
   // ─── ASR 逻辑 ──────────────────────────────────────────
 
-  void _startAsrIfNeeded(
-    AppSettings settings,
-    ({int startRawIndex, int endRawIndex})? asrSearchWindow,
-  ) {
+  void _startAsrIfNeeded(AppSettings settings) {
     if (settings.scrollMode != ScrollMode.asr) return;
     final connection = _connection;
     if (connection == null || !connection.isConnected) {
@@ -635,26 +618,16 @@ class TeleprompterProvider with ChangeNotifier {
     }
     _asrStatus = 'loading';
     _asrError = null;
-    final serverSearchWindow = connection.isLocal ? asrSearchWindow : null;
-    unawaited(_startAsrAfterCursorSync(connection, serverSearchWindow));
+    unawaited(_startAsrAfterCursorSync(connection));
   }
 
-  Future<void> _startAsrAfterCursorSync(
-    ConnectionProvider connection,
-    ({int startRawIndex, int endRawIndex})? asrSearchWindow,
-  ) async {
+  Future<void> _startAsrAfterCursorSync(ConnectionProvider connection) async {
     try {
       // 恢复识别前先等待服务端接受当前字，避免 ASR 使用暂停前的旧锚点。
       await _syncToBackendReliably(_currentSyncData());
       if (!isPlaying || _activeAutoMode != ScrollMode.asr) return;
       final response = await connection.request(
         WsMessageType.asrStart,
-        data: {
-          if (asrSearchWindow != null)
-            'asrSearchStart': asrSearchWindow.startRawIndex,
-          if (asrSearchWindow != null)
-            'asrSearchEnd': asrSearchWindow.endRawIndex,
-        },
         timeout: const Duration(minutes: 2),
       );
       if (_disposed) return;

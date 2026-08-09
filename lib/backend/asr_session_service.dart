@@ -82,24 +82,13 @@ class AsrSessionService {
     _partialTranscript = '';
     _rms = 0;
     _error = null;
-    final scriptLines = TextParser.isHtml(content)
-        ? TextParser.parse(content)
-        : TextParser.parsePlainText(content);
-    final alignmentText = StringBuffer();
-    final alignmentRawIndexMap = <int>[];
-    for (var lineIndex = 0; lineIndex < scriptLines.length; lineIndex++) {
-      for (final character in scriptLines[lineIndex].characters) {
-        alignmentText.write(character.char);
-        alignmentRawIndexMap.add(character.rawIndex);
-      }
-      if (lineIndex < scriptLines.length - 1) {
-        // 这不是原稿字符；它只用于保留逻辑行边界。
-        alignmentText.write('\n');
-        alignmentRawIndexMap.add(-1);
-      }
-    }
+    final alignmentText = TextParser.isHtml(content)
+        ? TextParser.parse(
+            content,
+          ).expand((line) => line.characters).map((char) => char.char).join()
+        : content;
     _alignment
-      ..setScript(alignmentText.toString(), rawIndexMap: alignmentRawIndexMap)
+      ..setScript(alignmentText)
       ..setCurrentIndex(currentIndex);
     _broadcastStatus();
   }
@@ -109,12 +98,6 @@ class AsrSessionService {
     if (_articleId.isEmpty) return;
     _currentIndex = currentIndex;
     _alignment.setCurrentIndex(currentIndex);
-  }
-
-  /// 使用界面层在启动前计算出的可视文本范围限制 ASR 搜索。
-  void setSearchWindow({int? startRawIndex, int? endRawIndex}) {
-    if (_articleId.isEmpty) return;
-    _alignment.setSearchWindow(startRawIndex ?? -1, endRawIndex ?? -1);
   }
 
   Future<void> pause() async {
@@ -235,13 +218,6 @@ class AsrSessionService {
   Future<void> _handleStart(WsServer server, WsRequest request) async {
     var success = true;
     try {
-      final startRawIndex = (request.message.data['asrSearchStart'] as num?)
-          ?.toInt();
-      final endRawIndex = (request.message.data['asrSearchEnd'] as num?)
-          ?.toInt();
-      // 由承载服务端的客户端在启动前计算一次。后端据此维护滚动窗口，
-      // 不需要文本布局测量或 WebSocket 同步参与实时音频处理。
-      setSearchWindow(startRawIndex: startRawIndex, endRawIndex: endRawIndex);
       await start();
     } catch (_) {
       success = false;

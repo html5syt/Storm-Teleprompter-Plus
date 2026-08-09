@@ -101,14 +101,8 @@ class _TeleprompterPageState extends State<TeleprompterPage>
         _updateRemoteReconnectLoop(connection, remoteConnectionLost);
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
-          final latestSettings = context
-              .read<SettingsProvider>()
-              .mergedSettings;
           teleprompter.refreshAutoScrollSettings(
-            latestSettings,
-            asrSearchWindow: teleprompter.needsAsrStart(latestSettings)
-                ? _serverAsrSearchWindow(latestSettings)
-                : null,
+            context.read<SettingsProvider>().mergedSettings,
           );
         });
 
@@ -366,32 +360,10 @@ class _TeleprompterPageState extends State<TeleprompterPage>
 
     final connection = context.read<ConnectionProvider>();
     if (connection.isRemote || connection.canRetryRemoteConnection) return true;
-    _togglePlayback(
-      context.read<TeleprompterProvider>(),
+    context.read<TeleprompterProvider>().togglePlayPause(
       context.read<SettingsProvider>().mergedSettings,
     );
     return true;
-  }
-
-  void _togglePlayback(
-    TeleprompterProvider teleprompter,
-    AppSettings settings,
-  ) {
-    final searchWindow =
-        !teleprompter.isPlaying && settings.scrollMode == ScrollMode.asr
-        ? _serverAsrSearchWindow(settings)
-        : null;
-    teleprompter.togglePlayPause(settings, asrSearchWindow: searchWindow);
-  }
-
-  ({int startRawIndex, int endRawIndex})? _serverAsrSearchWindow(
-    AppSettings settings,
-  ) {
-    if (settings.scrollMode != ScrollMode.asr ||
-        !context.read<ConnectionProvider>().isLocal) {
-      return null;
-    }
-    return textLayerKey.currentState?.asrSearchWindow();
   }
 
   // ─── 动态颜色辅助 ──────────────────────────────────────
@@ -861,7 +833,7 @@ class _TeleprompterPageState extends State<TeleprompterPage>
         const SizedBox(width: 8),
         // 开始/暂停
         GestureDetector(
-          onTap: () => _togglePlayback(teleprompter, settings),
+          onTap: () => teleprompter.togglePlayPause(settings),
           child: Container(
             width: 48,
             height: 48,
