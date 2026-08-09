@@ -29,27 +29,53 @@ AppLifecycleListener? appLifecycleListener;
 /// 1. 初始化后端服务（WebSocket 服务器）
 /// 2. 初始化前端连接（连接到本机后端）
 /// 3. 启动 Flutter UI
-void main() async {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  AppLogService.instance.install();
+  final appLog = AppLogService.instance;
+  appLog.install();
+  await appLog.startSession();
+  appLog.info('[Main] Application startup began');
+
+  try {
+    await _startApplication(appLog);
+  } catch (error, stackTrace) {
+    appLog.error(
+      '[Main] Application startup failed',
+      error: error,
+      stackTrace: stackTrace,
+    );
+    rethrow;
+  }
+}
+
+Future<void> _startApplication(AppLogService appLog) async {
   if (!kIsWeb) {
+    appLog.info('[Main] Configuring system UI');
     await SystemChrome.setPreferredOrientations(DeviceOrientation.values);
     await SystemChrome.setEnabledSystemUIMode(
       SystemUiMode.manual,
       overlays: SystemUiOverlay.values,
     );
+    appLog.info('[Main] System UI configured');
   }
 
   // ── 1. 启动后端服务 ──
+  appLog.info('[Main] Creating bundled backend');
   globalBackendServer = BackendServer();
+  appLog.info('[Main] Starting bundled backend');
   final port = kIsWeb ? 0 : await globalBackendServer.start(); // 自动分配端口
+  appLog.info('[Main] Bundled backend ready on port $port');
   if (!kIsWeb) {
     appLifecycleListener = AppLifecycleListener(
-      onDetach: () => unawaited(globalBackendServer.shutdownApplication()),
+      onDetach: () {
+        appLog.info('[Main] Application detach requested');
+        unawaited(globalBackendServer.shutdownApplication());
+      },
     );
   }
 
   // ── 2. 创建 Provider ──
+  appLog.info('[Main] Creating application providers');
   final connectionProvider = ConnectionProvider();
   final articleProvider = ArticleProvider();
   final folderProvider = FolderProvider();
@@ -62,19 +88,35 @@ void main() async {
   folderProvider.bindConnection(connectionProvider);
   settingsProvider.bindConnection(connectionProvider);
   teleprompterProvider.bindConnection(connectionProvider);
+  appLog.info('[Main] Application providers ready');
 
   // ── 3. 连接到本机后端 ──
   if (!kIsWeb) {
+    appLog.info('[Main] Connecting to bundled backend');
     await connectionProvider.connectToLocal(port);
+    appLog.info(
+      '[Main] Bundled backend connection completed: '
+      '${connectionProvider.isConnected}',
+    );
   } else {
     debugPrint('[Main] Web build skips the bundled local backend.');
   }
 
   // ── 4. 加载初始数据 ──
+  appLog.info('[Main] Loading articles');
   await articleProvider.init();
+  appLog.info('[Main] Articles loaded');
+  appLog.info('[Main] Loading folders');
   await folderProvider.init();
+  appLog.info('[Main] Folders loaded');
+  appLog.info('[Main] Loading settings');
   await settingsProvider.init();
+  appLog.info('[Main] Settings loaded');
 
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    appLog.info('[Main] First Flutter frame rendered');
+  });
+  appLog.info('[Main] Installing Flutter widget tree');
   runApp(
     StormTeleprompterApp(
       backend: globalBackendServer,
@@ -85,6 +127,7 @@ void main() async {
       teleprompterProvider: teleprompterProvider,
     ),
   );
+  appLog.info('[Main] Flutter widget tree installed');
 }
 
 /// 应用根 Widget

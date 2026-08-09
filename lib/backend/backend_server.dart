@@ -68,10 +68,15 @@ class BackendServer {
 
     try {
       // 初始化所有服务
+      debugPrint('[BackendServer] 正在初始化稿件服务');
       await articleService.init();
+      debugPrint('[BackendServer] 稿件服务初始化完成');
+      debugPrint('[BackendServer] 正在初始化设置服务');
       await settingsService.init();
+      debugPrint('[BackendServer] 设置服务初始化完成');
 
       // 启动 WebSocket 服务器
+      debugPrint('[BackendServer] 正在启动 WebSocket 服务器');
       _port = await wsServer.start(port: port);
 
       // 注册消息处理器。WsServer 的请求流在 stop/start 间保持同一个实例，
