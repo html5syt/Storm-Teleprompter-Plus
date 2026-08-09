@@ -3,7 +3,7 @@ name: debug
 on:
   push:
     branches:
-      - v2
+      - "fix/macos-27"
   workflow_dispatch:
 
 permissions:

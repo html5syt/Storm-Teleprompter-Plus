@@ -25,6 +25,9 @@ abstract final class StorageConstants {
 
   static const String desktopDataDirectoryName = 'app_data';
   static const String desktopPreferencesFileName = 'application.json';
+  static const String logDirectoryName = 'logs';
+  static const String startupLogFilePrefix = 'storm-teleprompter-startup-';
+  static const int maxStartupLogFiles = 7;
 }
 
 /// 网络连接的公共约定。
@@ -71,6 +74,6 @@ abstract final class TeleprompterConstants {
     295,
     320,
     400,
-    450
+    450,
   ];
 }

@@ -1,12 +1,16 @@
 import 'package:flutter/foundation.dart';
 import 'package:logger/logger.dart';
 
+import 'app_log_persistence.dart';
+import 'app_log_persistence_base.dart';
+
 /// 应用内日志记录。
 ///
-/// 通过 logger 的自定义输出保存最近日志，并接管现有 [debugPrint]，无需业务代码
+/// 通过 logger 的自定义输出保存当前启动的完整日志，并接管现有 [debugPrint]，无需业务代码
 /// 重复维护控制台输出和应用内日志两套调用。
 class AppLogService {
-  AppLogService._() {
+  AppLogService._([AppLogPersistenceBackend? persistence])
+    : _persistence = persistence ?? AppLogPersistence() {
     _output.onEvent = _append;
     _logger = Logger(
       filter: ProductionFilter(),
@@ -16,14 +20,22 @@ class AppLogService {
     );
   }
 
+  @visibleForTesting
+  AppLogService.forTesting(AppLogPersistenceBackend persistence)
+    : this._(persistence);
+
   static final AppLogService instance = AppLogService._();
-  static const int maxEntries = 2000;
 
   final _AppLogOutput _output = _AppLogOutput();
+  final AppLogPersistenceBackend _persistence;
   late final Logger _logger;
   final ValueNotifier<List<AppLogEntry>> entries = ValueNotifier(const []);
   bool _installed = false;
+  bool _fileLoggingActive = false;
   DebugPrintCallback? _originalDebugPrint;
+  Future<void>? _startSessionFuture;
+
+  String? get currentLogPath => _persistence.currentLogPath;
 
   /// 在 Flutter 初始化后尽早安装异常与 debugPrint 捕获。
   void install() {
@@ -57,9 +69,53 @@ class AppLogService {
     };
   }
 
-  void clear() => entries.value = const [];
+  /// Creates this launch's log file and flushes any lines captured beforehand.
+  Future<void> startSession() =>
+      _startSessionFuture ??= _startPersistentSession();
+
+  void info(String message) => _logger.i(message);
+
+  void error(String message, {Object? error, StackTrace? stackTrace}) =>
+      _logger.e(message, error: error, stackTrace: stackTrace);
+
+  Future<void> close() => _persistence.close();
+
+  void clear() {
+    if (_fileLoggingActive) {
+      try {
+        _persistence.replaceLines(const []);
+      } catch (error, stackTrace) {
+        _originalDebugPrint?.call(
+          '[AppLog] Failed to clear startup log: $error\n$stackTrace',
+        );
+        return;
+      }
+    }
+    entries.value = const [];
+  }
 
   String exportText() => entries.value.map((entry) => entry.line).join('\n');
+
+  Future<void> _startPersistentSession() async {
+    try {
+      final path = await _persistence.startSession();
+      if (path == null) return;
+
+      _persistence.appendLines(entries.value.map((entry) => entry.line));
+      _fileLoggingActive = true;
+      _logger.i('[AppLog] Startup log file: $path');
+      for (final detail in _persistence.startupDetails) {
+        _logger.i('[AppLog] $detail');
+      }
+    } catch (error, stackTrace) {
+      _fileLoggingActive = false;
+      _logger.e(
+        '[AppLog] Failed to create startup log file',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+  }
 
   void _append(OutputEvent event) {
     final timestamp = event.origin.time;
@@ -71,10 +127,18 @@ class AppLogService {
           AppLogEntry(timestamp: timestamp, level: event.level, message: line),
     ];
     final next = <AppLogEntry>[...entries.value, ...added];
-    if (next.length > maxEntries) {
-      next.removeRange(0, next.length - maxEntries);
-    }
     entries.value = List.unmodifiable(next);
+
+    if (_fileLoggingActive) {
+      try {
+        _persistence.appendLines(added.map((entry) => entry.line));
+      } catch (error, stackTrace) {
+        _fileLoggingActive = false;
+        _originalDebugPrint?.call(
+          '[AppLog] Failed to append startup log: $error\n$stackTrace',
+        );
+      }
+    }
   }
 }
 
