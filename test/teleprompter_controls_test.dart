@@ -88,6 +88,33 @@ void main() {
     expect(firstSync, greaterThanOrEqualTo(0));
     expect(firstStart, greaterThan(firstSync));
   });
+
+  test('ASR start sends the locally measured search window once', () async {
+    const settings = AppSettings(scrollMode: ScrollMode.asr);
+    final connection = _FakeConnectionProvider();
+    final provider = TeleprompterProvider()
+      ..bindConnection(connection)
+      ..loadScript('article', '第一行\n第二行\n第三行');
+    addTearDown(() {
+      provider.dispose();
+      connection.dispose();
+    });
+
+    provider.play(
+      settings,
+      asrSearchWindow: (startRawIndex: 0, endRawIndex: 8),
+    );
+    await _flushAsyncWork();
+
+    final startRequest = connection.requestTypes.indexOf(
+      WsMessageType.asrStart,
+    );
+    expect(startRequest, greaterThanOrEqualTo(0));
+    expect(connection.requestData[startRequest], {
+      'asrSearchStart': 0,
+      'asrSearchEnd': 8,
+    });
+  });
 }
 
 Future<void> _flushAsyncWork() =>
@@ -97,6 +124,7 @@ class _FakeConnectionProvider extends ConnectionProvider {
   final StreamController<WsMessage> _messages =
       StreamController<WsMessage>.broadcast();
   final List<WsMessageType> requestTypes = <WsMessageType>[];
+  final List<Map<String, dynamic>> requestData = <Map<String, dynamic>>[];
   final List<int> sentSyncIndices = <int>[];
 
   @override
@@ -122,6 +150,7 @@ class _FakeConnectionProvider extends ConnectionProvider {
     Duration timeout = const Duration(seconds: 10),
   }) async {
     requestTypes.add(type);
+    requestData.add(data);
     await Future<void>.delayed(Duration.zero);
     return WsMessage(
       type: switch (type) {
