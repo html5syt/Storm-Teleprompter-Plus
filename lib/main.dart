@@ -44,7 +44,7 @@ Future<void> main() async {
       error: error,
       stackTrace: stackTrace,
     );
-    rethrow;
+    runApp(StartupFailureApp(error: error));
   }
 }
 
@@ -185,6 +185,60 @@ class StormTeleprompterApp extends StatelessWidget {
             home: const StartupUpdateChecker(child: HomePage()),
           );
         },
+      ),
+    );
+  }
+}
+
+/// Displays startup errors instead of leaving the native window blank.
+class StartupFailureApp extends StatelessWidget {
+  final Object error;
+
+  const StartupFailureApp({super.key, required this.error});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: AppConstants.displayName,
+      debugShowCheckedModeBanner: false,
+      theme: AppTheme.darkTheme,
+      home: Scaffold(
+        body: SafeArea(
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 560),
+              child: Padding(
+                padding: const EdgeInsets.all(32),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(
+                      Icons.error_outline,
+                      color: AppColors.error,
+                      size: 40,
+                    ),
+                    const SizedBox(height: 20),
+                    Text(
+                      '无法启动本地服务',
+                      style: Theme.of(context).textTheme.headlineSmall,
+                    ),
+                    const SizedBox(height: 12),
+                    const Text('请检查系统权限后重新打开应用。详细信息已写入启动日志。'),
+                    const SizedBox(height: 20),
+                    SelectableText(
+                      error.toString(),
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: AppColors.textSecondary,
+                        fontFamily: 'monospace',
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
