@@ -15,23 +15,13 @@
 
 基于 Flutter 开发的跨平台提词器，提供富文本稿件管理、自动滚动、离线语音跟随、分光镜镜像显示，以及局域网多设备同步。
 
-> [!NOTE]
-> 本项目源自[影视飓风：AI真的好用吗？影视飓风全新工作流分享！](https://www.bilibili.com/video/BV16woRBfEsH/)中提到的**飓风提词器**，本项目将其从飞书妙搭中解耦，使其可以完全本地运行，并扩展了一些功能。你可以在 [notes/ori_code](notes/ori_code) 中查看原始代码。
->
-> 原始版本地址：[飓风提词器](https://mcnt8r4c3f2k.aiforce.cloud/app/app_4k0qhy8j74gpb)
-
-> [!NOTE]
-> 你也可以查看[开发者亲自编写的使用文档](https://wuxiang-media-center.feishu.cn/wiki/AEUowJ2eKijtkNk7Ybkc5eNOn8d)了解更多使用方法。
-> 
-> 以下描述由 Codex 生成，虽然经过人工校对，但仍可能存在不准确或不完整的地方，请以实际使用为准。
-
 ## 功能概览
 
 - 文件夹式稿件管理，支持搜索、排序、多选、拖动、复制、移动和层级导入导出。
 - Quill 富文本编辑器，支持字体、字号、前景色、背景色和常用文本格式。
 - 编辑内容实时保存，可从编辑器直接开始提词。
 - 自动滚动模式，滚动速度支持任意非负数值和运行时快速调整。
-- 基于 sherpa-onnx 的本地离线语音识别，可按朗读进度自动定位当前字。*（识别准确度和延迟相较受制于web wasm环境而使用int8量化模型的原版更优秀）*
+- 基于 sherpa-onnx 的本地离线语音识别，可按朗读进度自动定位当前字。
 - 中英混合、纯中文和纯英文 ASR 模型选择。
 - 正文字号、字体、颜色、背景、边距、阅读框位置和进度条显示设置。
 - 镜像翻转正文、阅读框和进度条，适配分光镜。
@@ -310,19 +300,15 @@ flutter test --no-pub
 
 ## 鸣谢
 
-感谢 [Codex](https://openai.com/blog/openai-codex) 提供的代码生成能力。
-
 感谢 [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) 项目提供的语音识别技术。
-
-感谢 [LINUX DO](https://linux.do) 及 [AnyRouter](https://anyrouter.top) 提供的各类白嫖 Token 支持。没有它们，本项目根本无法在这么短的时间内实现并落地。
 
 ## License & Disclaimer
 
 本项目采用 [MIT License](LICENSE)。
 
-绝大部分代码由Codex编写，存在部分潜在不当实现或安全漏洞。如有发现，请提交 Issue 或 Pull Request。
+如有发现问题，请提交 Issue 或 Pull Request。
 
 如果你有新功能建议、Bug 报告或其他反馈，请在 [GitHub Issues](https://github.com/html5syt/Storm-Teleprompter-Plus/issues) 中提交。
 
 <h2 align="right">Made with ❤ by Mr. Tim</h2>
-<h3 align="right">2026.7</h3>
+<h3 align="right">2026.7-R11 Version</h3>

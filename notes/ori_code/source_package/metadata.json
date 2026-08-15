@@ -1,5 +1,0 @@
-{
-  "name": "Thin UI Teleprompter",
-  "description": "A high-performance teleprompter interface with real-time voice synchronization via Feishu Cloud ASR.",
-  "requestFramePermissions": ["microphone"]
-}
