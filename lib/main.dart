@@ -19,16 +19,9 @@ import 'services/system/app_log_service.dart';
 import 'utils/constants.dart';
 import 'widgets/common/startup_update_checker.dart';
 
-/// 全局 BackendServer 实例（用于多客户端检测）
 late BackendServer globalBackendServer;
 AppLifecycleListener? appLifecycleListener;
 
-/// 飓风提词器 Plus 应用入口
-///
-/// 启动流程：
-/// 1. 初始化后端服务（WebSocket 服务器）
-/// 2. 初始化前端连接（连接到本机后端）
-/// 3. 启动 Flutter UI
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final appLog = AppLogService.instance;
@@ -59,11 +52,10 @@ Future<void> _startApplication(AppLogService appLog) async {
     appLog.info('[Main] System UI configured');
   }
 
-  // ── 1. 启动后端服务 ──
   appLog.info('[Main] Creating bundled backend');
   globalBackendServer = BackendServer();
   appLog.info('[Main] Starting bundled backend');
-  final port = kIsWeb ? 0 : await globalBackendServer.start(); // 自动分配端口
+  final port = kIsWeb ? 0 : await globalBackendServer.start(); 
   appLog.info('[Main] Bundled backend ready on port $port');
   if (!kIsWeb) {
     appLifecycleListener = AppLifecycleListener(
@@ -74,7 +66,6 @@ Future<void> _startApplication(AppLogService appLog) async {
     );
   }
 
-  // ── 2. 创建 Provider ──
   appLog.info('[Main] Creating application providers');
   final connectionProvider = ConnectionProvider();
   final articleProvider = ArticleProvider();
@@ -82,7 +73,6 @@ Future<void> _startApplication(AppLogService appLog) async {
   final settingsProvider = SettingsProvider();
   final teleprompterProvider = TeleprompterProvider();
 
-  // 绑定连接到数据 Provider
   connectionProvider.bindLocalBackend(globalBackendServer);
   articleProvider.bindConnection(connectionProvider);
   folderProvider.bindConnection(connectionProvider);
@@ -90,7 +80,6 @@ Future<void> _startApplication(AppLogService appLog) async {
   teleprompterProvider.bindConnection(connectionProvider);
   appLog.info('[Main] Application providers ready');
 
-  // ── 3. 连接到本机后端 ──
   if (!kIsWeb) {
     appLog.info('[Main] Connecting to bundled backend');
     await connectionProvider.connectToLocal(port);
@@ -102,7 +91,6 @@ Future<void> _startApplication(AppLogService appLog) async {
     debugPrint('[Main] Web build skips the bundled local backend.');
   }
 
-  // ── 4. 加载初始数据 ──
   appLog.info('[Main] Loading articles');
   await articleProvider.init();
   appLog.info('[Main] Articles loaded');
@@ -130,7 +118,6 @@ Future<void> _startApplication(AppLogService appLog) async {
   appLog.info('[Main] Flutter widget tree installed');
 }
 
-/// 应用根 Widget
 class StormTeleprompterApp extends StatelessWidget {
   final BackendServer backend;
   final ConnectionProvider connectionProvider;
@@ -190,7 +177,6 @@ class StormTeleprompterApp extends StatelessWidget {
   }
 }
 
-/// Displays startup errors instead of leaving the native window blank.
 class StartupFailureApp extends StatelessWidget {
   final Object error;
 

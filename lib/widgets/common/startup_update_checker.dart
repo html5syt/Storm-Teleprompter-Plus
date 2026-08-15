@@ -14,7 +14,6 @@ typedef IgnoredUpdateLoader = Future<String?> Function();
 typedef IgnoredUpdateSaver = Future<void> Function(String version);
 typedef ReleaseLauncher = Future<void> Function(String url);
 
-/// 首帧后静默检查 GitHub Release，仅在发现未屏蔽的新版本时提示。
 class StartupUpdateChecker extends StatefulWidget {
   const StartupUpdateChecker({
     super.key,
@@ -88,7 +87,6 @@ class _StartupUpdateCheckerState extends State<StartupUpdateChecker> {
           break;
       }
     } catch (error) {
-      // 启动检查不能干扰应用使用，错误只进入应用日志。
       debugPrint('[StartupUpdate] 检查更新失败: $error');
     }
   }

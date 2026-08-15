@@ -22,11 +22,6 @@ bool usesPortableDesktopDataDirectory({
 @visibleForTesting
 Directory? appDataDirectoryOverride;
 
-/// 返回当前平台使用的持久数据根目录。
-///
-/// Windows 和 Linux 桌面版本保持可移植：数据与可执行文件捆绑在一起。
-/// macOS 以及移动版本使用平台的应用支持目录。macOS 的 .app 包可能位于
-/// /Applications 或 App Translocation 的只读位置，不能存放可变数据。
 Future<Directory> getAppDataDirectory() async {
   final override = appDataDirectoryOverride;
   if (override != null) {

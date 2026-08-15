@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import '../../pages/about_page.dart';
 import '../../services/app_release_service.dart';
 
-/// 设置页中的关于入口，具体信息集中在独立页面展示。
 class AboutSettingsSection extends StatelessWidget {
   const AboutSettingsSection({super.key, this.versionLoader});
 

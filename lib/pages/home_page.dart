@@ -32,13 +32,10 @@ part 'home/home_move_dialog.dart';
 part 'home/home_auxiliary_widgets.dart';
 part 'home/home_import_overlay.dart';
 
-/// 视图模式
 enum ViewMode { largeIcons, smallIcons, list, details }
 
-/// 排序方式
 enum SortBy { name, date }
 
-/// 首页 — 资源管理器风格稿件管理
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
 
@@ -309,7 +306,6 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
             );
           },
         ),
-        // 排序
         PopupMenuButton<SortBy>(
           icon: const Icon(Icons.sort, size: 20),
           tooltip: '排序',
@@ -319,13 +315,11 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
             const PopupMenuItem(value: SortBy.date, child: Text('按日期')),
           ],
         ),
-        // 视图切换
         IconButton(
           icon: Icon(_viewModeIcon, size: 20),
           onPressed: () => setState(() => _viewMode = _nextViewMode),
           tooltip: _viewModeTooltip,
         ),
-        // 连接状态
         PopupMenuButton<String>(
           onOpened: () {
             if (connection.isLocal) unawaited(connection.refreshLocalLanIps());
@@ -421,7 +415,6 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
     };
   }
 
-  // ─── 面包屑导航栏 ─────────────────────────────────────
   Widget _buildBreadcrumbBar() {
     final folderProvider = context.watch<FolderProvider>();
     final breadcrumb = folderProvider.getBreadcrumbFrom(_currentFolderId);
@@ -435,7 +428,6 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
     );
   }
 
-  // ─── 搜索栏 ──────────────────────────────────────────
   Widget _buildSearchBar() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -487,7 +479,6 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
     );
   }
 
-  // ─── 内容窗格 ────────────────────────────────────────
   Widget _buildContentPane() {
     return Consumer3<ArticleProvider, FolderProvider, ConnectionProvider>(
       builder: (context, articleProvider, folderProvider, connection, _) {
@@ -496,7 +487,6 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
         }
         if (connection.isRemote) return _buildRemotePlaceholder(connection);
 
-        // 获取当前目录内容
         final currentId = _currentFolderId;
         List<Folder> subFolders;
         List<Article> allArticles;
@@ -674,7 +664,6 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
     );
   }
 
-  // ─── 网格视图 ────────────────────────────────────────
   Widget _buildGridView(List<_ContentItem> items, {required bool compact}) {
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -738,7 +727,6 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
                 final scrollOffset = _gridScrollController.hasClients
                     ? _gridScrollController.offset
                     : 0.0;
-                // Listener localPosition 是相对于 Stack 的，减去 GridView padding，加上滚动偏移
                 final selRect = Rect.fromPoints(
                   _selectionStart! -
                       const Offset(padding, padding) +
@@ -1025,7 +1013,6 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
     );
   }
 
-  // ─── 列表视图 ────────────────────────────────────────
   String _articlePreview(Article article) {
     final text = article.content
         .replaceAll(RegExp(r'<[^>]*>'), ' ')
@@ -1109,7 +1096,6 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
     );
   }
 
-  // ─── 详细信息视图 ────────────────────────────────────
   Widget _buildDetailsView(List<_ContentItem> items) {
     return Column(
       children: [
@@ -1256,7 +1242,6 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
     );
   }
 
-  // ─── FAB 菜单 ────────────────────────────────────────
   Widget _buildFabMenu(BuildContext context, ConnectionProvider connection) {
     return FloatingActionButton(
       onPressed: () => _showFabMenu(context, connection),
@@ -1364,7 +1349,6 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
     );
   }
 
-  // ─── 状态栏 ──────────────────────────────────────────
   Widget _buildStatusBar() {
     return Consumer3<ArticleProvider, FolderProvider, ConnectionProvider>(
       builder: (context, articleProvider, folderProvider, connection, _) {

@@ -6,12 +6,6 @@ import '../../models/script_character.dart';
 import '../../theme/app_colors.dart';
 import '../../utils/constants.dart';
 
-/// 提词器文本渲染层（懒加载 + 实际行高定位）。
-///
-/// - [SliverList.builder] 只构建可见正文行，控制大型稿件 Widget 数量。
-/// - 用 [TextPainter] 按当前宽度和文字样式缓存每个逻辑行的实际高度。
-/// - 当前字滚动定位使用累计实际高度，避免长行换行、富文本字号、空行导致
-///   当前字偏离阅读区域框中心行。
 class TeleprompterTextLayer extends StatefulWidget {
   final ScrollController scrollController;
   final List<ScriptLine> lines;

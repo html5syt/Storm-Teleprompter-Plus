@@ -4,10 +4,6 @@ import 'package:logger/logger.dart';
 import 'app_log_persistence.dart';
 import 'app_log_persistence_base.dart';
 
-/// 应用内日志记录。
-///
-/// 通过 logger 的自定义输出保存当前启动的完整日志，并接管现有 [debugPrint]，无需业务代码
-/// 重复维护控制台输出和应用内日志两套调用。
 class AppLogService {
   AppLogService._([AppLogPersistenceBackend? persistence])
     : _persistence = persistence ?? AppLogPersistence() {
@@ -37,7 +33,6 @@ class AppLogService {
 
   String? get currentLogPath => _persistence.currentLogPath;
 
-  /// 在 Flutter 初始化后尽早安装异常与 debugPrint 捕获。
   void install() {
     if (_installed) return;
     _installed = true;
@@ -69,7 +64,6 @@ class AppLogService {
     };
   }
 
-  /// Creates this launch's log file and flushes any lines captured beforehand.
   Future<void> startSession() =>
       _startSessionFuture ??= _startPersistentSession();
 

@@ -10,7 +10,6 @@ import 'ws_server.dart';
 
 enum AsrSessionStatus { idle, loading, running, paused, error }
 
-/// Owns recognition for the backend. UI clients only receive processed data.
 typedef AsrPositionChanged =
     void Function(int currentIndex, {bool allowBackward});
 
@@ -93,7 +92,6 @@ class AsrSessionService {
     _broadcastStatus();
   }
 
-  /// 手动或自动移动当前字后，同步覆盖对齐锚点。
   void setCurrentIndex(int currentIndex) {
     if (_articleId.isEmpty) return;
     _currentIndex = currentIndex;
@@ -106,7 +104,6 @@ class AsrSessionService {
       try {
         await startOperation;
       } catch (_) {
-        // Start errors are already reflected in ASR status; pause still wins.
       }
     }
     await _asr.stop();

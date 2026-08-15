@@ -8,23 +8,14 @@ import '../services/network_info_service.dart';
 import '../services/app_preferences.dart';
 import '../utils/constants.dart';
 
-/// 连接模式
 enum ConnectionMode {
-  /// 未连接
   disconnected,
 
-  /// 连接到本地后端
   local,
 
-  /// 连接到远程后端
   remote,
 }
 
-/// 连接状态管理 Provider
-///
-/// 管理前端与后端的 WebSocket 连接状态。
-/// 前端默认连接到程序自身创建的后端。
-/// 改连接到远程后端时，停止本机持有的后端实例。
 class ConnectionProvider with ChangeNotifier {
   final WsClient client = WsClient();
 
@@ -109,7 +100,6 @@ class ConnectionProvider with ChangeNotifier {
     }
   }
 
-  /// 获取连接信息文本
   String get connectionInfoText =>
       connectionTypeText == '未连接' ? '未连接服务端' : '服务端连接信息';
 
@@ -191,7 +181,6 @@ class ConnectionProvider with ChangeNotifier {
     await _saveRemoteConnectionHistory();
   }
 
-  /// 初始化：连接到本地后端
   Future<void> connectToLocal(int port) async {
     if (client.isConnected || canRetryRemoteConnection) {
       await client.disconnect();
@@ -235,7 +224,6 @@ class ConnectionProvider with ChangeNotifier {
     }
   }
 
-  /// 连接到远程后端
   Future<void> connectToRemote(String host, int port) async {
     final hadLocalBackend = _localBackend?.isRunning == true;
 
@@ -265,7 +253,6 @@ class ConnectionProvider with ChangeNotifier {
     }
   }
 
-  /// 断开连接
   Future<void> disconnect() async {
     _messageSubscription?.cancel();
     await client.disconnect();
@@ -288,11 +275,9 @@ class ConnectionProvider with ChangeNotifier {
     await _localBackend?.stop();
   }
 
-  /// 设置消息监听
   void _setupMessageListener() {
     _messageSubscription?.cancel();
     _messageSubscription = client.messages.listen((message) {
-      // 处理设备数更新
       if (message.type == WsMessageType.connectionDevices) {
         _deviceCount = message.data['count'] as int? ?? 0;
         _deviceIds = (message.data['clientIds'] as List<dynamic>? ?? const [])
@@ -314,7 +299,6 @@ class ConnectionProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  /// 发送请求并等待响应
   Future<WsMessage> request(
     WsMessageType type, {
     Map<String, dynamic> data = const {},
@@ -323,12 +307,10 @@ class ConnectionProvider with ChangeNotifier {
     return client.request(type, data: data, timeout: timeout);
   }
 
-  /// 发送消息（不等待响应）
   void send(WsMessage message) {
     client.send(message);
   }
 
-  /// 监听特定类型的消息
   Stream<WsMessage> listenTo(WsMessageType type) {
     return client.messages.where((m) => m.type == type);
   }

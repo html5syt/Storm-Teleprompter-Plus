@@ -3,10 +3,6 @@ import 'dart:io';
 
 import 'package:ffi/ffi.dart';
 
-/// Windows 原生 ShellAboutW 调用封装。
-///
-/// 图标从当前可执行文件的资源中提取，因此会使用 Windows 标题栏和快捷方式
-/// 使用的同一份应用图标。其他平台不会加载或调用 Windows DLL。
 class WindowsShellAboutService {
   WindowsShellAboutService._();
 

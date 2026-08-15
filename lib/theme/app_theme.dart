@@ -2,19 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'app_colors.dart';
 
-/// 飓风提词器全局主题
-///
-/// 使用 Material 3 暗色主题，品牌色为金色 #DB9D16。
 class AppTheme {
   AppTheme._();
 
-  /// 默认暗色主题（使用默认金色和字体）
   static ThemeData get darkTheme => fromColor(AppColors.primary);
 
-  /// 从自定义主题色构建主题（使用默认字体）
   static ThemeData fromColor(Color primary) => fromColorAndFont(primary);
 
-  /// 从自定义主题色和字体构建主题
   static ThemeData fromColorAndFont(
     Color primary, {
     String fontFamily = 'Noto Sans SC',
@@ -38,7 +32,6 @@ class AppTheme {
       colorScheme: colorScheme,
       scaffoldBackgroundColor: AppColors.background,
 
-      // AppBar 主题
       appBarTheme: AppBarTheme(
         backgroundColor: AppColors.surface,
         foregroundColor: AppColors.textPrimary,
@@ -50,7 +43,6 @@ class AppTheme {
         ),
       ),
 
-      // 卡片主题
       cardTheme: CardThemeData(
         color: AppColors.surface,
         elevation: 0,
@@ -61,7 +53,6 @@ class AppTheme {
         margin: EdgeInsets.zero,
       ),
 
-      // 按钮主题
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
           backgroundColor: primary,
@@ -93,7 +84,6 @@ class AppTheme {
         ),
       ),
 
-      // 输入框主题
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: AppColors.surface,
@@ -117,17 +107,14 @@ class AppTheme {
         ),
       ),
 
-      // 对话框主题
       dialogTheme: DialogThemeData(
         backgroundColor: AppColors.surfaceElevated,
         elevation: 8,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       ),
 
-      // 图标主题
       iconTheme: const IconThemeData(color: AppColors.textSecondary, size: 24),
 
-      // 文字主题
       textTheme: const TextTheme(
         headlineLarge: TextStyle(
           fontSize: 32,
@@ -164,13 +151,11 @@ class AppTheme {
         ),
       ),
 
-      // 分割线
       dividerTheme: const DividerThemeData(
         color: AppColors.border,
         thickness: 0.5,
       ),
 
-      // 滑块主题
       sliderTheme: SliderThemeData(
         activeTrackColor: primary,
         inactiveTrackColor: AppColors.border,
@@ -178,7 +163,6 @@ class AppTheme {
         overlayColor: primary.withValues(alpha: 0.2),
       ),
 
-      // 开关主题
       switchTheme: SwitchThemeData(
         thumbColor: WidgetStateProperty.resolveWith((states) {
           if (states.contains(WidgetState.selected)) return primary;
@@ -192,7 +176,6 @@ class AppTheme {
         }),
       ),
 
-      // Chip 主题
       chipTheme: ChipThemeData(
         backgroundColor: AppColors.surface,
         selectedColor: primary.withValues(alpha: 0.2),
@@ -201,7 +184,6 @@ class AppTheme {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       ),
 
-      // Tooltip
       tooltipTheme: TooltipThemeData(
         decoration: BoxDecoration(
           color: AppColors.surfaceElevated,

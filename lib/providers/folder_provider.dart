@@ -4,7 +4,6 @@ import '../backend/ws_protocol.dart';
 import '../models/folder.dart';
 import 'connection_provider.dart';
 
-/// 文件夹管理 Provider（前端状态管理）
 class FolderProvider with ChangeNotifier {
   List<Folder> _folders = [];
   String? _currentFolderId;
@@ -17,7 +16,6 @@ class FolderProvider with ChangeNotifier {
   String? get currentFolderId => _currentFolderId;
   bool get isLoading => _isLoading;
 
-  /// 绑定连接
   void bindConnection(ConnectionProvider connection) {
     if (_connection != null && _connectionListener != null) {
       _connection!.removeListener(_connectionListener!);
@@ -43,12 +41,10 @@ class FolderProvider with ChangeNotifier {
   Folder? getFolderById(String id) =>
       _folders.where((f) => f.id == id).firstOrNull;
 
-  /// 构建从根到当前文件夹的面包屑路径
   List<Folder> getBreadcrumb() {
     return getBreadcrumbFrom(_currentFolderId);
   }
 
-  /// 构建从根到指定文件夹的面包屑路径（不依赖内部状态）
   List<Folder> getBreadcrumbFrom(String? folderId) {
     if (folderId == null) return [];
     final path = <Folder>[];
@@ -62,12 +58,10 @@ class FolderProvider with ChangeNotifier {
     return path;
   }
 
-  /// 初始化并加载
   Future<void> init() async {
     await loadFolders();
   }
 
-  /// 从后端加载文件夹
   Future<void> loadFolders() async {
     _isLoading = true;
     notifyListeners();
@@ -89,7 +83,6 @@ class FolderProvider with ChangeNotifier {
     }
   }
 
-  /// 创建文件夹
   Future<Folder?> createFolder(String name, {String? parentId}) async {
     try {
       if (_connection != null && _connection!.isConnected) {
@@ -112,7 +105,6 @@ class FolderProvider with ChangeNotifier {
     return null;
   }
 
-  /// 重命名文件夹
   Future<void> renameFolder(String folderId, String newName) async {
     try {
       if (_connection != null && _connection!.isConnected) {
@@ -137,7 +129,6 @@ class FolderProvider with ChangeNotifier {
     }
   }
 
-  /// 删除文件夹
   Future<void> deleteFolder(String folderId) async {
     try {
       if (_connection != null && _connection!.isConnected) {
@@ -148,7 +139,6 @@ class FolderProvider with ChangeNotifier {
         if (response.type == WsMessageType.folderDeleteResponse &&
             response.data['success'] == true) {
           _folders.removeWhere((f) => f.id == folderId);
-          // 清除子文件夹的引用
           for (int i = _folders.length - 1; i >= 0; i--) {
             if (_folders[i].parentId == folderId) {
               _folders[i] = _folders[i].copyWith(clearParentId: true);
@@ -163,13 +153,11 @@ class FolderProvider with ChangeNotifier {
     }
   }
 
-  /// 设置当前文件夹
   void setCurrentFolder(String? folderId) {
     _currentFolderId = folderId;
     notifyListeners();
   }
 
-  /// 移动文件夹到新的父文件夹
   Future<void> moveFolder(String folderId, String? newParentId) async {
     try {
       if (_connection != null && _connection!.isConnected) {
@@ -192,7 +180,6 @@ class FolderProvider with ChangeNotifier {
     }
   }
 
-  /// 递归复制文件夹；调用方随后刷新稿件列表以取得复制出的稿件。
   Future<bool> copyFolder(String folderId, String? newParentId) async {
     try {
       if (_connection == null || !_connection!.isConnected) return false;

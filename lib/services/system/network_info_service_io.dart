@@ -1,8 +1,5 @@
 import 'dart:io';
 
-/// 返回本机可用于局域网连接的真实私有 IPv4 地址。
-///
-/// 回环、自动分配地址和常见虚拟网卡会被过滤，避免向用户展示无法连接的地址。
 Future<List<String>> getLocalLanIPv4Addresses() async {
   final interfaces = await NetworkInterface.list(
     type: InternetAddressType.IPv4,

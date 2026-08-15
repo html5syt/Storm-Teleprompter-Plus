@@ -3,9 +3,6 @@ import '../backend/ws_protocol.dart';
 import '../models/article.dart';
 import 'connection_provider.dart';
 
-/// 稿件管理状态（前端）
-///
-/// 通过 WebSocket 与后端通信，管理稿件列表的增删改查操作。
 class ArticleProvider with ChangeNotifier {
   List<Article> _articles = [];
   bool _isLoading = false;
@@ -18,7 +15,6 @@ class ArticleProvider with ChangeNotifier {
   bool get isLoading => _isLoading;
   String? get error => _error;
 
-  /// 绑定连接
   void bindConnection(ConnectionProvider connection) {
     if (_connection != null && _connectionListener != null) {
       _connection!.removeListener(_connectionListener!);
@@ -34,12 +30,10 @@ class ArticleProvider with ChangeNotifier {
     connection.addListener(_connectionListener!);
   }
 
-  /// 初始化并加载稿件
   Future<void> init() async {
     await loadArticles();
   }
 
-  /// 从后端加载全部稿件
   Future<void> loadArticles() async {
     _isLoading = true;
     _error = null;
@@ -63,7 +57,6 @@ class ArticleProvider with ChangeNotifier {
     }
   }
 
-  /// 创建新稿件
   Future<Article?> createArticle({
     required String title,
     required String content,
@@ -92,7 +85,6 @@ class ArticleProvider with ChangeNotifier {
     }
   }
 
-  /// 更新稿件
   Future<Article?> updateArticle(
     String id, {
     String? title,
@@ -126,7 +118,6 @@ class ArticleProvider with ChangeNotifier {
     }
   }
 
-  /// 更新稿件的提词器设置
   Future<Article?> updateArticleTeleprompterSettings(
     String id,
     Map<String, dynamic> teleprompterSettings,
@@ -158,7 +149,6 @@ class ArticleProvider with ChangeNotifier {
     }
   }
 
-  /// 删除稿件
   Future<bool> deleteArticle(String id) async {
     try {
       if (_connection != null && _connection!.isConnected) {
@@ -181,7 +171,6 @@ class ArticleProvider with ChangeNotifier {
     }
   }
 
-  /// 搜索稿件
   List<Article> searchArticles(String query) {
     if (query.trim().isEmpty) return _articles;
     final lowerQuery = query.toLowerCase();
@@ -191,12 +180,10 @@ class ArticleProvider with ChangeNotifier {
     }).toList();
   }
 
-  /// 获取指定文件夹中的稿件
   List<Article> getArticlesInFolder(String? folderId) {
     return _articles.where((a) => a.folderId == folderId).toList();
   }
 
-  /// 将稿件移动到文件夹
   Future<Article?> getArticleById(
     String id, {
     bool forceRefresh = false,
@@ -276,13 +263,10 @@ class ArticleProvider with ChangeNotifier {
     }
   }
 
-  /// 删除文件夹及其包含的所有稿件
   Future<void> deleteFolderWithArticles(String folderId) async {
     try {
-      // 获取该文件夹中的所有稿件
       final articlesInFolder = getArticlesInFolder(folderId);
 
-      // 删除这些稿件
       for (final article in articlesInFolder) {
         await deleteArticle(article.id);
       }

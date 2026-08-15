@@ -1,6 +1,5 @@
 part of '../home_page.dart';
 
-/// 内容项（文件夹或稿件）
 class _ContentItem {
   final String id;
   final String name;
@@ -27,15 +26,12 @@ class _ContentItem {
       folder = null;
 }
 
-/// 剪贴板操作类型
 enum _ClipboardOp { cut, copy }
 
-/// 首页逻辑 mixin
 mixin HomeLogic on State<HomePage> {
   void _showFabMenu(BuildContext context, ConnectionProvider connection);
   Future<void> _shutdownAndExitApplication();
 
-  // ─── 搜索 ─────────────────────────────────────────────
   final TextEditingController searchController = TextEditingController();
   String searchQuery = '';
   final ImportService _importService = ImportService();
@@ -45,16 +41,13 @@ mixin HomeLogic on State<HomePage> {
   double? _importProgress;
   String _importStatusText = '';
 
-  // ─── 文件夹导航 ───────────────────────────────────────
   String? _currentFolderId;
   final List<String?> _history = [];
   int _historyIndex = -1;
 
-  // ─── 选择 ─────────────────────────────────────────────
   final Set<String> _selectedItems = {};
   int _lastGridCrossAxisCount = 1;
 
-  // ─── 框选 ─────────────────────────────────────────────
   Offset? _selectionStart;
   Offset? _selectionEnd;
   bool _isSelecting = false;
@@ -65,18 +58,14 @@ mixin HomeLogic on State<HomePage> {
   Offset? _itemHoldStartPosition;
   final double _selectionDragThreshold = 6.0;
 
-  // ─── 面包屑滚动 ──────────────────────────────────────
   final ScrollController _breadcrumbScrollController = ScrollController();
 
-  // ─── 网格滚动（框选用） ──────────────────────────────
   final ScrollController _gridScrollController = ScrollController();
 
-  // ─── 视图/排序 ────────────────────────────────────────
   ViewMode _viewMode = ViewMode.largeIcons;
   SortBy _sortBy = SortBy.name;
   bool _sortAscending = true;
 
-  // ─── 剪贴板 ───────────────────────────────────────────
   final List<_ContentItem> _clipboard = [];
   _ClipboardOp _clipboardOp = _ClipboardOp.copy;
 
@@ -91,7 +80,7 @@ mixin HomeLogic on State<HomePage> {
   @override
   void initState() {
     super.initState();
-    _history.add(null); // 根目录
+    _history.add(null); 
     _historyIndex = 0;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<ArticleProvider>().init();
@@ -114,7 +103,6 @@ mixin HomeLogic on State<HomePage> {
     super.dispose();
   }
 
-  // ─── 搜索 ─────────────────────────────────────────────
   void _bindTeleprompterSession() {
     final connection = context.read<ConnectionProvider>();
     _startSessionSubscription = connection
@@ -312,7 +300,6 @@ mixin HomeLogic on State<HomePage> {
     setState(() => searchQuery = '');
   }
 
-  // ─── 排序 ─────────────────────────────────────────────
   Set<String> _descendantFolderIds(String? rootId, List<Folder> folders) {
     final childrenByParent = <String?, List<Folder>>{};
     for (final folder in folders) {
@@ -578,7 +565,6 @@ mixin HomeLogic on State<HomePage> {
     return sorted;
   }
 
-  // ─── 导航 ─────────────────────────────────────────────
   bool get _canGoBack => _historyIndex > 0;
   bool get _canGoForward => _historyIndex < _history.length - 1;
 
@@ -592,7 +578,6 @@ mixin HomeLogic on State<HomePage> {
   void _navigateToFolder(String? folderId) {
     if (folderId == _currentFolderId) return;
     setState(() {
-      // 截断前进历史
       if (_historyIndex < _history.length - 1) {
         _history.removeRange(_historyIndex + 1, _history.length);
       }
@@ -634,7 +619,6 @@ mixin HomeLogic on State<HomePage> {
     _resetBreadcrumbScroll();
   }
 
-  // ─── 项目交互 ────────────────────────────────────────
   void _selectSingleItem(_ContentItem item) {
     final ctrl = HardwareKeyboard.instance.isControlPressed;
     final shift = HardwareKeyboard.instance.isShiftPressed;
@@ -648,17 +632,14 @@ mixin HomeLogic on State<HomePage> {
 
     setState(() {
       if (ctrl) {
-        // Ctrl+点击：切换选中状态
         if (_selectedItems.contains(item.id)) {
           _selectedItems.remove(item.id);
         } else {
           _selectedItems.add(item.id);
         }
       } else if (shift && _selectedItems.isNotEmpty) {
-        // Shift+点击：范围选择
         _handleRangeSelect(item);
       } else {
-        // 普通点击：单选
         _selectedItems.clear();
         _selectedItems.add(item.id);
       }
@@ -744,7 +725,6 @@ mixin HomeLogic on State<HomePage> {
   }
 
   void _handleRangeSelect(_ContentItem item) {
-    // 获取当前显示的所有项目
     final folderProvider = context.read<FolderProvider>();
     final articleProvider = context.read<ArticleProvider>();
     final subFolders = folderProvider.folders
@@ -758,7 +738,6 @@ mixin HomeLogic on State<HomePage> {
       ..._sortArticles(articles).map((a) => _ContentItem.article(a)),
     ];
 
-    // 找到最后选中的项目和当前项目的索引
     final lastSelectedId = _selectedItems.last;
     final fromIndex = allItems.indexWhere((i) => i.id == lastSelectedId);
     final toIndex = allItems.indexWhere((i) => i.id == item.id);
@@ -774,7 +753,6 @@ mixin HomeLogic on State<HomePage> {
   }
 
   void _handleItemLongPress(_ContentItem item, Offset globalPosition) {
-    // 长按：选中并显示上下文菜单
     if (!_selectedItems.contains(item.id)) {
       setState(() {
         _selectedItems.clear();
@@ -835,7 +813,6 @@ mixin HomeLogic on State<HomePage> {
     }
   }
 
-  // ─── 右键菜单 ────────────────────────────────────────
   void _showContextMenu(TapUpDetails details, _ContentItem item) {
     unawaited(_showContextMenuAtPosition(details.globalPosition, item));
   }
@@ -919,7 +896,6 @@ mixin HomeLogic on State<HomePage> {
     }
   }
 
-  // ─── 文件夹操作 ───────────────────────────────────────
   void _createFolderDialog(BuildContext context) {
     final controller = TextEditingController();
     showDialog(
@@ -1034,7 +1010,6 @@ mixin HomeLogic on State<HomePage> {
     if (mounted) setState(() => _selectedItems.clear());
   }
 
-  // ─── 文章操作 ────────────────────────────────────────
   void _createArticle(BuildContext context) {
     Navigator.of(context).push(
       MaterialPageRoute(
@@ -1101,7 +1076,6 @@ mixin HomeLogic on State<HomePage> {
     );
   }
 
-  // ─── 剪贴板操作 ──────────────────────────────────────
   void _cutSelected() {
     final items = _getTopLevelContentItems(_selectedItems);
     _clipboard.clear();
@@ -1246,7 +1220,6 @@ mixin HomeLogic on State<HomePage> {
     setState(() => _selectedItems.removeAll(selectedIds));
   }
 
-  // ─── 设置 ─────────────────────────────────────────────
   void _openSettings(BuildContext context) {
     Navigator.of(context).push(
       MaterialPageRoute(
@@ -1265,7 +1238,6 @@ mixin HomeLogic on State<HomePage> {
     );
   }
 
-  // ─── 远程连接 ────────────────────────────────────────
   void _showRemoteConnectDialog(
     BuildContext context,
     ConnectionProvider connection,
@@ -1454,7 +1426,6 @@ mixin HomeLogic on State<HomePage> {
     }
   }
 
-  // ─── 键盘快捷键 ──────────────────────────────────────
   KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
     if (_isTextInputFocused()) return KeyEventResult.ignored;
@@ -1567,7 +1538,6 @@ mixin HomeLogic on State<HomePage> {
     });
   }
 
-  // ─── 框选 ─────────────────────────────────────────────
   void _suppressGridSelectionForItem() {
     _suppressNextGridSelection = true;
   }
@@ -1623,7 +1593,6 @@ mixin HomeLogic on State<HomePage> {
     _selectionEnd = null;
   }
 
-  // ─── 多客户端警告 ────────────────────────────────────
   Future<void> _checkMultiClientBeforeExit(BuildContext context) async {
     if (!mounted) return;
     final shouldExit = await _confirmLocalBackendShutdown(
@@ -1681,7 +1650,6 @@ mixin HomeLogic on State<HomePage> {
         false;
   }
 
-  // ─── 工具 ─────────────────────────────────────────────
   String _itemTooltip(_ContentItem item) {
     return '${item.name}\n修改时间：${_formatDateTime(item.updatedAt)}';
   }

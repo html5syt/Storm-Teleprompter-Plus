@@ -13,7 +13,6 @@ import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa;
 import '../system/app_data_directory.dart';
 import 'pcm_resampler.dart';
 
-/// ASR 模型信息
 class AsrModelInfo {
   final String id;
   final String name;
@@ -44,7 +43,6 @@ class AsrModelInfo {
   });
 }
 
-/// 可用的 ASR 模型列表
 class AsrModels {
   AsrModels._();
 
@@ -93,7 +91,6 @@ class AsrModels {
   ];
 }
 
-/// ASR 服务下载进度回调
 typedef DownloadProgressCallback =
     void Function(double progress, String message);
 
@@ -288,9 +285,8 @@ Future<bool> _hasRequiredModelFiles(Directory directory) async {
   return hasTokens && hasEncoder && hasDecoder;
 }
 
-/// 单个模型的下载状态
 class DownloadProgress {
-  final double progress; // 0.0 ~ 1.0
+  final double progress; 
   final String message;
   final bool isDownloading;
   final bool isCompleted;
@@ -321,12 +317,6 @@ class DownloadProgress {
   }
 }
 
-/// ASR 语音识别服务
-///
-/// 使用 sherpa-onnx 原生插件替代原始项目的 WASM 实现。
-/// 支持动态选择和下载模型，下载支持镜像加速。
-///
-/// 使用前必须先调用 [init] 完成 sherpa-onnx 原生绑定初始化。
 class AsrService with ChangeNotifier {
   static AsrService? _instance;
   static bool _bindingsInitialized = false;
@@ -342,13 +332,11 @@ class AsrService with ChangeNotifier {
   bool _isReleased = false;
   String? _currentModelId;
 
-  // 回调
   void Function(String text)? onPartial;
   void Function(String text)? onFinal;
   void Function(double rms)? onRms;
   void Function(Object error)? onError;
 
-  // ─── 下载状态跟踪 ──────────────────────────────────────
   final Map<String, DownloadProgress> _downloadProgress = {};
   StreamSubscription? _currentDownloadSubscription;
   Completer<void>? _currentDownloadCompleter;
@@ -368,16 +356,13 @@ class AsrService with ChangeNotifier {
   AudioRecorder get _previewRecorder =>
       _previewRecorderInstance ??= AudioRecorder();
 
-  /// 获取指定模型的下载进度
   DownloadProgress getDownloadProgress(String modelId) {
     return _downloadProgress[modelId] ?? const DownloadProgress();
   }
 
-  /// 所有模型的下载进度（只读视图）
   Map<String, DownloadProgress> get allDownloadProgress =>
       Map.unmodifiable(_downloadProgress);
 
-  /// 取消当前正在进行的下载
   Future<void> cancelDownload() async {
     if (_currentDownloadModelId != null) {
       _currentDownloadCancelled = true;
@@ -405,16 +390,11 @@ class AsrService with ChangeNotifier {
 
   AsrService._();
 
-  /// 获取单例
   static AsrService get instance {
     _instance ??= AsrService._();
     return _instance!;
   }
 
-  /// 初始化 sherpa-onnx 原生绑定（只需调用一次）
-  ///
-  /// 必须在创建任何 OnlineRecognizer 之前调用。
-  /// Flutter 平台由原生插件自动提供库路径，无需手动指定。
   static void init() {
     if (!_bindingsInitialized) {
       sherpa.initBindings();
@@ -423,13 +403,10 @@ class AsrService with ChangeNotifier {
     }
   }
 
-  /// 模型是否已加载
   bool get isModelLoaded => _isModelLoaded;
 
-  /// 当前加载的模型 ID
   String? get currentModelId => _currentModelId;
 
-  /// 是否正在运行
   bool get isRunning => _isRunning;
   double get previewRms => _previewRms;
   String? get previewDeviceId => _previewDeviceId;
@@ -526,7 +503,6 @@ class AsrService with ChangeNotifier {
     );
   }
 
-  /// 获取模型存储目录
   Future<String> _getModelDir() async {
     final appDir = await getAppDataDirectory();
     final modelDir = Directory(p.join(appDir.path, 'asr_models'));
@@ -536,7 +512,6 @@ class AsrService with ChangeNotifier {
     return modelDir.path;
   }
 
-  /// 检查模型是否已下载
   Future<bool> isModelDownloaded(String modelId) async {
     final modelDir = await _getModelDir();
     final targetDir = Directory(p.join(modelDir, modelId));
@@ -545,7 +520,6 @@ class AsrService with ChangeNotifier {
     return _containsRequiredModelFiles(targetDir);
   }
 
-  /// Returns built-in models plus valid models imported from local archives.
   Future<List<AsrModelInfo>> listAvailableModels() async {
     final models = <AsrModelInfo>[...AsrModels.availableModels];
     final builtInIds = AsrModels.availableModels
@@ -601,20 +575,14 @@ class AsrService with ChangeNotifier {
     return List.unmodifiable(models);
   }
 
-  /// 下载并解压 ASR 模型
-  ///
-  /// 支持镜像加速，国内用户可使用 HF Mirror 或 GitHub 代理。
-  /// 使用流式下载，将文件分块写入磁盘，避免大模型撑爆内存。
-  /// 自动重试：镜像失败后回退到原始地址。
   Future<void> downloadModel(
     AsrModelInfo modelInfo, {
     bool useMirror = true,
-    String? customMirrorUrl, // 自定义镜像 URL，eg. https://gh-proxy.com/
+    String? customMirrorUrl, 
     bool useSystemProxy = true,
     DownloadProgressCallback? onProgress,
   }) async {
     final modelId = modelInfo.id;
-    // 如果已经在下载，不重复启动
     if (_currentDownloadModelId != null ||
         _downloadProgress[modelId]?.isDownloading == true) {
       return;
@@ -666,9 +634,7 @@ class AsrService with ChangeNotifier {
         ? await _resolveSystemProxyConfig()
         : _SystemProxyConfig((_) => 'DIRECT', '直连');
 
-    // 优先使用自定义镜像 URL（包装原始下载地址）
     if (useMirror && customMirrorUrl != null && customMirrorUrl.isNotEmpty) {
-      // GitHub 镜像格式：镜像URL + 原始下载URL
       urls.add(
         '${customMirrorUrl.endsWith('/') ? customMirrorUrl : '$customMirrorUrl/'}${modelInfo.downloadUrl}',
       );
@@ -677,7 +643,6 @@ class AsrService with ChangeNotifier {
     }
     urls.add(modelInfo.downloadUrl);
 
-    // 依次尝试每个 URL
     var lastError = '';
     for (int attempt = 0; attempt < urls.length; attempt++) {
       if (_currentDownloadCancelled) {
@@ -693,12 +658,10 @@ class AsrService with ChangeNotifier {
         '[$sourceLabel] ${proxyConfig.description} · 开始下载: ${modelInfo.name}',
       );
 
-      // 临时下载文件路径
       final tempPath = p.join(modelDir, '${modelInfo.id}.tar.bz2');
       final tempFile = File(tempPath);
 
       try {
-        // ── 流式下载：分块写入磁盘 ──
         final request = http.Request('GET', Uri.parse(url));
         final client = useSystemProxy
             ? IOClient(HttpClient()..findProxy = proxyConfig.findProxy)
@@ -793,13 +756,12 @@ class AsrService with ChangeNotifier {
         if (await dir.exists()) await dir.delete(recursive: true);
         await stagingDir.rename(targetDir);
 
-        // 清理临时文件
         if (await tempFile.exists()) {
           await tempFile.delete();
         }
 
         completeProgress();
-        return; // 成功
+        return; 
       } catch (e) {
         _currentDownloadClient?.close();
         _currentDownloadClient = null;
@@ -807,7 +769,6 @@ class AsrService with ChangeNotifier {
         _currentDownloadSubscription = null;
         lastError = e.toString();
         updateProgress(0, '[$sourceLabel] 出错: $lastError，尝试其他地址...');
-        // 清理临时文件
         if (await tempFile.exists()) {
           await tempFile.delete();
         }
@@ -821,7 +782,6 @@ class AsrService with ChangeNotifier {
       }
     }
 
-    // 所有地址都失败
     failProgress(lastError);
     throw Exception('所有下载地址均失败: $lastError');
   }
@@ -935,7 +895,6 @@ class AsrService with ChangeNotifier {
     return proxies;
   }
 
-  /// 删除已下载的模型
   Future<void> deleteModel(String modelId) async {
     if (_currentDownloadModelId == modelId) await cancelDownload();
     if (_currentModelId == modelId) await unloadModel();
@@ -954,7 +913,6 @@ class AsrService with ChangeNotifier {
     notifyListeners();
   }
 
-  /// Imports a downloaded Sherpa-Onnx .zip or .tar.bz2 model archive.
   Future<String> importModelArchive(
     String archivePath, {
     String? modelId,
@@ -1053,14 +1011,6 @@ class AsrService with ChangeNotifier {
     }
   }
 
-  /// 加载模型
-  ///
-  /// 加载指定的 ASR 模型到内存。如果已加载其他模型会先释放。
-  ///
-  /// 必须在调用前确保 [init] 已执行。
-  /// 支持的模型格式：
-  /// - 流式 Transducer (Zipformer): encoder/decoder/joiner + tokens
-  /// - 流式 Paraformer: encoder/decoder + tokens
   Future<void> loadModel(
     String modelId, {
     int numThreads = 0,
@@ -1086,7 +1036,6 @@ class AsrService with ChangeNotifier {
 
     try {
       await _flattenInstalledModelFiles(dir);
-      // 查找模型文件 —— 按文件名关键词匹配
       final files = await _listModelFiles(dir);
       String? tokensPath;
       String? encoderPath;
@@ -1112,9 +1061,6 @@ class AsrService with ChangeNotifier {
         throw Exception('模型文件不完整：缺少 tokens.txt');
       }
 
-      // 根据实际存在的文件推断模型类型
-      // 流式 Transducer: 有 encoder + decoder + joiner
-      // 流式 Paraformer: 有 encoder + decoder，无 joiner
       if (encoderPath == null || decoderPath == null) {
         throw Exception(
           '模型文件不完整：缺少 encoder.onnx 或 decoder.onnx。'
@@ -1122,14 +1068,12 @@ class AsrService with ChangeNotifier {
         );
       }
 
-      // 构建识别器配置
       sherpa.OnlineModelConfig modelConfig;
       final resolvedThreads = numThreads > 0
           ? numThreads
           : max(1, min(8, Platform.numberOfProcessors ~/ 2));
 
       if (joinerPath != null) {
-        // Transducer 模型（如 Zipformer）
         modelConfig = sherpa.OnlineModelConfig(
           transducer: sherpa.OnlineTransducerModelConfig(
             encoder: encoderPath,
@@ -1142,7 +1086,6 @@ class AsrService with ChangeNotifier {
         );
         debugPrint('[AsrService] 加载 Transducer 模型');
       } else {
-        // 流式 Paraformer 模型
         modelConfig = sherpa.OnlineModelConfig(
           paraformer: sherpa.OnlineParaformerModelConfig(
             encoder: encoderPath,
@@ -1176,9 +1119,6 @@ class AsrService with ChangeNotifier {
     }
   }
 
-  /// 开始语音识别
-  ///
-  /// 启动麦克风采集并开始实时识别。
   Future<void> start({
     required void Function(String text) onPartialResult,
     required void Function(String text) onFinalResult,
@@ -1311,14 +1251,9 @@ class AsrService with ChangeNotifier {
     return sqrt(sumSquares / sampleCount);
   }
 
-  /// 处理音频数据
-  ///
-  /// 将 PCM 音频数据送入识别器进行处理。
-  /// [samples] 16kHz 采样率的 Float32 音频数据
   void processAudioSamples(Float32List samples) {
     if (!_isRunning || _recognizer == null || _stream == null) return;
 
-    // 计算 RMS 音量
     double sumSquares = 0;
     for (int i = 0; i < samples.length; i++) {
       final s = samples[i];
@@ -1327,21 +1262,17 @@ class AsrService with ChangeNotifier {
     final rms = sqrt(sumSquares / samples.length);
     onRms?.call(rms);
 
-    // 送入识别器
     _stream!.acceptWaveform(samples: samples, sampleRate: 16000);
 
-    // 持续解码
     while (_recognizer!.isReady(_stream!)) {
       _recognizer!.decode(_stream!);
     }
 
-    // 获取中间结果
     final result = _recognizer!.getResult(_stream!);
     if (result.text.isNotEmpty) {
       onPartial?.call(result.text);
     }
 
-    // 端点检测 —— 说话停顿后触发 onFinal 回调
     if (_recognizer!.isEndpoint(_stream!)) {
       final text = result.text.trim();
       if (text.isNotEmpty) {
@@ -1351,7 +1282,6 @@ class AsrService with ChangeNotifier {
     }
   }
 
-  /// 停止语音识别
   Future<void> stop() async {
     if (!_isRunning) return;
     _isRunning = false;
@@ -1367,7 +1297,6 @@ class AsrService with ChangeNotifier {
     debugPrint('[AsrService] ASR 识别已停止');
   }
 
-  /// 卸载模型，释放资源
   Future<void> unloadModel() async {
     await stop();
     _recognizer?.free();
@@ -1377,7 +1306,6 @@ class AsrService with ChangeNotifier {
     debugPrint('[AsrService] 模型已卸载');
   }
 
-  /// Final application shutdown. The service cannot be reused afterwards.
   Future<void> release() async {
     if (_isReleased) return;
     _isReleased = true;
@@ -1390,7 +1318,6 @@ class AsrService with ChangeNotifier {
     _instance = null;
   }
 
-  /// 释放所有资源
   @override
   void dispose() {
     unawaited(release());

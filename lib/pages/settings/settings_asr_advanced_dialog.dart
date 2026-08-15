@@ -1,6 +1,5 @@
 part of '../settings_page.dart';
 
-/// ASR 高级设置对话框的不可变返回值。
 class _AsrAdvancedSettingsResult {
   const _AsrAdvancedSettingsResult({
     required this.mirrorUrl,

@@ -1,8 +1,5 @@
 part of '../teleprompter_page.dart';
 
-/// 提词器页面逻辑 mixin
-///
-/// 包含全屏控制、滚轮调速、滚动进度和会话退出等页面逻辑。
 mixin TeleprompterPageLogic<T extends StatefulWidget>
     on State<T>, WidgetsBindingObserver {
   final ScrollController scrollController = ScrollController();
@@ -30,7 +27,6 @@ mixin TeleprompterPageLogic<T extends StatefulWidget>
     _articleProvider = context.read<ArticleProvider>();
     _setupScrollListener();
 
-    // 加载稿件特有的提词器设置覆盖
     final article = (widget as TeleprompterPage).article;
     _settingsProvider!.loadArticleOverrides(
       article.teleprompterSettings,
@@ -38,7 +34,6 @@ mixin TeleprompterPageLogic<T extends StatefulWidget>
     );
     _settingsProvider!.addListener(_scheduleArticleSettingsSave);
 
-    // 监听窗口最大化/还原事件，确保标题栏正确显示
     if (_isDesktop) {
       _initWindowListener();
     }
@@ -46,14 +41,12 @@ mixin TeleprompterPageLogic<T extends StatefulWidget>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final settings = _settingsProvider!.mergedSettings;
-      // 自动进入全屏
       if (settings.fullScreenMode) {
         enterFullScreen();
       }
     });
   }
 
-  /// 初始化窗口事件监听
   void _initWindowListener() async {
     try {
       await windowManager.ensureInitialized();
@@ -72,22 +65,17 @@ mixin TeleprompterPageLogic<T extends StatefulWidget>
     if (_windowListener != null) {
       windowManager.removeListener(_windowListener!);
     }
-    // 退出时若为全屏则退出，但需避免在 dispose 中调用 setState
     if (isFullScreen) {
       unawaited(exitFullScreen(updateState: false));
     }
-    // 保存稿件覆盖设置到稿件
     unawaited(_saveArticleOverrides());
     _sendRemoteSessionEndIfMaster();
-    // 清除稿件覆盖
     _settingsProvider?.clearArticleOverrides();
     scrollController.dispose();
-    // 退出时停止提词器（不触发 notifyListeners，避免 defunct 异常）
     _teleprompterProvider?.stopAll();
     super.dispose();
   }
 
-  /// 将稿件覆盖设置保存回稿件
   void _scheduleArticleSettingsSave() {
     final connection = _connectionProvider;
     if (connection == null || connection.isRemote || !connection.isConnected) {
@@ -164,7 +152,6 @@ mixin TeleprompterPageLogic<T extends StatefulWidget>
     }
   }
 
-  // ─── 全屏控制 ──────────────────────────────────────────
 
   bool get _isDesktop {
     if (kIsWeb) return false;
@@ -179,13 +166,11 @@ mixin TeleprompterPageLogic<T extends StatefulWidget>
 
     if (_isDesktop) {
       try {
-        // 先隐藏标题栏，再进入全屏，顺序很重要
         await windowManager.setTitleBarStyle(TitleBarStyle.hidden);
         await Future.delayed(const Duration(milliseconds: 50));
         await windowManager.setFullScreen(true);
       } catch (e) {
         debugPrint('[FullScreen] 全屏失败，降级处理: $e');
-        // 降级：仅隐藏标题栏
         try {
           await windowManager.setTitleBarStyle(TitleBarStyle.hidden);
         } catch (_) {}
@@ -235,7 +220,6 @@ mixin TeleprompterPageLogic<T extends StatefulWidget>
     }
   }
 
-  // ─── 鼠标滚轮处理 ─────────────────────────────────────
 
   void handlePointerSignal(PointerSignalEvent event) {
     if (event is! PointerScrollEvent) return;
@@ -248,7 +232,6 @@ mixin TeleprompterPageLogic<T extends StatefulWidget>
     if (settings.scrollMode == ScrollMode.auto &&
         teleprompter.isPlaying &&
         settings.wpm > 0) {
-      // 自动模式：滚轮只调速，不滚动页面
       teleprompter.adjustSpeedByWheel(
         event.scrollDelta.dy,
         settingsProvider,
@@ -279,7 +262,6 @@ mixin TeleprompterPageLogic<T extends StatefulWidget>
       return;
     }
 
-    // 手动/ASR 模式：让滚动自然传播
   }
 
   int _speedStepMultiplier() {
@@ -294,7 +276,6 @@ mixin TeleprompterPageLogic<T extends StatefulWidget>
     return keyboard.isControlPressed || keyboard.isShiftPressed;
   }
 
-  // ─── 手动滚动进度更新 ──────────────────────────────────
 
   void _setupScrollListener() {
     scrollController.addListener(_onScrollChanged);
@@ -305,7 +286,6 @@ mixin TeleprompterPageLogic<T extends StatefulWidget>
     if (!scrollController.hasClients) return;
     final maxScroll = scrollController.position.maxScrollExtent;
     if (maxScroll <= 0) return;
-    // 扣除空气垫计算实际内容进度
     final screenHeight = MediaQuery.of(context).size.height;
     final topPad = screenHeight * (TeleprompterConstants.topPaddingVh / 100);
     final bottomPad =
@@ -337,7 +317,6 @@ mixin TeleprompterPageLogic<T extends StatefulWidget>
     });
   }
 
-  // ─── 格式化工具 ────────────────────────────────────────
 
   String formatDuration(Duration d) {
     final minutes = d.inMinutes.remainder(60).toString().padLeft(2, '0');
@@ -348,14 +327,12 @@ mixin TeleprompterPageLogic<T extends StatefulWidget>
     return '$minutes:$seconds';
   }
 
-  /// 当前时间格式化 (HH:mm)
   String _formatCurrentTime() {
     final now = DateTime.now();
     return '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
   }
 }
 
-/// 窗口事件监听器（用于最大化/还原时恢复标题栏）
 class _WindowEventListener extends WindowListener {
   final TeleprompterPageLogic state;
 

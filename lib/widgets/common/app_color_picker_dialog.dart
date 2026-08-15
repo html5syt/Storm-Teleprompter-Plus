@@ -17,9 +17,6 @@ abstract final class AppColorHex {
       '#${color.toARGB32().toRadixString(16).padLeft(8, '0').toUpperCase()}';
 }
 
-/// 应用统一使用的颜色选择对话框。
-///
-/// 支持颜色面板、ARGB/RGB HEX 输入以及可选的恢复默认颜色操作。
 class AppColorPickerDialog extends StatefulWidget {
   const AppColorPickerDialog({
     super.key,

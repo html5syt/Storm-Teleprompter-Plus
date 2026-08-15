@@ -1,9 +1,5 @@
 part of '../settings_page.dart';
 
-/// 设置页中的完整备份区域。
-///
-/// 文件选择和 JSON 读写由 [BackupFileService] 负责，服务端数据读写通过
-/// [ConnectionProvider] 统一请求，页面只处理用户确认、状态刷新和结果提示。
 extension _SettingsBackupSection on SettingsPage {
   Widget _buildBackupSection(
     BuildContext context,

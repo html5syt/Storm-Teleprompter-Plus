@@ -23,16 +23,6 @@ import 'settings_page.dart';
 
 part 'teleprompter/teleprompter_logic.dart';
 
-/// 提词器主页面
-///
-/// 整合控制栏、文本层、ASR 逻辑，是提词器的核心展示页面。
-/// 支持全屏模式、镜像翻转、自动隐藏界面元素。
-///
-/// 需求实现：
-/// - 顶部全幅进度条 + 右侧已用时间/速度
-/// - 浮动工具栏（可隐藏）
-/// - 鼠标滚轮动态调速（自动模式）
-/// - 全屏模式修复
 class TeleprompterPage extends StatefulWidget {
   final Article article;
 
@@ -159,7 +149,6 @@ class _TeleprompterPageState extends State<TeleprompterPage>
                         if (!_showSettings && !_isTextInputFocused()) {
                           _pageFocusNode.requestFocus();
                         }
-                        // 任何模式下点击空白区域都切换控制面板
                         if (teleprompter.controlsVisible) {
                           teleprompter.toggleControls();
                         } else {
@@ -168,13 +157,10 @@ class _TeleprompterPageState extends State<TeleprompterPage>
                       },
                       child: Stack(
                         children: [
-                          // ── 1. 文本层（占据全屏，可滚动） ──
                           _buildTextLayer(context, teleprompter, settings),
 
-                          // ── 2. 阅读线指示器 ──
                           _buildReadingLine(context, settings),
 
-                          // ── 3. 顶部进度条（全幅 + 右侧信息） ──
                           if (teleprompter.isPlaying ||
                               (settings.scrollMode == ScrollMode.auto &&
                                   teleprompter.state ==
@@ -185,11 +171,9 @@ class _TeleprompterPageState extends State<TeleprompterPage>
                               settings,
                             ),
 
-                          // ── 4. 顶部导航栏（浮动、可隐藏） ──
                           if (teleprompter.controlsVisible)
                             _buildTopNavBar(context, teleprompter, settings),
 
-                          // ── 5. 底部浮动工具栏（可隐藏） ──
                           if (teleprompter.controlsVisible)
                             _buildBottomToolbar(
                               context,
@@ -202,7 +186,6 @@ class _TeleprompterPageState extends State<TeleprompterPage>
                               teleprompter.controlsVisible)
                             _buildAsrTranscriptOverlay(teleprompter, settings),
 
-                          // ── 7. 设置抽屉面板 ──
                           if (_showSettings)
                             Positioned(
                               top: 0,
@@ -366,12 +349,9 @@ class _TeleprompterPageState extends State<TeleprompterPage>
     return true;
   }
 
-  // ─── 动态颜色辅助 ──────────────────────────────────────
-  /// 从设置中获取当前主题色
   Color _primaryFromSettings(AppSettings s) =>
       AppColors.primaryFromSettings(s.uiPrimaryColor);
 
-  /// 从设置中获取当前提词器背景色
   Color _bgFromSettings(AppSettings s) =>
       AppColors.teleprompterBgFromSettings(s.teleprompterBgColor);
 
@@ -387,7 +367,6 @@ class _TeleprompterPageState extends State<TeleprompterPage>
     );
   }
 
-  // ─── 顶部进度条（全幅，右侧显示时间+速度） ──────────
 
   Widget _buildTopProgressBar(
     BuildContext context,
@@ -396,14 +375,11 @@ class _TeleprompterPageState extends State<TeleprompterPage>
   ) {
     final progress = teleprompter.progress;
     final elapsed = teleprompter.elapsed;
-    // 进度条右侧文字大小 = 正文的 settings.progressInfoSizeRatio (默认 60%)
     final infoFontSize = settings.fontSize * settings.progressInfoSizeRatio;
     final clampedFontSize = infoFontSize.clamp(11.0, 48.0);
     final barHeight = _progressBarHeight(settings);
 
-    // 构建信息文本（根据各项开关动态显示）
     final infoChildren = <Widget>[
-      // 已用时间
       if (settings.progressShowTime) ...[
         Text(
           formatDuration(elapsed),
@@ -417,7 +393,6 @@ class _TeleprompterPageState extends State<TeleprompterPage>
         ),
         const SizedBox(width: 8),
       ],
-      // 速度（阅读模式且允许显示）
       if (settings.scrollMode != ScrollMode.asr &&
           settings.progressShowSpeed) ...[
         Text(
@@ -431,7 +406,6 @@ class _TeleprompterPageState extends State<TeleprompterPage>
         ),
         const SizedBox(width: 8),
       ],
-      // 百分比
       if (settings.progressShowPercentage) ...[
         Text(
           '${(progress * 100).round()}%',
@@ -444,7 +418,6 @@ class _TeleprompterPageState extends State<TeleprompterPage>
         ),
         const SizedBox(width: 8),
       ],
-      // 当前时间
       if (settings.progressShowCurrentTime) ...[
         Text(
           _formatCurrentTime(),
@@ -464,20 +437,18 @@ class _TeleprompterPageState extends State<TeleprompterPage>
       left: 0,
       right: 0,
       child: GestureDetector(
-        onTap: () {}, // 拦截点击，不触发父级
+        onTap: () {}, 
         child: _mirrorPromptOverlayIfNeeded(
           settings: settings,
           child: SizedBox(
             height: barHeight,
             child: Stack(
               children: [
-                // 进度条背景
                 Positioned.fill(
                   child: Container(
                     color: AppColors.background.withValues(alpha: 0.6),
                   ),
                 ),
-                // 进度条填充
                 Positioned(
                   top: 0,
                   left: 0,
@@ -494,7 +465,6 @@ class _TeleprompterPageState extends State<TeleprompterPage>
                     ),
                   ),
                 ),
-                // 右侧信息（自动根据文本宽度调整）
                 Positioned(
                   top: 0,
                   left: 8,
@@ -520,9 +490,7 @@ class _TeleprompterPageState extends State<TeleprompterPage>
     );
   }
 
-  // ─── 顶部导航栏（浮动样式，可隐藏） ──────────────────
 
-  /// 计算进度条尺寸，供导航栏定位
   double _progressBarHeight(AppSettings settings) {
     final infoFontSize = settings.fontSize * settings.progressInfoSizeRatio;
     final clampedFontSize = infoFontSize.clamp(11.0, 48.0);
@@ -537,11 +505,11 @@ class _TeleprompterPageState extends State<TeleprompterPage>
     return AnimatedPositioned(
       duration: const Duration(milliseconds: 300),
       curve: Curves.easeOutCubic,
-      top: _progressBarHeight(settings) + 4, // 进度条下方
+      top: _progressBarHeight(settings) + 4, 
       left: 0,
       right: 0,
       child: GestureDetector(
-        onTap: () {}, // 拦截点击
+        onTap: () {}, 
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           decoration: BoxDecoration(
@@ -568,7 +536,6 @@ class _TeleprompterPageState extends State<TeleprompterPage>
                 constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
               ),
               const SizedBox(width: 4),
-              // 稿件标题
               Expanded(
                 child: Text(
                   widget.article.title.isEmpty ? '无标题' : widget.article.title,
@@ -594,7 +561,6 @@ class _TeleprompterPageState extends State<TeleprompterPage>
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
               ),
-              // 全屏按钮
               IconButton(
                 icon: Icon(
                   isFullScreen ? Icons.fullscreen_exit : Icons.fullscreen,
@@ -698,13 +664,11 @@ class _TeleprompterPageState extends State<TeleprompterPage>
     try {
       await connection.connectToRemote(host, port);
     } catch (_) {
-      // 无限重试由定时器负责，错误信息保留在 ConnectionProvider。
     } finally {
       if (mounted) setState(() => _remoteRetrying = false);
     }
   }
 
-  // ─── 底部浮动工具栏 ──────────────────────────────────
 
   Widget _buildBottomToolbar(
     BuildContext context,
@@ -724,7 +688,7 @@ class _TeleprompterPageState extends State<TeleprompterPage>
       left: horizontalInset,
       right: horizontalInset,
       child: GestureDetector(
-        onTap: () {}, // 拦截点击
+        onTap: () {}, 
         child: Align(
           alignment: Alignment.bottomCenter,
           child: ConstrainedBox(
@@ -757,17 +721,14 @@ class _TeleprompterPageState extends State<TeleprompterPage>
                   mainAxisSize: MainAxisSize.min,
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    // ── 模式选择 ──
                     if (!isRemoteClient) ...[
                       _buildModeSelector(settings, settingsProvider),
                       SizedBox(width: isCompact ? 8 : 12),
                     ],
 
-                    // ── 播放控制 ──
                     if (!isRemoteClient)
                       _buildCompactPlaybackControls(teleprompter, settings),
 
-                    // ── 速度/信息 ──
                     if (settings.scrollMode != ScrollMode.asr) ...[
                       if (!isRemoteClient) SizedBox(width: isCompact ? 8 : 12),
                       _buildSpeedDisplay(
@@ -780,7 +741,6 @@ class _TeleprompterPageState extends State<TeleprompterPage>
                       _buildRmsMeter(teleprompter, settings),
                     ],
 
-                    // ── 设置齿轮 ──
                     const SizedBox(width: 8),
                     IconButton(
                       icon: Icon(
@@ -806,7 +766,6 @@ class _TeleprompterPageState extends State<TeleprompterPage>
     );
   }
 
-  /// 紧凑播放控制（源版本风格）
   Widget _buildCompactPlaybackControls(
     TeleprompterProvider teleprompter,
     AppSettings settings,
@@ -814,7 +773,6 @@ class _TeleprompterPageState extends State<TeleprompterPage>
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // 后退一个字（长按：重置到开头）
         Tooltip(
           message: '后退一个字；长按回到开头',
           child: GestureDetector(
@@ -831,7 +789,6 @@ class _TeleprompterPageState extends State<TeleprompterPage>
           ),
         ),
         const SizedBox(width: 8),
-        // 开始/暂停
         GestureDetector(
           onTap: () => teleprompter.togglePlayPause(settings),
           child: Container(
@@ -860,7 +817,6 @@ class _TeleprompterPageState extends State<TeleprompterPage>
           ),
         ),
         const SizedBox(width: 8),
-        // 前进一个字（长按：重置到结尾）
         Tooltip(
           message: '前进一个字；长按到结尾',
           child: GestureDetector(
@@ -904,7 +860,6 @@ class _TeleprompterPageState extends State<TeleprompterPage>
     });
   }
 
-  /// 速度显示（源版本风格）
   Widget _buildSpeedDisplay(
     AppSettings settings,
     SettingsProvider settingsProvider, {
@@ -943,7 +898,6 @@ class _TeleprompterPageState extends State<TeleprompterPage>
     );
   }
 
-  /// 显示速度预设菜单
   void _showSpeedPresets(SettingsProvider settingsProvider, int currentWpm) {
     final controller = TextEditingController(text: '$currentWpm');
     showModalBottomSheet(
@@ -1027,7 +981,6 @@ class _TeleprompterPageState extends State<TeleprompterPage>
     );
   }
 
-  // ─── 模式选择器 ──────────────────────────────────────
 
   Widget _buildModeSelector(
     AppSettings settings,
@@ -1164,11 +1117,6 @@ class _TeleprompterPageState extends State<TeleprompterPage>
     return false;
   }
 
-  /// 处理上下键：上下移动n行（未开始时）
-  ///
-  /// 思维导图描述：
-  /// - 未开始：相对于当前字位置，将当前字位置上下移动n行
-  /// - 自动滚动模式已开始：调速（由滚轮处理，键盘不触发）
   void _handleVerticalMove(
     BuildContext context,
     AppSettings settings,
@@ -1177,7 +1125,6 @@ class _TeleprompterPageState extends State<TeleprompterPage>
     if (direction == 0) return;
     final teleprompter = context.read<TeleprompterProvider>();
 
-    // 自动滚动播放中：上键减速/下键加速
     if (settings.scrollMode == ScrollMode.auto &&
         teleprompter.isPlaying &&
         settings.wpm > 0) {
@@ -1198,7 +1145,6 @@ class _TeleprompterPageState extends State<TeleprompterPage>
       return;
     }
 
-    // 未开始/暂停：上下移动当前字位置n行
     final current = teleprompter.currentIndex;
     final lines = teleprompter.lines;
     if (lines.isEmpty) return;
@@ -1256,9 +1202,6 @@ class _TeleprompterPageState extends State<TeleprompterPage>
     });
   }
 
-  /// 处理左右键：移动当前字到前后n个字
-  ///
-  /// 思维导图描述：左右滑动/键盘左右键 → 移动当前字选择到前后n个字
   void _handleHorizontalMove(
     BuildContext context,
     AppSettings settings,
@@ -1275,7 +1218,6 @@ class _TeleprompterPageState extends State<TeleprompterPage>
     }
   }
 
-  /// 退出提词器（Esc 键）
   Future<void> _requestExitTeleprompter(BuildContext context) async {
     if (_isExiting) return;
     final connection = context.read<ConnectionProvider>();
@@ -1318,14 +1260,12 @@ class _TeleprompterPageState extends State<TeleprompterPage>
     if (context.mounted) Navigator.pop(context);
   }
 
-  // ─── 文本层 ──────────────────────────────────────────
 
   Widget _buildTextLayer(
     BuildContext context,
     TeleprompterProvider teleprompter,
     AppSettings settings,
   ) {
-    // 自动滚动播放中阻止滚轮手动滚动
     final connection = context.read<ConnectionProvider>();
     final isRemoteClient =
         connection.isRemote ||
@@ -1370,9 +1310,7 @@ class _TeleprompterPageState extends State<TeleprompterPage>
     );
   }
 
-  // ─── 阅读区域框（主体样式） ────────────────────────────
 
-  /// 阅读线固定金色（与原版 fdc800 一致）
   static const Color _readingLineGold = Color(0xFFFDC800);
 
   Widget _buildReadingLine(BuildContext context, AppSettings settings) {
@@ -1387,11 +1325,8 @@ class _TeleprompterPageState extends State<TeleprompterPage>
         (settings.readingLineOffset > 0
             ? settings.readingLineOffset
             : defaultRatio);
-    // 每行实际高度 = fontSize * lineHeight（文本） + 4（Padding vertical:2 上下各2px）
     final perLineHeight = settings.fontSize * settings.lineHeight + 4;
-    // 阅读区域高度 = 3 行（与原版一致，修正 padding 的影响）
-    final areaHeight = perLineHeight * 3 - 2; // 略减2px避免与上下行边界重叠
-    // 水平边距计算（与文本层一致）
+    final areaHeight = perLineHeight * 3 - 2; 
     final basePadding = isMobile
         ? TeleprompterConstants.mobileHorizontalPadding
         : TeleprompterConstants.desktopHorizontalPadding;
@@ -1410,7 +1345,6 @@ class _TeleprompterPageState extends State<TeleprompterPage>
             child: Stack(
               clipBehavior: Clip.none,
               children: [
-                // 金色边框（与原版 #fdc800 一致）
                 Positioned.fill(
                   child: Container(
                     decoration: BoxDecoration(
@@ -1422,7 +1356,6 @@ class _TeleprompterPageState extends State<TeleprompterPage>
                     ),
                   ),
                 ),
-                // "Reading Area" 标签
                 Positioned(
                   top: -10,
                   left: 16,
@@ -1453,7 +1386,6 @@ class _TeleprompterPageState extends State<TeleprompterPage>
     );
   }
 
-  // ─── ASR 音量指示器 ──────────────────────────────────
 
   Widget _buildAsrTranscriptOverlay(
     TeleprompterProvider teleprompter,

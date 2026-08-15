@@ -1,10 +1,7 @@
-/// 文件夹数据模型
-///
-/// 用于稿件分类管理，支持多级子文件夹。
 class Folder {
   final String id;
   final String name;
-  final String? parentId; // null = 根目录
+  final String? parentId; 
   final DateTime createdAt;
   final int sortOrder;
 

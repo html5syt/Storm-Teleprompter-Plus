@@ -1,6 +1,5 @@
 part of '../home_page.dart';
 
-/// 应用退出耗时较长时显示的进度内容，并在超时后开放强制退出入口。
 class _ExitProgressContent extends StatefulWidget {
   const _ExitProgressContent({required this.onForceExit});
 
@@ -69,7 +68,6 @@ class _ExitProgressContentState extends State<_ExitProgressContent> {
   }
 }
 
-/// Paints the desktop drag-selection rectangle.
 class _SelectionPainter extends CustomPainter {
   _SelectionPainter({required this.start, required this.end});
 

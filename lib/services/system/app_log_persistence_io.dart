@@ -9,7 +9,6 @@ import 'app_log_persistence_base.dart';
 
 typedef AppDataDirectoryProvider = Future<Directory> Function();
 
-/// Persists one log file per application launch and rotates old launch logs.
 class AppLogPersistence implements AppLogPersistenceBackend {
   AppLogPersistence({
     AppDataDirectoryProvider? dataDirectoryProvider,
@@ -143,12 +142,9 @@ class AppLogPersistence implements AppLogPersistenceBackend {
         try {
           file.deleteSync();
         } on FileSystemException {
-          // A second running instance may still own an old file. Logging must
-          // continue even if that file cannot be removed until the next launch.
         }
       }
     } on FileSystemException {
-      // Rotation failure must never prevent the current launch from logging.
     }
   }
 

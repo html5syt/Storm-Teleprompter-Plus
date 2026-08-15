@@ -1,6 +1,5 @@
 import 'dart:math';
 
-/// Removes pathological repetitions commonly emitted by streaming ASR.
 String normalizeAsrTranscript(String text) {
   if (text.isEmpty) return text;
   final source = text.runes.toList(growable: false);
@@ -72,8 +71,6 @@ int _suffixPrefixOverlap(String committed, String incoming) {
   final left = committed.runes.toList(growable: false);
   final right = incoming.runes.toList(growable: false);
   final maximum = min(left.length, right.length);
-  // Mobile recognizers frequently carry only the final one or two characters
-  // of the committed segment into the next partial result.
   for (var length = maximum; length >= 1; length--) {
     var matches = true;
     for (var offset = 0; offset < length; offset++) {

@@ -4,38 +4,24 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'ws_protocol.dart';
 
-/// WebSocket 服务端
-///
-/// 使用 dart:io 的 HttpServer 创建 WebSocket 服务器。
-/// 管理客户端连接、消息路由和广播。
 class WsServer {
   HttpServer? _server;
   final Map<String, WebSocket> _clients = {};
   final StreamController<WsRequest> _requestController =
       StreamController<WsRequest>.broadcast();
 
-  /// 服务端口
   int _port = 0;
 
-  /// 是否正在运行
   bool get isRunning => _server != null;
 
-  /// 当前端口
   int get port => _port;
 
-  /// 已连接客户端数
   int get clientCount => _clients.length;
 
-  /// 已连接客户端 ID 列表
   List<String> get clientIds => _clients.keys.toList();
 
-  /// 请求流（供后端服务监听）
   Stream<WsRequest> get requests => _requestController.stream;
 
-  /// 启动 WebSocket 服务器
-  ///
-  /// [port] 指定端口，0 表示自动分配。
-  /// 返回实际绑定的端口。
   Future<int> start({int port = 0}) async {
     if (_server != null) {
       debugPrint('[WsServer] 服务器已在运行，端口: $_port');
@@ -57,7 +43,6 @@ class WsServer {
           final ws = await WebSocketTransformer.upgrade(request);
           _handleNewClient(ws);
         } else {
-          // 非 WS 请求，返回连接信息
           request.response
             ..statusCode = HttpStatus.ok
             ..headers.contentType = ContentType.json
@@ -79,11 +64,9 @@ class WsServer {
     }
   }
 
-  /// 停止服务器
   Future<void> stop() async {
     debugPrint('[WsServer] 正在停止服务器...');
 
-    // 关闭所有客户端连接
     final clients = _clients.values.toList(growable: false);
     _clients.clear();
     for (final ws in clients) {
@@ -92,7 +75,6 @@ class WsServer {
       } catch (_) {}
     }
 
-    // 关闭服务器
     await _server?.close(force: true);
     _server = null;
     _port = 0;
@@ -100,7 +82,6 @@ class WsServer {
     debugPrint('[WsServer] 服务器已停止');
   }
 
-  /// 处理新客户端连接
   void _handleNewClient(WebSocket ws) {
     final clientId = 'client_${DateTime.now().microsecondsSinceEpoch}';
     ws.pingInterval = const Duration(seconds: 10);
@@ -108,7 +89,6 @@ class WsServer {
 
     debugPrint('[WsServer] 新客户端连接: $clientId (总数: ${_clients.length})');
 
-    // 发送连接信息
     _sendTo(
       clientId,
       WsMessage(
@@ -121,10 +101,8 @@ class WsServer {
       ),
     );
 
-    // 广播设备数更新
     _broadcastDeviceCount();
 
-    // 监听消息
     ws.listen(
       (dynamic data) {
         try {
@@ -153,7 +131,6 @@ class WsServer {
     );
   }
 
-  /// 向指定客户端发送消息
   void _sendTo(String clientId, WsMessage message) {
     final ws = _clients[clientId];
     if (ws != null && ws.readyState == WebSocket.open) {
@@ -161,12 +138,10 @@ class WsServer {
     }
   }
 
-  /// 向指定客户端发送响应
   void respond(String clientId, WsMessage message) {
     _sendTo(clientId, message);
   }
 
-  /// 广播消息给所有客户端
   void broadcast(WsMessage message) {
     final encoded = message.encode();
     for (final ws in _clients.values) {
@@ -176,7 +151,6 @@ class WsServer {
     }
   }
 
-  /// 广播设备数量给所有客户端
   void broadcastExcept(String excludedClientId, WsMessage message) {
     final encoded = message.encode();
     for (final entry in _clients.entries) {
@@ -197,16 +171,12 @@ class WsServer {
     );
   }
 
-  /// 处理资源清理
   void dispose() {
     stop();
     _requestController.close();
   }
 }
 
-/// 封装的客户端请求
-///
-/// 包含来源客户端 ID 和消息内容，便于后端服务路由和响应。
 class WsRequest {
   final String clientId;
   final WsMessage message;

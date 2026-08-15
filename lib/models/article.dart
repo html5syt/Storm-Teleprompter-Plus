@@ -1,6 +1,3 @@
-/// 稿件数据模型
-///
-/// 存储提词器稿件信息。
 class Article {
   final String id;
   final String title;
@@ -8,8 +5,8 @@ class Article {
   final DateTime createdAt;
   final DateTime updatedAt;
   final int sortOrder;
-  final Map<String, dynamic>? teleprompterSettings; // 每稿独立的提词器设置
-  final String? folderId; // 所属文件夹ID，null表示根目录
+  final Map<String, dynamic>? teleprompterSettings; 
+  final String? folderId; 
 
   Article({
     required this.id,
@@ -22,7 +19,6 @@ class Article {
     this.folderId,
   });
 
-  /// 从 JSON 反序列化
   factory Article.fromJson(Map<String, dynamic> json) {
     return Article(
       id: json['id'] as String,
@@ -38,7 +34,6 @@ class Article {
     );
   }
 
-  /// 序列化为 JSON
   Map<String, dynamic> toJson() {
     return {
       'id': id,
@@ -53,7 +48,6 @@ class Article {
     };
   }
 
-  /// 创建副本并修改部分字段
   Article copyWith({
     String? id,
     String? title,
@@ -77,7 +71,6 @@ class Article {
     );
   }
 
-  /// 获取正文预览（前 N 个字符）
   String getPreview({int maxLength = 120}) {
     final plainText = content.trim();
     if (plainText.length <= maxLength) return plainText;

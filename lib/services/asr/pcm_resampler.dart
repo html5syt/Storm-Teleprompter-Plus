@@ -1,6 +1,5 @@
 import 'dart:typed_data';
 
-/// Stateful linear resampler for continuous mono PCM streams.
 class PcmResampler {
   PcmResampler({required this.targetSampleRate});
 

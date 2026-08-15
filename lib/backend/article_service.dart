@@ -6,22 +6,15 @@ import '../utils/constants.dart';
 import 'ws_protocol.dart';
 import 'ws_server.dart';
 
-/// 稿件与文件夹管理后端服务
-///
-/// 处理稿件和文件夹的 CRUD 操作，通过 WebSocket 向前端提供数据。
-/// 底层使用统一应用数据存储持久化。
 class ArticleService {
   late AppPreferences _prefs;
   int _idCounter = 0;
 
-  /// 初始化存储
   Future<void> init() async {
     _prefs = await AppPreferences.getInstance();
   }
 
-  /// 注册消息处理器到 WsServer
   void registerHandlers(WsServer server) {
-    // 稿件操作
     server.requests.listen((request) {
       switch (request.message.type) {
         case WsMessageType.articleList:
@@ -72,7 +65,6 @@ class ArticleService {
     });
   }
 
-  // ─── 稿件处理器 ─────────────────────────────────────────
 
   Future<void> _handleArticleList(WsServer server, WsRequest request) async {
     final articles = await loadArticles();
@@ -143,7 +135,6 @@ class ArticleService {
         data: {'article': article.toJson()},
       ),
     );
-    // 广播变更给其他客户端
     server.broadcast(
       WsMessage(
         type: WsMessageType.articleCreateResponse,
@@ -187,7 +178,6 @@ class ArticleService {
         },
       ),
     );
-    // 广播变更
     if (updated != null) {
       server.broadcast(
         WsMessage(
@@ -225,7 +215,6 @@ class ArticleService {
         data: {'success': success},
       ),
     );
-    // 广播删除
     if (success) {
       server.broadcast(
         WsMessage(
@@ -315,7 +304,6 @@ class ArticleService {
     }
   }
 
-  // ─── 文件夹处理器 ───────────────────────────────────────
 
   Future<void> _handleFolderList(WsServer server, WsRequest request) async {
     final folders = await loadFolders();
@@ -343,7 +331,6 @@ class ArticleService {
         data: {'folder': folder.toJson()},
       ),
     );
-    // 广播
     server.broadcast(
       WsMessage(
         type: WsMessageType.folderCreateResponse,
@@ -380,7 +367,6 @@ class ArticleService {
         },
       ),
     );
-    // 广播
     if (folder != null) {
       server.broadcast(
         WsMessage(
@@ -414,7 +400,6 @@ class ArticleService {
         data: {'success': success},
       ),
     );
-    // 广播删除
     if (success) {
       server.broadcast(
         WsMessage(
@@ -456,7 +441,6 @@ class ArticleService {
         },
       ),
     );
-    // 广播移动
     if (article != null) {
       server.broadcast(
         WsMessage(
@@ -533,9 +517,7 @@ class ArticleService {
     );
   }
 
-  // ─── 底层存储操作 ───────────────────────────────────────
 
-  /// 获取所有稿件列表
   Future<List<Article>> loadArticles() async {
     final jsonStr = _prefs.getString(StorageConstants.articlesKey);
     if (jsonStr == null || jsonStr.isEmpty) return [];
@@ -552,7 +534,6 @@ class ArticleService {
     }
   }
 
-  /// 保存全部稿件
   Future<void> _saveArticles(List<Article> articles) async {
     final jsonStr = jsonEncode(articles.map((a) => a.toJson()).toList());
     await _prefs.setString(StorageConstants.articlesKey, jsonStr);
@@ -561,7 +542,6 @@ class ArticleService {
   Future<void> replaceArticles(List<Article> articles) =>
       _saveArticles(articles);
 
-  /// 创建新稿件
   Future<Article> createArticle({
     required String title,
     required String content,
@@ -583,7 +563,6 @@ class ArticleService {
     return article;
   }
 
-  /// 更新稿件
   Future<Article?> updateArticle(
     String id, {
     String? title,
@@ -605,7 +584,6 @@ class ArticleService {
     return updated;
   }
 
-  /// 删除稿件
   Future<bool> deleteArticle(String id) async {
     final articles = await loadArticles();
     final initialLength = articles.length;
@@ -615,7 +593,6 @@ class ArticleService {
     return true;
   }
 
-  /// 移动稿件到文件夹
   Future<Article?> moveArticleToFolder(
     String articleId,
     String? folderId,
@@ -634,7 +611,6 @@ class ArticleService {
     return updated;
   }
 
-  /// 获取所有文件夹
   Future<List<Folder>> loadFolders() async {
     final jsonStr = _prefs.getString(StorageConstants.foldersKey);
     if (jsonStr == null || jsonStr.isEmpty) return [];
@@ -649,7 +625,6 @@ class ArticleService {
     }
   }
 
-  /// 保存全部文件夹
   Future<void> _saveFolders(List<Folder> folders) async {
     final jsonStr = jsonEncode(folders.map((f) => f.toJson()).toList());
     await _prefs.setString(StorageConstants.foldersKey, jsonStr);
@@ -657,7 +632,6 @@ class ArticleService {
 
   Future<void> replaceFolders(List<Folder> folders) => _saveFolders(folders);
 
-  /// 创建新文件夹
   Future<Folder> createFolder({required String name, String? parentId}) async {
     final now = DateTime.now();
     final folder = Folder(
@@ -673,7 +647,6 @@ class ArticleService {
     return folder;
   }
 
-  /// 重命名文件夹
   Future<Folder?> renameFolder(String id, String newName) async {
     final folders = await loadFolders();
     final index = folders.indexWhere((f) => f.id == id);
@@ -685,7 +658,6 @@ class ArticleService {
     return updated;
   }
 
-  /// 将文件夹移动到新位置。目标不能是自身或自身的后代。
   Future<Folder?> moveFolder(String id, String? parentId) async {
     final folders = await loadFolders();
     final index = folders.indexWhere((folder) => folder.id == id);
@@ -702,7 +674,6 @@ class ArticleService {
     return updated;
   }
 
-  /// 递归复制文件夹，保留子文件夹、稿件富文本及每稿提词器设置。
   Future<FolderCopyResult?> copyFolder(String id, String? parentId) async {
     final folders = await loadFolders();
     final source = folders.where((folder) => folder.id == id).firstOrNull;
@@ -794,7 +765,6 @@ class ArticleService {
     return true;
   }
 
-  /// 删除文件夹
   Future<bool> deleteFolder(String id) async {
     final folders = await loadFolders();
     final initialLength = folders.length;
@@ -807,7 +777,6 @@ class ArticleService {
     }
     await _saveFolders(folders);
 
-    // 将该文件夹下的稿件移回根目录
     final articles = await loadArticles();
     bool changed = false;
     for (int i = 0; i < articles.length; i++) {
@@ -821,7 +790,6 @@ class ArticleService {
     return true;
   }
 
-  /// 生成简易唯一 ID
   String _generateId() {
     final now = DateTime.now().microsecondsSinceEpoch;
     _idCounter++;

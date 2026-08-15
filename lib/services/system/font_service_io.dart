@@ -1,7 +1,6 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 
-/// Enumerates system font families for font pickers.
 class FontService {
   static final FontService _instance = FontService._internal();
 

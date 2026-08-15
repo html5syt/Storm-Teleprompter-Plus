@@ -24,14 +24,6 @@ import '../widgets/settings/about_settings_section.dart';
 part 'settings/settings_asr_advanced_dialog.dart';
 part 'settings/settings_backup_section.dart';
 
-/// 应用设置页面
-///
-/// 页面按功能区域组织：
-/// - 应用主题与字体
-/// - 语音识别模型管理
-/// - 服务连接信息
-/// - 完整备份与恢复
-/// - 设置重置与关于信息
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key});
 
@@ -54,7 +46,6 @@ class SettingsPage extends StatelessWidget {
               return ListView(
                 padding: const EdgeInsets.all(20),
                 children: [
-                  // ── 应用主题 ──
                   _buildSectionHeader(context, '应用主题'),
                   const SizedBox(height: 12),
                   _buildThemeColorTile(context, provider, settings),
@@ -62,14 +53,12 @@ class SettingsPage extends StatelessWidget {
 
                   const SizedBox(height: 24),
 
-                  // ── 应用字体 ──
                   _buildSectionHeader(context, '应用字体'),
                   const SizedBox(height: 12),
                   _buildFontFamilyTile(context, provider, settings),
 
                   const SizedBox(height: 24),
 
-                  // ── 下载 ASR 模型（仅本地模式） ──
                   if (!connection.isRemote && !kIsWeb) ...[
                     _buildSectionHeader(context, '语音识别模型'),
                     const SizedBox(height: 12),
@@ -77,7 +66,6 @@ class SettingsPage extends StatelessWidget {
                     const SizedBox(height: 24),
                   ],
 
-                  // ── 服务连接（仅本机服务端模式） ──
                   if (!connection.isRemote) ...[
                     _buildSectionHeader(context, '服务连接'),
                     const SizedBox(height: 12),
@@ -92,14 +80,12 @@ class SettingsPage extends StatelessWidget {
                     const SizedBox(height: 24),
                   ],
 
-                  // ── 重置所有设置 ──
                   _buildSectionHeader(context, '重置'),
                   const SizedBox(height: 12),
                   _buildResetSection(context, provider),
 
                   const SizedBox(height: 24),
 
-                  // ── 关于 ──
                   _buildSectionHeader(context, '关于'),
                   const SizedBox(height: 12),
                   const AboutSettingsSection(),
@@ -112,9 +98,6 @@ class SettingsPage extends StatelessWidget {
     );
   }
 
-  // ═══════════════════════════════════════════════════════
-  // 应用主题 - 全功能颜色选取器
-  // ═══════════════════════════════════════════════════════
 
   Widget _buildThemeColorTile(
     BuildContext context,
@@ -218,7 +201,6 @@ class SettingsPage extends StatelessWidget {
     );
   }
 
-  /// 全功能颜色选取器对话框
   Future<void> _showColorPicker(
     BuildContext context, {
     required Color currentColor,
@@ -232,9 +214,6 @@ class SettingsPage extends StatelessWidget {
     if (selected != null) onColorSelected(selected);
   }
 
-  // ═══════════════════════════════════════════════════════
-  // 应用字体
-  // ═══════════════════════════════════════════════════════
 
   Widget _buildFontFamilyTile(
     BuildContext context,
@@ -252,7 +231,6 @@ class SettingsPage extends StatelessWidget {
     );
   }
 
-  /// 显示带搜索的字体选择对话框
   void _showFontSelector(
     BuildContext context,
     SettingsProvider provider,
@@ -267,7 +245,6 @@ class SettingsPage extends StatelessWidget {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (context, dialogSetState) {
-          // 首次加载系统字体
           if (allFonts.isEmpty) {
             fontService.getAvailableFonts().then((fonts) {
               if (!context.mounted) return;
@@ -367,9 +344,6 @@ class SettingsPage extends StatelessWidget {
     );
   }
 
-  // ═══════════════════════════════════════════════════════
-  // 下载 ASR 模型
-  // ═══════════════════════════════════════════════════════
 
   Widget _buildAsrSection(
     BuildContext context,
@@ -971,9 +945,6 @@ class SettingsPage extends StatelessWidget {
     }
   }
 
-  // ═══════════════════════════════════════════════════════
-  // 服务连接
-  // ═══════════════════════════════════════════════════════
 
   Widget _buildBackendSection(
     BuildContext context,
@@ -1024,7 +995,6 @@ class SettingsPage extends StatelessWidget {
     );
   }
 
-  /// 连接信息对话框
   void _showConnectionInfoDialog(
     BuildContext context,
     ConnectionProvider connection,
@@ -1053,7 +1023,6 @@ class SettingsPage extends StatelessWidget {
     );
   }
 
-  /// 已连接设备对话框
   void _showDevicesDialog(BuildContext context, ConnectionProvider connection) {
     final remoteDeviceIds = connection.remoteDeviceIds;
     showDialog(
@@ -1075,7 +1044,6 @@ class SettingsPage extends StatelessWidget {
               : Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // 当前设备
                     ListTile(
                       leading: const Icon(Icons.computer, size: 20),
                       title: Text('本机 (${connection.clientId ?? "未知"})'),
@@ -1108,9 +1076,6 @@ class SettingsPage extends StatelessWidget {
     );
   }
 
-  // ═══════════════════════════════════════════════════════
-  // 重置设置
-  // ═══════════════════════════════════════════════════════
 
   Widget _buildResetSection(BuildContext context, SettingsProvider provider) {
     return Column(
@@ -1154,9 +1119,6 @@ class SettingsPage extends StatelessWidget {
     );
   }
 
-  // ═══════════════════════════════════════════════════════
-  // 工具方法
-  // ═══════════════════════════════════════════════════════
 
   static Widget _buildSectionHeader(BuildContext context, String title) {
     final primary = Theme.of(context).colorScheme.primary;

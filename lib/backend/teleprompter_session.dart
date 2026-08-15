@@ -4,39 +4,27 @@ import 'ws_protocol.dart';
 import 'ws_server.dart';
 import 'asr_session_service.dart';
 
-/// 提词器会话管理
-///
-/// 管理提词器的多端同步，包括当前字位置、播放状态等。
-/// 当远程后端开始提词会话时，本地自动下载稿件并同步。
 class TeleprompterSession {
   AsrSessionService? _asrSession;
   WsServer? _server;
 
   void bindAsrSession(AsrSessionService service) => _asrSession = service;
 
-  /// 当前活跃的稿件 ID
   String? _activeArticleId;
 
-  /// 当前字索引
   int _currentIndex = -1;
 
-  /// 是否正在播放
   bool _isPlaying = false;
 
-  /// 提词器设置覆盖（每个稿件独立）
   Map<String, dynamic> _settingsOverride = {};
 
-  /// 开始提词时的稿件快照，用于让从端避开旧缓存。
   Map<String, dynamic>? _articleSnapshot;
 
-  /// 会话消息顺序号。客户端用它丢弃晚到的旧同步，避免暂停被旧播放状态覆盖。
   int _revision = 0;
 
-  /// 状态变更控制器
   final StreamController<TeleprompterSessionState> _stateController =
       StreamController<TeleprompterSessionState>.broadcast();
 
-  /// 状态变更流
   Stream<TeleprompterSessionState> get stateStream => _stateController.stream;
 
   String? get activeArticleId => _activeArticleId;
@@ -45,7 +33,6 @@ class TeleprompterSession {
   Map<String, dynamic> get settingsOverride =>
       Map.unmodifiable(_settingsOverride);
 
-  /// 注册消息处理器到 WsServer
   void registerHandlers(WsServer server) {
     _server = server;
     server.requests.listen((request) {
@@ -168,7 +155,6 @@ class TeleprompterSession {
       );
     }
 
-    // 广播给其他客户端（排除发送者）
     server.broadcastExcept(
       request.clientId,
       WsMessage(type: WsMessageType.teleprompterSync, data: sessionData),
@@ -184,7 +170,6 @@ class TeleprompterSession {
 
     _emitState();
 
-    // 广播设置更新
     server.broadcastExcept(
       request.clientId,
       WsMessage(
@@ -247,7 +232,6 @@ class TeleprompterSession {
   }
 }
 
-/// 提词器会话状态快照
 class TeleprompterSessionState {
   final String? articleId;
   final int currentIndex;

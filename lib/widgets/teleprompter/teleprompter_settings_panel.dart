@@ -8,10 +8,6 @@ import '../../services/font_service.dart';
 import '../../theme/app_colors.dart';
 import '../common/app_color_picker_dialog.dart';
 
-/// 提词器设置面板（抽屉形式）
-///
-/// 从右侧滑入，覆盖在提词器界面之上。
-/// 按播放与进度、正文外观、排版、阅读区域分组。
 class TeleprompterSettingsPanel extends StatefulWidget {
   final VoidCallback onClose;
 
@@ -72,7 +68,6 @@ class _TeleprompterSettingsPanelState extends State<TeleprompterSettingsPanel> {
                     child: ListView(
                       padding: const EdgeInsets.all(16),
                       children: [
-                        // ── 1. 播放与进度 ──
                         _buildSectionTitle(context, '播放与进度'),
                         const SizedBox(height: 8),
                         if (!isRemoteClient)
@@ -85,7 +80,6 @@ class _TeleprompterSettingsPanelState extends State<TeleprompterSettingsPanel> {
                         ),
                         const Divider(height: 24),
 
-                        // ── 2. 正文外观 ──
                         _buildSectionTitle(context, '正文外观'),
                         const SizedBox(height: 8),
                         _buildTeleprompterFontTile(context, provider, settings),
@@ -101,7 +95,6 @@ class _TeleprompterSettingsPanelState extends State<TeleprompterSettingsPanel> {
                         _buildEmphasisSection(context, provider, settings),
                         const Divider(height: 24),
 
-                        // ── 3. 排版 ──
                         _buildSectionTitle(context, '排版'),
                         const SizedBox(height: 8),
                         _buildLetterSpacingSlider(
@@ -135,7 +128,6 @@ class _TeleprompterSettingsPanelState extends State<TeleprompterSettingsPanel> {
                         ),
                         const Divider(height: 24),
 
-                        // ── 4. 阅读区域框设置 ──
                         _buildSectionTitle(context, '阅读区域框'),
                         const SizedBox(height: 8),
                         _buildReadingAreaPositionSlider(
@@ -205,9 +197,7 @@ class _TeleprompterSettingsPanelState extends State<TeleprompterSettingsPanel> {
     );
   }
 
-  // ─── 播放与进度 ────────────────────────────────────────
 
-  /// 字号（占正文比例）
   Widget _buildProgressFontSizeSlider(
     BuildContext context,
     SettingsProvider provider,
@@ -282,7 +272,6 @@ class _TeleprompterSettingsPanelState extends State<TeleprompterSettingsPanel> {
     );
   }
 
-  /// 显示项切换（用时/百分比/速度/时间）
   Widget _buildProgressDisplayItems(
     BuildContext context,
     SettingsProvider provider,
@@ -356,9 +345,7 @@ class _TeleprompterSettingsPanelState extends State<TeleprompterSettingsPanel> {
     );
   }
 
-  // ─── 正文外观与排版 ────────────────────────────────────
 
-  /// 提词器正文字体选择
   Widget _buildTeleprompterFontTile(
     BuildContext context,
     SettingsProvider provider,
@@ -679,7 +666,6 @@ class _TeleprompterSettingsPanelState extends State<TeleprompterSettingsPanel> {
     );
   }
 
-  /// 额外加粗字重
   Widget _buildExtraBoldSlider(
     BuildContext context,
     SettingsProvider provider,
@@ -694,7 +680,6 @@ class _TeleprompterSettingsPanelState extends State<TeleprompterSettingsPanel> {
     );
   }
 
-  /// 强调效果
   Widget _buildEmphasisSection(
     BuildContext context,
     SettingsProvider provider,
@@ -710,7 +695,6 @@ class _TeleprompterSettingsPanelState extends State<TeleprompterSettingsPanel> {
             style: TextStyle(fontSize: 12, color: AppColors.textMuted),
           ),
         ),
-        // 已读字变淡（默认开）
         SwitchListTile(
           dense: true,
           secondary: const Icon(Icons.opacity, size: 20),
@@ -722,7 +706,6 @@ class _TeleprompterSettingsPanelState extends State<TeleprompterSettingsPanel> {
           value: settings.grayReadChars,
           onChanged: (_) => provider.toggleGrayReadChars(),
         ),
-        // 当前字加粗（默认关）
         SwitchListTile(
           dense: true,
           secondary: const Icon(Icons.format_bold, size: 20),
@@ -730,7 +713,6 @@ class _TeleprompterSettingsPanelState extends State<TeleprompterSettingsPanel> {
           value: settings.highlightCurrentChar,
           onChanged: (_) => provider.toggleHighlightCurrentChar(),
         ),
-        // 当前字加下划线（默认关）
         SwitchListTile(
           dense: true,
           secondary: const Icon(Icons.format_underlined, size: 20),
@@ -742,9 +724,7 @@ class _TeleprompterSettingsPanelState extends State<TeleprompterSettingsPanel> {
     );
   }
 
-  // ─── 阅读区域 ──────────────────────────────────────────
 
-  /// 边框粗细
   Widget _buildReadingAreaBorderSlider(
     BuildContext context,
     SettingsProvider provider,
@@ -764,7 +744,6 @@ class _TeleprompterSettingsPanelState extends State<TeleprompterSettingsPanel> {
     );
   }
 
-  /// 屏幕位置
   Widget _buildReadingAreaPositionSlider(
     BuildContext context,
     SettingsProvider provider,
@@ -804,7 +783,6 @@ class _TeleprompterSettingsPanelState extends State<TeleprompterSettingsPanel> {
     );
   }
 
-  // ─── 通用控件 ──────────────────────────────────────────
 
   Widget _buildSlider(
     BuildContext context, {

@@ -5,18 +5,13 @@ import '../utils/constants.dart';
 import 'ws_protocol.dart';
 import 'ws_server.dart';
 
-/// 设置管理后端服务
-///
-/// 处理应用设置和提词器设置的读取、保存和重置。
 class SettingsService {
   late AppPreferences _prefs;
 
-  /// 初始化存储
   Future<void> init() async {
     _prefs = await AppPreferences.getInstance();
   }
 
-  /// 注册消息处理器到 WsServer
   void registerHandlers(WsServer server) {
     server.requests.listen((request) {
       switch (request.message.type) {
@@ -98,9 +93,7 @@ class SettingsService {
     );
   }
 
-  // ─── 底层存储操作 ───────────────────────────────────────
 
-  /// 加载应用设置
   Future<AppSettings> loadSettings() async {
     final jsonStr = _prefs.getString(StorageConstants.settingsKey);
     if (jsonStr == null || jsonStr.isEmpty) return const AppSettings();
@@ -113,7 +106,6 @@ class SettingsService {
     }
   }
 
-  /// 保存应用设置
   Future<void> saveSettings(AppSettings settings) async {
     final jsonStr = jsonEncode(settings.toJson());
     await _prefs.setString(StorageConstants.settingsKey, jsonStr);
