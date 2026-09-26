@@ -15,6 +15,7 @@ import 'providers/connection_provider.dart';
 import 'theme/app_colors.dart';
 import 'theme/app_theme.dart';
 import 'pages/home_page.dart';
+import 'pages/quick_mode_app_host.dart';
 import 'services/system/app_log_service.dart';
 import 'utils/constants.dart';
 import 'widgets/common/startup_update_checker.dart';
@@ -182,7 +183,11 @@ class StormTeleprompterApp extends StatelessWidget {
             themeMode: themeMode,
             themeAnimationDuration: const Duration(milliseconds: 260),
             themeAnimationCurve: Curves.easeOutCubic,
-            home: const StartupUpdateChecker(child: HomePage()),
+            home: StartupUpdateChecker(
+              child: settingsProvider.settings.quickModeEnabled
+                  ? const QuickModeAppHost()
+                  : const HomePage(),
+            ),
           );
         },
       ),

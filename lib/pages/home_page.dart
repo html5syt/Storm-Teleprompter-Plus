@@ -21,6 +21,7 @@ import '../models/app_settings.dart';
 import '../models/folder.dart';
 import '../theme/app_colors.dart';
 import '../utils/constants.dart';
+import '../services/quick_mode_controller.dart';
 import '../main.dart';
 import 'teleprompter_page.dart';
 import 'editor_page.dart';
@@ -31,6 +32,7 @@ part 'home/home_breadcrumb_bar.dart';
 part 'home/home_move_dialog.dart';
 part 'home/home_auxiliary_widgets.dart';
 part 'home/home_import_overlay.dart';
+part 'home/home_quick_mode_guard.dart';
 
 /// 视图模式
 enum ViewMode { largeIcons, smallIcons, list, details }
@@ -1258,11 +1260,42 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
 
   // ─── FAB 菜单 ────────────────────────────────────────
   Widget _buildFabMenu(BuildContext context, ConnectionProvider connection) {
-    return FloatingActionButton(
-      onPressed: () => _showFabMenu(context, connection),
-      backgroundColor: AppColors.primary,
-      foregroundColor: Colors.white,
-      child: const Icon(Icons.add),
+    return ListenableBuilder(
+      listenable: QuickModeController.instance,
+      builder: (context, _) {
+        final isQuickMode = QuickModeController.instance.isActive;
+        if (!isQuickMode) {
+          return FloatingActionButton(
+            heroTag: 'home_fab_add',
+            onPressed: () => _showFabMenu(context, connection),
+            backgroundColor: AppColors.primary,
+            foregroundColor: Colors.white,
+            child: const Icon(Icons.add),
+          );
+        }
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            FloatingActionButton.small(
+              heroTag: 'home_fab_back_to_editor',
+              tooltip: '回到编辑器',
+              onPressed: () => QuickModeController.instance.returnToEditor(),
+              backgroundColor: AppColors.surfaceFor(context),
+              foregroundColor: AppColors.primary,
+              child: const Icon(Icons.edit_note),
+            ),
+            const SizedBox(height: 12),
+            FloatingActionButton(
+              heroTag: 'home_fab_add',
+              onPressed: () => _showFabMenu(context, connection),
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+              child: const Icon(Icons.add),
+            ),
+          ],
+        );
+      },
     );
   }
 

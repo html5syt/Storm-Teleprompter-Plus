@@ -22,21 +22,88 @@ import '../services/text_parser.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
 import '../widgets/common/app_color_picker_dialog.dart';
+import '../providers/folder_provider.dart';
+import '../models/folder.dart';
+import '../services/quick_mode_controller.dart';
 import 'teleprompter_page.dart';
 
 part 'editor/editor_logic.dart';
+part 'editor/editor_save_dialog.dart';
 
 class EditorPage extends StatefulWidget {
   final Article? article;
   final String? initialFolderId;
+  final bool isQuickMode;
+  final bool quickModeAutosave;
+  final VoidCallback? onOpenManageView;
 
-  const EditorPage({super.key, this.article, this.initialFolderId});
+  const EditorPage({
+    super.key,
+    this.article,
+    this.initialFolderId,
+    this.isQuickMode = false,
+    this.quickModeAutosave = true,
+    this.onOpenManageView,
+  });
 
   @override
-  State<EditorPage> createState() => _EditorPageState();
+  State<EditorPage> createState() => EditorPageState();
 }
 
-class _EditorPageState extends State<EditorPage> with EditorLogic {
+class EditorPageState extends State<EditorPage> with EditorLogic {
+  Widget _buildSaveStatusIndicator(BuildContext context) {
+    // 快速模式且关闭自动保存：替换已自动保存指示器为 保存按钮 和 "未保存" 红色提示文字
+    if (widget.isQuickMode && !widget.quickModeAutosave) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (isDirty)
+            const Padding(
+              padding: EdgeInsets.only(right: 8),
+              child: Text(
+                '未保存',
+                style: TextStyle(
+                  color: AppColors.error,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: OutlinedButton.icon(
+              onPressed: isSaving ? null : () => promptSaveAndChooseLocation(context),
+              icon: const Icon(Icons.save, size: 16),
+              label: const Text('保存'),
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                minimumSize: const Size(0, 32),
+                visualDensity: VisualDensity.compact,
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.only(right: 12),
+        child: Text(
+          saveStatusText,
+          style: TextStyle(
+            color: isSaving
+                ? AppColors.warning
+                : isDirty
+                ? AppColors.textMutedFor(context)
+                : AppColors.success,
+            fontSize: 12,
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isEditing = currentArticle != null;
@@ -62,22 +129,7 @@ class _EditorPageState extends State<EditorPage> with EditorLogic {
                 ),
               ),
             ),
-            Center(
-              child: Padding(
-                padding: const EdgeInsets.only(right: 12),
-                child: Text(
-                  saveStatusText,
-                  style: TextStyle(
-                    color: isSaving
-                        ? AppColors.warning
-                        : isDirty
-                        ? AppColors.textMutedFor(context)
-                        : AppColors.success,
-                    fontSize: 12,
-                  ),
-                ),
-              ),
-            ),
+            _buildSaveStatusIndicator(context),
             Padding(
               padding: const EdgeInsets.only(right: 8),
               child: Tooltip(
@@ -165,6 +217,16 @@ class _EditorPageState extends State<EditorPage> with EditorLogic {
             ),
           ),
         ),
+        floatingActionButton: widget.isQuickMode && widget.onOpenManageView != null
+            ? FloatingActionButton(
+                heroTag: 'editor_quick_mode_manage',
+                tooltip: '打开稿件管理',
+                onPressed: widget.onOpenManageView,
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                child: const Icon(Icons.folder_shared),
+              )
+            : null,
       ),
     );
   }
