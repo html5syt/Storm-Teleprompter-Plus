@@ -827,15 +827,10 @@ mixin HomeLogic on State<HomePage> {
     await _moveItemsToFolder(itemsToMove, targetFolderId);
   }
 
-  void _handleItemDoubleTap(_ContentItem item) async {
+  void _handleItemDoubleTap(_ContentItem item) {
     if (item.isFolder) {
       _navigateToFolder(item.id);
     } else if (item.article != null) {
-      if (this is _HomePageState) {
-        final allowed = await (this as _HomePageState)
-            ._checkQuickModeBeforeSelectArticle(item.article!);
-        if (!allowed || !mounted) return;
-      }
       _openTeleprompter(context, item.article!);
     }
   }
@@ -897,23 +892,11 @@ mixin HomeLogic on State<HomePage> {
         if (item.isFolder) {
           _navigateToFolder(item.id);
         } else if (item.article != null) {
-          if (this is _HomePageState) {
-            final allowed = await (this as _HomePageState)
-                ._checkQuickModeBeforeSelectArticle(item.article!);
-            if (!allowed || !mounted) return;
-          }
           _openTeleprompter(context, item.article!);
         }
         break;
       case 'edit':
-        if (item.article != null) {
-          if (this is _HomePageState) {
-            final allowed = await (this as _HomePageState)
-                ._checkQuickModeBeforeSelectArticle(item.article!);
-            if (!allowed || !mounted) return;
-          }
-          _editArticle(context, item.article!);
-        }
+        if (item.article != null) _editArticle(context, item.article!);
         break;
       case 'rename':
         _renameItemDialog(item);

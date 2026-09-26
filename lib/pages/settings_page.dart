@@ -8,7 +8,6 @@ import 'package:provider/provider.dart';
 import 'package:record/record.dart';
 import '../models/app_backup.dart';
 import '../models/app_settings.dart';
-import '../models/folder.dart';
 import '../providers/settings_provider.dart';
 import '../providers/connection_provider.dart';
 import '../providers/article_provider.dart';
@@ -24,7 +23,6 @@ import '../widgets/settings/about_settings_section.dart';
 
 part 'settings/settings_asr_advanced_dialog.dart';
 part 'settings/settings_backup_section.dart';
-part 'settings/settings_quick_mode_section.dart';
 
 /// 应用设置页面
 ///
@@ -61,13 +59,6 @@ class SettingsPage extends StatelessWidget {
                   const SizedBox(height: 12),
                   _buildThemeColorTile(context, provider, settings),
                   _buildBrightnessModeTile(context, provider, settings),
-
-                  const SizedBox(height: 24),
-
-                  // ── 快速模式 ──
-                  _buildSectionHeader(context, '快速模式'),
-                  const SizedBox(height: 12),
-                  _buildQuickModeSection(context, provider, settings),
 
                   const SizedBox(height: 24),
 

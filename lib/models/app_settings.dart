@@ -115,15 +115,6 @@ class AppSettings {
   /// 应用亮暗模式（不影响提词器播放页和编辑器页）
   final AppBrightnessMode appBrightnessMode;
 
-  /// 是否开启快速模式（启动直接进入新稿件编辑器）
-  final bool quickModeEnabled;
-
-  /// 快速模式下是否自动保存
-  final bool quickModeAutosave;
-
-  /// 快速模式自动保存默认目标文件夹ID（null 为根目录）
-  final String? quickModeDefaultFolderId;
-
   const AppSettings({
     this.fontSize = 64,
     this.lineHeight = 1.5,
@@ -162,9 +153,6 @@ class AppSettings {
     this.progressShowSpeed = true,
     this.progressShowCurrentTime = true,
     this.appBrightnessMode = AppBrightnessMode.dark,
-    this.quickModeEnabled = false,
-    this.quickModeAutosave = false,
-    this.quickModeDefaultFolderId,
   });
 
   /// 从 JSON 反序列化
@@ -219,9 +207,6 @@ class AppSettings {
         (e) => e.name == json['appBrightnessMode'],
         orElse: () => AppBrightnessMode.dark,
       ),
-      quickModeEnabled: json['quickModeEnabled'] as bool? ?? false,
-      quickModeAutosave: json['quickModeAutosave'] as bool? ?? false,
-      quickModeDefaultFolderId: json['quickModeDefaultFolderId'] as String?,
     );
   }
 
@@ -265,9 +250,6 @@ class AppSettings {
       'progressShowSpeed': progressShowSpeed,
       'progressShowCurrentTime': progressShowCurrentTime,
       'appBrightnessMode': appBrightnessMode.name,
-      'quickModeEnabled': quickModeEnabled,
-      'quickModeAutosave': quickModeAutosave,
-      'quickModeDefaultFolderId': quickModeDefaultFolderId,
     };
   }
 
@@ -310,10 +292,6 @@ class AppSettings {
     bool? progressShowSpeed,
     bool? progressShowCurrentTime,
     AppBrightnessMode? appBrightnessMode,
-    bool? quickModeEnabled,
-    bool? quickModeAutosave,
-    String? quickModeDefaultFolderId,
-    bool clearQuickModeDefaultFolderId = false,
   }) {
     return AppSettings(
       fontSize: fontSize ?? this.fontSize,
@@ -361,11 +339,6 @@ class AppSettings {
       progressShowCurrentTime:
           progressShowCurrentTime ?? this.progressShowCurrentTime,
       appBrightnessMode: appBrightnessMode ?? this.appBrightnessMode,
-      quickModeEnabled: quickModeEnabled ?? this.quickModeEnabled,
-      quickModeAutosave: quickModeAutosave ?? this.quickModeAutosave,
-      quickModeDefaultFolderId: clearQuickModeDefaultFolderId
-          ? null
-          : (quickModeDefaultFolderId ?? this.quickModeDefaultFolderId),
     );
   }
 

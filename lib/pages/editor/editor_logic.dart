@@ -16,7 +16,6 @@ mixin EditorLogic on State<EditorPage> {
   _EditorDraft? _queuedDraft;
   bool _syncingEditorContent = false;
   int _editRevision = 0;
-  String? _selectedFolderId;
 
   bool isDirty = false;
   bool isSaving = false;
@@ -82,10 +81,7 @@ mixin EditorLogic on State<EditorPage> {
     _autosaveTimer?.cancel();
     titleController.removeListener(_markChanged);
     quillController.removeListener(_onQuillContentChanged);
-    // 快速模式且关闭自动保存时不自动保存
-    if (isDirty && !(widget.isQuickMode && !widget.quickModeAutosave)) {
-      unawaited(save());
-    }
+    if (isDirty) unawaited(save());
     titleController.dispose();
     contentController.dispose();
     findController.dispose();
@@ -123,16 +119,6 @@ mixin EditorLogic on State<EditorPage> {
     if (!mounted) return;
     _editRevision++;
     setState(() => isDirty = true);
-    if (widget.isQuickMode) {
-      QuickModeController.instance.updateUnsavedStatus(
-        hasUnsavedChanges: true,
-        article: _savedArticle,
-      );
-    }
-    // 快速模式且关闭自动保存时不启动定时自动保存
-    if (widget.isQuickMode && !widget.quickModeAutosave) {
-      return;
-    }
     _scheduleAutosave();
   }
 
@@ -146,9 +132,6 @@ mixin EditorLogic on State<EditorPage> {
 
   void flushAutosave() {
     _autosaveTimer?.cancel();
-    if (widget.isQuickMode && !widget.quickModeAutosave) {
-      return;
-    }
     if (isDirty) unawaited(save());
   }
 
@@ -188,7 +171,7 @@ mixin EditorLogic on State<EditorPage> {
           savedArticle = await _articleProvider.createArticle(
             title: title,
             content: draft.content,
-            folderId: _selectedFolderId ?? widget.initialFolderId,
+            folderId: widget.initialFolderId,
           );
         } else {
           savedArticle = await _articleProvider.updateArticle(
@@ -207,12 +190,6 @@ mixin EditorLogic on State<EditorPage> {
         if (queuedDraft == null) {
           if (mounted && _editRevision == draft.revision) {
             setState(() => isDirty = false);
-            if (widget.isQuickMode) {
-              QuickModeController.instance.updateUnsavedStatus(
-                hasUnsavedChanges: false,
-                article: _savedArticle,
-              );
-            }
           }
           return _savedArticle;
         }
@@ -224,31 +201,6 @@ mixin EditorLogic on State<EditorPage> {
     } finally {
       if (mounted) setState(() => isSaving = false);
     }
-  }
-
-  /// 提示用户选择保存位置并完成保存（用于快速模式下手动保存）
-  Future<Article?> promptSaveAndChooseLocation(BuildContext context) async {
-    final folderProvider = context.read<FolderProvider>();
-    final result = await showDialog<_SaveLocationResult>(
-      context: context,
-      builder: (ctx) => _EditorSaveLocationDialog(
-        folderProvider: folderProvider,
-        initialFolderId: _selectedFolderId ?? widget.initialFolderId,
-      ),
-    );
-
-    if (result == null) {
-      return null;
-    }
-
-    _selectedFolderId = result.folderId;
-    final saved = await save(force: true);
-    if (saved != null && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('稿件已保存')),
-      );
-    }
-    return saved;
   }
 
   _EditorDraft _captureDraft() {

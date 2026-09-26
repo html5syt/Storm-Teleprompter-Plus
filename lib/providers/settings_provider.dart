@@ -414,30 +414,6 @@ class SettingsProvider with ChangeNotifier {
     await _saveSettings();
   }
 
-  /// 设置快速模式开关
-  Future<void> setQuickModeEnabled(bool enabled) async {
-    _settings = _settings.copyWith(quickModeEnabled: enabled);
-    notifyListeners();
-    await _saveSettings();
-  }
-
-  /// 设置快速模式是否自动保存
-  Future<void> setQuickModeAutosave(bool autosave) async {
-    _settings = _settings.copyWith(quickModeAutosave: autosave);
-    notifyListeners();
-    await _saveSettings();
-  }
-
-  /// 设置快速模式默认保存目标文件夹（null 为根目录）
-  Future<void> setQuickModeDefaultFolderId(String? folderId) async {
-    _settings = _settings.copyWith(
-      quickModeDefaultFolderId: folderId,
-      clearQuickModeDefaultFolderId: folderId == null,
-    );
-    notifyListeners();
-    await _saveSettings();
-  }
-
   /// 完全重置所有设置为默认值
   Future<void> resetAllSettings() async {
     _settings = const AppSettings();
