@@ -2,10 +2,14 @@ part of '../editor_page.dart';
 
 /// 快速草稿的显式保存和离开保护，不把浏览稿件列表当作离开。
 mixin EditorQuickMode on State<EditorPage>, EditorLogic {
-  Future<bool>? _leaveOperation;
+  final _leaveAction = SingleFlightAction<bool>();
+  final _manualSaveAction = SingleFlightAction<bool>();
 
   /// 显式保存允许选择位置，已有稿件复用原记录而不是创建副本。
-  Future<bool> manualSave() async {
+  Future<bool> manualSave() => _manualSaveAction.run(_manualSave);
+
+  /// 目录选择与落盘属于同一保存事务，连续点击不会创建多份稿件。
+  Future<bool> _manualSave() async {
     final target = await showFolderPicker(context);
     if (target == null || !mounted) return false;
     _saveFolderId = target.id;
@@ -34,27 +38,20 @@ mixin EditorQuickMode on State<EditorPage>, EditorLogic {
   }
 
   /// 所有离开入口共用一次确认，避免窗口关闭和返回键重复弹窗。
-  Future<bool> confirmLeave() async {
-    final pending = _leaveOperation;
-    if (pending != null) return pending;
-    final operation = _confirmLeave();
-    _leaveOperation = operation;
-    try {
-      return await operation;
-    } finally {
-      _leaveOperation = null;
-    }
-  }
+  Future<bool> confirmLeave() => _leaveAction.run(_confirmLeave);
 
   /// 自动保存先刷盘；任何失败或取消都保留当前草稿。
   Future<bool> _confirmLeave() async {
+    // 若用户已点保存，退出等待同一个目录选择结果，不再另开保存提示。
+    final pendingSave = _manualSaveAction.pending;
+    if (pendingSave != null) return await pendingSave && mounted && !isDirty;
     _autosaveTimer?.cancel();
     if (autoSaveEnabled && (isDirty || isSaving)) await save(force: true);
     if (!mounted) return false;
     if (!isDirty) return true;
     final draftTitle = _effectiveTitle(_captureDraft());
     final draftKind = widget.quickMode ? '临时稿件' : '稿件';
-    final choice = await showDialog<String>(
+    final choice = await showSettledDialog<String>(
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(

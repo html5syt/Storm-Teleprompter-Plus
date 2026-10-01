@@ -22,6 +22,8 @@ import '../services/inline_style_parser.dart';
 import '../services/text_parser.dart';
 import '../theme/app_colors.dart';
 import '../utils/constants.dart';
+import '../utils/single_flight_action.dart';
+import '../widgets/common/settled_dialog.dart';
 import '../widgets/editor/quick_mode_action_button.dart';
 import '../widgets/common/app_color_picker_dialog.dart';
 import '../widgets/editor/editor_toolbar.dart';

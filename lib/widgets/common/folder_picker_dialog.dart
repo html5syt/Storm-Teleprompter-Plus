@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/folder_provider.dart';
+import 'settled_dialog.dart';
 
 /// 目录选择结果；使用对象区分“根目录”和取消操作。
 class FolderSelection {
@@ -17,7 +18,7 @@ String folderLabel(FolderProvider provider, String? id) {
 /// 保存和设置共用的目录选择器，不改变稿件管理器的导航位置。
 Future<FolderSelection?> showFolderPicker(BuildContext context) {
   final provider = context.read<FolderProvider>();
-  return showDialog<FolderSelection>(
+  return showSettledDialog<FolderSelection>(
     context: context,
     builder: (context) => AlertDialog(
       title: const Text('选择保存位置'),

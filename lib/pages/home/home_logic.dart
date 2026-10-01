@@ -35,6 +35,9 @@ mixin HomeLogic on State<HomePage>, HomeQuickMode {
   void _showFabMenu(BuildContext context, ConnectionProvider connection);
   Future<void> _shutdownAndExitApplication();
 
+  // 从保存提示、目录选择到实际关闭都保持同一退出事务。
+  final _exitAction = SingleFlightAction<void>();
+
   // ─── 搜索 ─────────────────────────────────────────────
   final TextEditingController searchController = TextEditingController();
   String searchQuery = '';
@@ -1645,13 +1648,17 @@ mixin HomeLogic on State<HomePage>, HomeQuickMode {
   }
 
   // ─── 多客户端警告 ────────────────────────────────────
-  Future<void> _checkMultiClientBeforeExit(BuildContext context) async {
+  Future<void> _checkMultiClientBeforeExit(BuildContext context) =>
+      _exitAction.run(_confirmAndExit);
+
+  /// 重复的窗口关闭、系统退出、返回键请求不会各自弹窗或启动关闭服务。
+  Future<void> _confirmAndExit() async {
     if (!mounted) return;
     final shouldExit = await _confirmLocalBackendShutdown(
       context,
       actionLabel: '退出服务端',
     );
-    if (!mounted || !context.mounted || !shouldExit) return;
+    if (!mounted || !shouldExit) return;
     await _shutdownAndExitApplication();
   }
 
@@ -1667,7 +1674,7 @@ mixin HomeLogic on State<HomePage>, HomeQuickMode {
     final clientCount = globalBackendServer.clientCount;
     if (clientCount < 2) return true;
 
-    return await showDialog<bool>(
+    return await showSettledDialog<bool>(
           context: context,
           barrierDismissible: false,
           builder: (ctx) => AlertDialog(

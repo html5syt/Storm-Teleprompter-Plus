@@ -22,6 +22,8 @@ import '../models/app_settings.dart';
 import '../models/folder.dart';
 import '../theme/app_colors.dart';
 import '../utils/constants.dart';
+import '../utils/single_flight_action.dart';
+import '../widgets/common/settled_dialog.dart';
 import '../main.dart';
 import '../widgets/editor/quick_library_overlay.dart';
 import '../widgets/editor/quick_mode_action_button.dart';
@@ -88,11 +90,9 @@ class _HomePageState extends State<HomePage>
   /// 处理系统菜单退出等未经过窗口关闭按钮的退出请求。
   Future<AppExitResponse> _onExitRequested() async {
     if (_isClosingWindow) return AppExitResponse.exit;
-    final confirmed = await _confirmLocalBackendShutdown(
-      context,
-      actionLabel: '退出服务端',
-    );
-    return confirmed ? AppExitResponse.exit : AppExitResponse.cancel;
+    // 系统退出同样走唯一的确认及关闭流程，不再由系统与窗口各执行一次。
+    await _checkMultiClientBeforeExit(context);
+    return AppExitResponse.cancel;
   }
 
   Future<void> _initWindowCloseGuard() async {
@@ -117,13 +117,7 @@ class _HomePageState extends State<HomePage>
 
   Future<void> _handleWindowClose() async {
     if (_isClosingWindow) return;
-    final shouldClose = await _confirmLocalBackendShutdown(
-      context,
-      actionLabel: '关闭服务端',
-    );
-    if (!shouldClose || !mounted) return;
-
-    await _shutdownAndExitApplication();
+    await _checkMultiClientBeforeExit(context);
   }
 
   @override
