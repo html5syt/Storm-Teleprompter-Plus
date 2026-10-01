@@ -891,7 +891,7 @@ class _TeleprompterPageState extends State<TeleprompterPage>
     );
   }
 
-  /// 匀速模式按可见行高度移动，按行模式保留原有逐字前后跳转。
+  /// 滚动模式按可见行高度移动，按行模式保留原有逐字前后跳转。
   void _stepPlayback(
     TeleprompterProvider teleprompter,
     AppSettings settings,
@@ -993,7 +993,7 @@ class _TeleprompterPageState extends State<TeleprompterPage>
             icon: Icons.menu_book,
             label: settings.scrollMode != ScrollMode.auto
                 ? '自动'
-                : (settings.isContinuousScroll ? '自动-匀速' : '自动-按行'),
+                : (settings.isContinuousScroll ? '自动-滚动' : '自动-按行'),
             mode: ScrollMode.auto,
             settings: settings,
             settingsProvider: settingsProvider,
@@ -1023,7 +1023,7 @@ class _TeleprompterPageState extends State<TeleprompterPage>
         if (!isSelected) {
           unawaited(_selectScrollMode(mode, settingsProvider));
         } else if (mode == ScrollMode.auto) {
-          // 返回按行模式前把当前位置映射到字符，避免跳回匀速前的旧游标。
+          // 返回按行模式前把当前位置映射到字符，避免跳回滚动前的旧游标。
           if (settings.isContinuousScroll) {
             final index = textLayerKey.currentState?.rawIndexAtViewport();
             if (index != null)
@@ -1144,7 +1144,9 @@ class _TeleprompterPageState extends State<TeleprompterPage>
     // 自动滚动播放中：上键减速/下键加速
     if (settings.scrollMode == ScrollMode.auto &&
         teleprompter.isPlaying &&
-        (settings.autoSpeed != 0 || _speedModifierPressed())) {
+        (settings.isContinuousScroll ||
+            settings.autoSpeed != 0 ||
+            _speedModifierPressed())) {
       final baseStep = 10 * _speedStepMultiplier();
       final step = direction > 0 ? baseStep : -baseStep;
       final provider = context.read<SettingsProvider>();
@@ -1304,10 +1306,11 @@ class _TeleprompterPageState extends State<TeleprompterPage>
     final isRemoteClient =
         connection.isRemote ||
         (_wasRemoteClient && connection.canRetryRemoteConnection);
+    // 滚动模式零速只停止位移，不切换成手动浏览；按行零速仍可手动滚动。
     final bool blockScroll =
         settings.scrollMode == ScrollMode.auto &&
         teleprompter.isPlaying &&
-        settings.autoSpeed != 0;
+        (settings.isContinuousScroll || settings.autoSpeed != 0);
     final ScrollPhysics physics = blockScroll || isRemoteClient
         ? const NeverScrollableScrollPhysics()
         : const ClampingScrollPhysics();

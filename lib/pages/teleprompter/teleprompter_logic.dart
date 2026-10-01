@@ -248,7 +248,7 @@ mixin TeleprompterPageLogic<T extends StatefulWidget>
 
     if (settings.scrollMode == ScrollMode.auto &&
         teleprompter.isPlaying &&
-        settings.autoSpeed != 0) {
+        (settings.isContinuousScroll || settings.autoSpeed != 0)) {
       // 自动模式：滚轮只调速，不滚动页面
       teleprompter.adjustSpeedByWheel(
         event.scrollDelta.dy,
@@ -270,7 +270,6 @@ mixin TeleprompterPageLogic<T extends StatefulWidget>
         return;
       }
 
-      if (settings.isContinuousScroll) return;
       final direction = event.scrollDelta.dy > 0 ? 1 : -1;
       final visualTarget = textLayerKey.currentState?.rawIndexForVisualLineMove(
         direction,

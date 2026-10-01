@@ -136,13 +136,13 @@ void main() {
     final paused = controller.offset;
     await tester.pump(const Duration(seconds: 1));
     expect(controller.offset, paused);
-    // 零速保留拖动后的连续像素位置，不按行吸附。
+    // 滚动模式零速固定页面，拖动不能改变位置。
     await tester.drag(find.byType(CustomScrollView), const Offset(0, -160));
     await tester.pumpAndSettle();
-    expect(controller.offset, greaterThan(paused));
-    final dragged = controller.offset;
+    expect(controller.offset, paused);
+    final stopped = controller.offset;
     await tester.pump(const Duration(seconds: 1));
-    expect(controller.offset, dragged);
+    expect(controller.offset, stopped);
     controller.jumpTo(2);
     await tester.pumpWidget(
       _layer(controller, speed: -40, boundary: boundaries.add),

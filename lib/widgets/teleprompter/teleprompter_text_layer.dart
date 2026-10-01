@@ -673,7 +673,10 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer>
               onNotification: _handleScrollNotification,
               child: CustomScrollView(
                 controller: widget.scrollController,
-                physics: widget.physics ?? const ClampingScrollPhysics(),
+                // 播放中的滚动模式始终由速度控制，零速不能通过拖动改变位置。
+                physics: widget.continuous && widget.isPlaying
+                    ? const NeverScrollableScrollPhysics()
+                    : widget.physics ?? const ClampingScrollPhysics(),
                 slivers: [
                   SliverToBoxAdapter(
                     child: SizedBox(height: _topPad(screenHeight)),
