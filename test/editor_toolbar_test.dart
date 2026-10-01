@@ -64,7 +64,10 @@ void main() {
       );
       expect(
         tester.getSize(input),
-        const Size.square(EditorToolbarStyle.buttonSize),
+        const Size(
+          EditorToolbarStyle.fontSizeInputWidth,
+          EditorToolbarStyle.buttonSize,
+        ),
       );
       expect(tester.getTopLeft(input).dy, top);
       expect(

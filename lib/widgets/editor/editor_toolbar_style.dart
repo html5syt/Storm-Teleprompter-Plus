@@ -4,6 +4,9 @@ import '../../theme/app_colors.dart';
 /// 编辑器所有工具共用尺寸、边框、颜色和交互状态。
 abstract final class EditorToolbarStyle {
   static const double buttonSize = 36;
+
+  /// 字号输入加宽以显示多位数字，高度仍与按钮一致。
+  static const double fontSizeInputWidth = 72;
   static const double iconSize = 20;
   static const double spacing = 4;
   static const double radius = 6;
@@ -47,18 +50,18 @@ abstract final class EditorToolbarStyle {
     );
     return InputDecoration(
       constraints: const BoxConstraints.tightFor(
-        width: buttonSize,
+        width: fontSizeInputWidth,
         height: buttonSize,
       ),
       hintText: '字号',
-      // 方形输入框中的双字提示不继承主题字距，避免中文字体被省略。
+      // 字号提示不继承主题字距，保持不同字体下的显示一致。
       hintStyle: TextStyle(
         fontSize: 11,
         letterSpacing: 0,
         color: AppColors.textMutedFor(context),
       ),
       isDense: true,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 2, vertical: 8),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
       filled: true,
       fillColor: AppColors.surfaceElevatedFor(context),
       border: border,

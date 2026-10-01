@@ -275,13 +275,13 @@ class EditorPageState extends State<EditorPage>
     );
   }
 
-  /// 字号输入与工具按钮等宽等高，像素单位放在提示中避免挤占输入空间。
+  /// 字号输入加宽并与工具按钮等高，像素单位保留在提示中。
   Widget _buildFontSizeInput() {
     return Builder(
       builder: (context) => Tooltip(
         message: '选中文字字号，输入任意 px 数值后回车',
         child: SizedBox(
-          width: EditorToolbarStyle.buttonSize,
+          width: EditorToolbarStyle.fontSizeInputWidth,
           height: EditorToolbarStyle.buttonSize,
           child: TextField(
             keyboardType: const TextInputType.numberWithOptions(decimal: true),

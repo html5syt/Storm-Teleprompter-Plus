@@ -10,9 +10,9 @@ import 'package:storm_teleprompter_plus/widgets/editor/editor_toolbar.dart';
 import 'package:storm_teleprompter_plus/widgets/editor/editor_toolbar_style.dart';
 import 'support/quick_workspace_test_host.dart';
 
-/// 快速编辑器的模式文案、方形字号输入及应用主题验证。
+/// 快速编辑器的模式文案、加宽字号输入及应用主题验证。
 void main() {
-  testWidgets('字号输入与按钮等宽等高，仍支持任意像素数值', (tester) async {
+  testWidgets('字号输入加宽且与按钮等高，仍支持任意像素数值', (tester) async {
     await mountQuickWorkspace(
       tester,
       const EditorPage(quickMode: true, autoSave: false),
@@ -25,7 +25,14 @@ void main() {
     );
     expect(
       tester.getSize(field),
-      const Size.square(EditorToolbarStyle.buttonSize),
+      const Size(
+        EditorToolbarStyle.fontSizeInputWidth,
+        EditorToolbarStyle.buttonSize,
+      ),
+    );
+    expect(
+      tester.getSize(field).width,
+      greaterThan(EditorToolbarStyle.buttonSize),
     );
     expect(tester.widget<TextField>(field).decoration!.suffixText, isNull);
     expect(
