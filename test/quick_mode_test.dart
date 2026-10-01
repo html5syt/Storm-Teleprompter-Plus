@@ -314,4 +314,63 @@ void main() {
       isTrue,
     );
   });
+  testWidgets('窗口关闭和系统退出都会保护稿件管理页背后的草稿', (tester) async {
+    final articles = _Articles();
+    final settings = _Settings();
+    await settings.setQuickMode(enabled: true);
+    await _mount(tester, const HomePage(), articles, settings);
+    await tester.enterText(find.byType(TextField).first, '退出保护');
+    await tester.tap(find.byTooltip('稿件管理'));
+    await tester.pumpAndSettle();
+    final dynamic homeState = tester.state(find.byType(HomePage));
+    homeState.onWindowClose();
+    await tester.pumpAndSettle();
+    expect(find.text('保存稿件？'), findsOneWidget);
+    await tester.tap(find.text('取消'));
+    await tester.pumpAndSettle();
+    expect(articles.writes, 0);
+    final exit = tester.binding.handleRequestAppExit();
+    await tester.pumpAndSettle();
+    expect(find.text('保存稿件？'), findsOneWidget);
+    await tester.tap(find.text('取消'));
+    await tester.pumpAndSettle();
+    expect((await exit).name, 'cancel');
+    await tester.tap(find.byTooltip('回到编辑器'));
+    await tester.pumpAndSettle();
+    expect(_editor(tester).titleController.text, '退出保护');
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('默认普通启动不创建临时编辑器', (tester) async {
+    final articles = _Articles();
+    await _mount(tester, const HomePage(), articles, _Settings());
+    expect(find.byType(EditorPage), findsNothing);
+    expect(find.byTooltip('回到编辑器'), findsNothing);
+    expect(articles.writes, 0);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('窄屏快速编辑器仍可保存和开始提词', (tester) async {
+    tester.view.physicalSize = const Size(320, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await _mount(
+      tester,
+      const EditorPage(quickMode: true, autoSave: false),
+      _Articles(),
+      _Settings(),
+    );
+    expect(find.byTooltip('保存'), findsOneWidget);
+    expect(find.byType(BackButton), findsNothing);
+    expect(find.byIcon(Icons.arrow_back), findsNothing);
+    expect(
+      tester.widget<AppBar>(find.byType(AppBar)).automaticallyImplyLeading,
+      isFalse,
+    );
+    expect(find.text('未保存'), findsOneWidget);
+    expect(find.text('开始提词'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
 }

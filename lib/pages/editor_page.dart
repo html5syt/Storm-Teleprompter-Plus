@@ -23,6 +23,8 @@ import '../services/text_parser.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
 import '../widgets/common/app_color_picker_dialog.dart';
+import '../widgets/editor/editor_toolbar.dart';
+import '../widgets/editor/editor_toolbar_style.dart';
 import 'teleprompter_page.dart';
 
 part 'editor/editor_logic.dart';
@@ -84,13 +86,7 @@ class EditorPageState extends State<EditorPage>
         backgroundColor: AppColors.backgroundFor(context),
         appBar: AppBar(
           title: Text(isEditing ? '编辑稿件' : '新建稿件'),
-          leading: widget.quickMode
-              ? IconButton(
-                  tooltip: '退出编辑器',
-                  icon: const Icon(Icons.arrow_back),
-                  onPressed: requestExit,
-                )
-              : null,
+          automaticallyImplyLeading: !widget.quickMode,
           actions: [
             if (!autoSaveEnabled)
               IconButton(
@@ -247,31 +243,18 @@ class EditorPageState extends State<EditorPage>
     );
   }
 
+  /// 文本清理和查找按钮复用统一工具栏样式。
   Widget _buildFormatButton(
     IconData icon,
     String tooltip,
-    VoidCallback onPressed,
-  ) {
-    return Tooltip(
-      message: tooltip,
-      child: Padding(
-        padding: const EdgeInsets.only(right: 4),
-        child: IconButton(
-          onPressed: onPressed,
-          icon: Icon(icon, size: 19),
-          visualDensity: VisualDensity.compact,
-          style: IconButton.styleFrom(
-            minimumSize: const Size(34, 34),
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            foregroundColor: AppColors.textSecondary,
-            backgroundColor: AppColors.surface.withValues(alpha: 0.55),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(6),
-            ),
-            side: BorderSide(color: AppColors.border.withValues(alpha: 0.6)),
-          ),
-        ),
-      ),
+    VoidCallback onPressed, {
+    bool selected = false,
+  }) {
+    return EditorToolbarButton(
+      icon: Icon(icon),
+      tooltip: tooltip,
+      onPressed: onPressed,
+      selected: selected,
     );
   }
 
@@ -296,32 +279,6 @@ class EditorPageState extends State<EditorPage>
       quill.VerticalSpacing.zero,
       null,
     );
-    final toolbar = quill.QuillSimpleToolbar(
-      controller: quillController,
-      config: const quill.QuillSimpleToolbarConfig(
-        showDividers: false,
-        showFontFamily: false,
-        showFontSize: false,
-        showSmallButton: false,
-        showInlineCode: false,
-        showColorButton: false,
-        showBackgroundColorButton: false,
-        showAlignmentButtons: false,
-        showHeaderStyle: false,
-        showListNumbers: false,
-        showListBullets: false,
-        showListCheck: false,
-        showCodeBlock: false,
-        showQuote: false,
-        showIndent: false,
-        showLink: false,
-        showDirection: false,
-        showSearchButton: false,
-        showSubscript: false,
-        showSuperscript: false,
-        multiRowsDisplay: false,
-      ),
-    );
 
     return Container(
       decoration: BoxDecoration(
@@ -331,44 +288,22 @@ class EditorPageState extends State<EditorPage>
       ),
       child: Column(
         children: [
-          SizedBox(
-            height: 44,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              children: [
-                Center(child: _buildFormatTools()),
-                const SizedBox(width: 8),
-                Center(child: _buildFontSizeInput()),
-                const SizedBox(width: 4),
-                Center(
-                  child: _buildEditorColorTools(
-                    editorTextColor,
-                    editorBackground,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Center(child: _buildFindButton()),
-                Center(child: _buildReplaceButton()),
-                const SizedBox(width: 8),
-                Center(
-                  child: Container(
-                    width: 1,
-                    height: 26,
-                    color: AppColors.borderLight,
-                  ),
-                ),
-                const SizedBox(width: 6),
-                SizedBox(
-                  width: 620,
-                  child: Theme(
-                    data: AppTheme.fromColorAndFont(
-                      AppColors.primaryFromSettings(settings.uiPrimaryColor),
-                      fontFamily: settings.appFontFamily,
-                    ),
-                    child: toolbar,
-                  ),
-                ),
+          Theme(
+            data: AppTheme.fromColorAndFont(
+              AppColors.primaryFromSettings(settings.uiPrimaryColor),
+              fontFamily: settings.appFontFamily,
+            ),
+            child: EditorToolbar(
+              controller: quillController,
+              tools: [
+                _buildFormatTools(),
+                const SizedBox(width: EditorToolbarStyle.spacing),
+                _buildFontSizeInput(),
+                const SizedBox(width: EditorToolbarStyle.spacing),
+                _buildEditorColorTools(editorTextColor, editorBackground),
+                const SizedBox(width: EditorToolbarStyle.spacing),
+                _buildFindButton(),
+                _buildReplaceButton(),
               ],
             ),
           ),
@@ -403,40 +338,24 @@ class EditorPageState extends State<EditorPage>
     );
   }
 
+  /// 字号输入与所有工具按钮等高，颜色由工具栏主题统一提供。
   Widget _buildFontSizeInput() {
-    return Tooltip(
-      message: '选中文字字号，输入任意 px 数值后回车',
-      child: SizedBox(
-        width: 78,
-        height: 34,
-        child: TextField(
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          textAlign: TextAlign.center,
-          style: const TextStyle(fontSize: 12),
-          decoration: InputDecoration(
-            hintText: '字号',
-            suffixText: 'px',
-            isDense: true,
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: 6,
-              vertical: 8,
+    return Builder(
+      builder: (context) => Tooltip(
+        message: '选中文字字号，输入任意 px 数值后回车',
+        child: SizedBox(
+          width: 86,
+          height: EditorToolbarStyle.buttonSize,
+          child: TextField(
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 12,
+              color: AppColors.textSecondary,
             ),
-            filled: true,
-            fillColor: AppColors.surface.withValues(alpha: 0.55),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(6),
-              borderSide: BorderSide(
-                color: AppColors.border.withValues(alpha: 0.6),
-              ),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(6),
-              borderSide: BorderSide(
-                color: AppColors.border.withValues(alpha: 0.6),
-              ),
-            ),
+            decoration: EditorToolbarStyle.fontSizeDecoration(context),
+            onSubmitted: applyFontSize,
           ),
-          onSubmitted: applyFontSize,
         ),
       ),
     );
@@ -472,47 +391,31 @@ class EditorPageState extends State<EditorPage>
     required Color fallbackColor,
   }) {
     final color = _selectionColor(attributeKey, fallbackColor);
-    return Tooltip(
-      message: tooltip,
-      child: Padding(
-        padding: const EdgeInsets.only(right: 4),
-        child: IconButton(
-          onPressed: () => _chooseEditorColor(
-            title: tooltip,
-            attributeKey: attributeKey,
-            fallbackColor: fallbackColor,
-          ),
-          icon: Stack(
-            alignment: Alignment.center,
-            children: [
-              Icon(icon, size: 19),
-              Positioned(
-                bottom: 0,
-                child: Container(
-                  width: 17,
-                  height: 3,
-                  decoration: BoxDecoration(
-                    color: color,
-                    border: Border.all(
-                      color: AppColors.border.withValues(alpha: 0.8),
-                      width: 0.5,
-                    ),
-                  ),
+    return EditorToolbarButton(
+      tooltip: tooltip,
+      onPressed: () => _chooseEditorColor(
+        title: tooltip,
+        attributeKey: attributeKey,
+        fallbackColor: fallbackColor,
+      ),
+      icon: SizedBox.square(
+        dimension: EditorToolbarStyle.iconSize,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            Icon(icon, size: EditorToolbarStyle.iconSize),
+            Positioned(
+              bottom: 0,
+              child: Container(
+                width: 18,
+                height: 3,
+                decoration: BoxDecoration(
+                  color: color,
+                  border: Border.all(color: AppColors.border, width: 0.5),
                 ),
               ),
-            ],
-          ),
-          visualDensity: VisualDensity.compact,
-          style: IconButton.styleFrom(
-            minimumSize: const Size(34, 34),
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            foregroundColor: AppColors.textSecondary,
-            backgroundColor: AppColors.surface.withValues(alpha: 0.55),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(6),
             ),
-            side: BorderSide(color: AppColors.border.withValues(alpha: 0.6)),
-          ),
+          ],
         ),
       ),
     );
@@ -560,6 +463,7 @@ class EditorPageState extends State<EditorPage>
       Icons.search,
       '查找 (Ctrl+F)',
       () => showFindReplaceDialog(replaceMode: false),
+      selected: isFindReplaceVisible && !isReplaceMode,
     );
   }
 
@@ -568,6 +472,7 @@ class EditorPageState extends State<EditorPage>
       Icons.find_replace,
       '替换 (Ctrl+H)',
       () => showFindReplaceDialog(replaceMode: true),
+      selected: isFindReplaceVisible && isReplaceMode,
     );
   }
 
