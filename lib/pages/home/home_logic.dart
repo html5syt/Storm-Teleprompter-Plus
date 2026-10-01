@@ -1042,13 +1042,15 @@ mixin HomeLogic on State<HomePage>, HomeQuickMode {
 
   // ─── 文章操作 ────────────────────────────────────────
   Future<void> _createArticle(BuildContext context) async {
-    if (!await _finishQuickMode() || !context.mounted) return;
-    Navigator.of(context).push(
+    // 结束快速会话会移除面板导航，后续页面必须使用稳定的首页导航上下文。
+    final navigator = Navigator.of(this.context);
+    if (!await _finishQuickMode() || !mounted) return;
+    navigator.push(
       MaterialPageRoute(
         builder: (_) => MultiProvider(
           providers: [
             ChangeNotifierProvider.value(
-              value: context.read<ArticleProvider>(),
+              value: this.context.read<ArticleProvider>(),
             ),
           ],
           child: EditorPage(initialFolderId: _currentFolderId),
@@ -1058,10 +1060,12 @@ mixin HomeLogic on State<HomePage>, HomeQuickMode {
   }
 
   Future<void> _openTeleprompter(BuildContext context, Article article) async {
-    if (!await _finishQuickMode() || !context.mounted) return;
-    final teleprompterProvider = context.read<TeleprompterProvider>();
-    final settingsProvider = context.read<SettingsProvider>();
-    final connection = context.read<ConnectionProvider>();
+    // 结束快速会话会移除面板导航，后续页面必须使用稳定的首页导航上下文。
+    final navigator = Navigator.of(this.context);
+    if (!await _finishQuickMode() || !mounted) return;
+    final teleprompterProvider = this.context.read<TeleprompterProvider>();
+    final settingsProvider = this.context.read<SettingsProvider>();
+    final connection = this.context.read<ConnectionProvider>();
     settingsProvider.loadArticleOverrides(article.teleprompterSettings);
     teleprompterProvider.loadScript(article.id, article.content);
     if (connection.isLocal && connection.isConnected) {
@@ -1078,14 +1082,14 @@ mixin HomeLogic on State<HomePage>, HomeQuickMode {
         ),
       );
     }
-    Navigator.of(context).push(
+    navigator.push(
       MaterialPageRoute(
         builder: (_) => MultiProvider(
           providers: [
             ChangeNotifierProvider.value(value: teleprompterProvider),
             ChangeNotifierProvider.value(value: settingsProvider),
             ChangeNotifierProvider.value(
-              value: context.read<ArticleProvider>(),
+              value: this.context.read<ArticleProvider>(),
             ),
           ],
           child: TeleprompterPage(article: article),
@@ -1095,13 +1099,15 @@ mixin HomeLogic on State<HomePage>, HomeQuickMode {
   }
 
   Future<void> _editArticle(BuildContext context, Article article) async {
-    if (!await _finishQuickMode() || !context.mounted) return;
-    Navigator.of(context).push(
+    // 结束快速会话会移除面板导航，后续页面必须使用稳定的首页导航上下文。
+    final navigator = Navigator.of(this.context);
+    if (!await _finishQuickMode() || !mounted) return;
+    navigator.push(
       MaterialPageRoute(
         builder: (_) => MultiProvider(
           providers: [
             ChangeNotifierProvider.value(
-              value: context.read<ArticleProvider>(),
+              value: this.context.read<ArticleProvider>(),
             ),
           ],
           child: EditorPage(article: article),
@@ -1257,7 +1263,9 @@ mixin HomeLogic on State<HomePage>, HomeQuickMode {
 
   // ─── 设置 ─────────────────────────────────────────────
   void _openSettings(BuildContext context) {
-    Navigator.of(context).push(
+    final navigator =
+        _quickLibraryNavigatorKey.currentState ?? Navigator.of(context);
+    navigator.push(
       MaterialPageRoute(
         builder: (_) => MultiProvider(
           providers: [
@@ -1474,7 +1482,11 @@ mixin HomeLogic on State<HomePage>, HomeQuickMode {
     final alt = HardwareKeyboard.instance.isAltPressed;
 
     if (key == LogicalKeyboardKey.escape) {
-      if (_selectedItems.isNotEmpty) setState(() => _selectedItems.clear());
+      if (_selectedItems.isNotEmpty) {
+        setState(() => _selectedItems.clear());
+      } else if (_quickModeActive) {
+        _closeQuickLibrary();
+      }
     } else if (!ctrl &&
         !shift &&
         !alt &&

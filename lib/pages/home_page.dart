@@ -23,6 +23,8 @@ import '../models/folder.dart';
 import '../theme/app_colors.dart';
 import '../utils/constants.dart';
 import '../main.dart';
+import '../widgets/editor/quick_library_overlay.dart';
+import '../widgets/editor/quick_mode_action_button.dart';
 import 'teleprompter_page.dart';
 import 'editor_page.dart';
 import 'settings_page.dart';
@@ -191,6 +193,8 @@ class _HomePageState extends State<HomePage>
             const SingleActivator(LogicalKeyboardKey.escape): () {
               if (_selectedItems.isNotEmpty) {
                 setState(() => _selectedItems.clear());
+              } else if (_quickModeActive) {
+                _closeQuickLibrary();
               }
             },
           },
@@ -202,7 +206,7 @@ class _HomePageState extends State<HomePage>
               onPopInvokedWithResult: (didPop, result) async {
                 if (didPop || _showQuickEditor) return;
                 if (_quickModeActive) {
-                  setState(() => _showQuickEditor = true);
+                  _closeQuickLibrary();
                   return;
                 }
                 if (_selectedItems.isNotEmpty) {
@@ -1288,11 +1292,11 @@ class _HomePageState extends State<HomePage>
       mainAxisSize: MainAxisSize.min,
       children: [
         if (_quickModeActive) ...[
-          FloatingActionButton(
+          QuickModeActionButton(
             heroTag: 'return-quick-editor',
             tooltip: '回到编辑器',
-            onPressed: () => setState(() => _showQuickEditor = true),
-            child: const Icon(Icons.edit_note),
+            onPressed: _closeQuickLibrary,
+            icon: Icons.edit_note,
           ),
           const SizedBox(height: 12),
         ],
