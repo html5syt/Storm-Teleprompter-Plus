@@ -98,7 +98,8 @@ class _TeleprompterSettingsPanelState extends State<TeleprompterSettingsPanel> {
                         _buildMirrorTextSwitch(context, provider, settings),
                         _buildExtraBoldSlider(context, provider, settings),
                         const SizedBox(height: 4),
-                        _buildEmphasisSection(context, provider, settings),
+                        if (!settings.isContinuousScroll)
+                          _buildEmphasisSection(context, provider, settings),
                         const Divider(height: 24),
 
                         // ── 3. 排版 ──
@@ -135,19 +136,21 @@ class _TeleprompterSettingsPanelState extends State<TeleprompterSettingsPanel> {
                         ),
                         const Divider(height: 24),
 
-                        // ── 4. 阅读区域框设置 ──
-                        _buildSectionTitle(context, '阅读区域框'),
-                        const SizedBox(height: 8),
-                        _buildReadingAreaPositionSlider(
-                          context,
-                          provider,
-                          settings,
-                        ),
-                        _buildReadingAreaBorderSlider(
-                          context,
-                          provider,
-                          settings,
-                        ),
+                        if (!settings.isContinuousScroll) ...[
+                          // ── 4. 阅读区域框设置 ──
+                          _buildSectionTitle(context, '阅读区域框'),
+                          const SizedBox(height: 8),
+                          _buildReadingAreaPositionSlider(
+                            context,
+                            provider,
+                            settings,
+                          ),
+                          _buildReadingAreaBorderSlider(
+                            context,
+                            provider,
+                            settings,
+                          ),
+                        ],
                       ],
                     ),
                   ),

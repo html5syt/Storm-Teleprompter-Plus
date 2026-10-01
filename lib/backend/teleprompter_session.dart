@@ -20,6 +20,9 @@ class TeleprompterSession {
   /// 当前字索引
   int _currentIndex = -1;
 
+  /// 匀速模式使用视口比例同步，不通过字符位置推断像素位移。
+  double _scrollProgress = 0;
+
   /// 是否正在播放
   bool _isPlaying = false;
 
@@ -72,6 +75,7 @@ class TeleprompterSession {
     final data = request.message.data;
     _activeArticleId = data['articleId'] as String?;
     _currentIndex = data['currentIndex'] as int? ?? -1;
+    _scrollProgress = (data['scrollProgress'] as num?)?.toDouble() ?? 0;
     _isPlaying = data['isPlaying'] as bool? ?? false;
     _settingsOverride = Map<String, dynamic>.from(
       data['settings'] as Map? ?? {},
@@ -121,6 +125,7 @@ class TeleprompterSession {
 
     _activeArticleId = null;
     _currentIndex = -1;
+    _scrollProgress = 0;
     _isPlaying = false;
     _settingsOverride = {};
     _articleSnapshot = null;
@@ -150,6 +155,11 @@ class TeleprompterSession {
   void _handleSync(WsServer server, WsRequest request) {
     final data = request.message.data;
     _currentIndex = data['currentIndex'] as int? ?? _currentIndex;
+    _scrollProgress =
+        ((data['scrollProgress'] as num?)?.toDouble() ?? _scrollProgress).clamp(
+          0.0,
+          1.0,
+        );
     _isPlaying = data['isPlaying'] as bool? ?? _isPlaying;
     _asrSession?.setCurrentIndex(_currentIndex);
     _revision++;
@@ -214,6 +224,7 @@ class TeleprompterSession {
     return {
       'articleId': _activeArticleId,
       'currentIndex': _currentIndex,
+      'scrollProgress': _scrollProgress,
       'isPlaying': _isPlaying,
       'settings': _settingsOverride,
       'revision': _revision,
@@ -236,6 +247,7 @@ class TeleprompterSession {
     unawaited(_asrSession?.endSession());
     _activeArticleId = null;
     _currentIndex = -1;
+    _scrollProgress = 0;
     _isPlaying = false;
     _settingsOverride = {};
     _articleSnapshot = null;

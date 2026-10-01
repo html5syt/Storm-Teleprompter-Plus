@@ -1,10 +1,13 @@
 enum ScrollMode {
-  /// 自动匀速滚动
+  /// 自动滚动（按行或匀速）
   auto,
 
   /// ASR 语音跟随
   asr,
 }
+
+/// 自动滚动的运动方式，与语音跟随独立保存。
+enum AutoScrollMode { line, continuous }
 
 enum AppBrightnessMode { system, light, dark }
 
@@ -23,6 +26,20 @@ class AppSettings {
 
   /// 自动模式下的每分钟字数 (WPM)
   final int wpm;
+
+  /// 自动模式默认按行跟随，可切换为像素匀速滚动。
+  final AutoScrollMode autoScrollMode;
+
+  /// 匀速滚动的逻辑像素/秒，支持负数和小数。
+  final double pixelsPerSecond;
+
+  /// 只有自动模式选择匀速时才隐藏阅读区域和当前字标记。
+  bool get isContinuousScroll =>
+      scrollMode == ScrollMode.auto &&
+      autoScrollMode == AutoScrollMode.continuous;
+
+  /// 当前自动模式对应的带符号速度。
+  double get autoSpeed => isContinuousScroll ? pixelsPerSecond : wpm.toDouble();
 
   /// 是否启用镜像翻转（用于提词器分光镜）
   final bool mirrorMode;
@@ -132,6 +149,8 @@ class AppSettings {
     this.lineHeight = 1.5,
     this.scrollMode = ScrollMode.auto,
     this.wpm = 150,
+    this.autoScrollMode = AutoScrollMode.line,
+    this.pixelsPerSecond = 20,
     this.mirrorMode = false,
     this.fullScreenMode = true,
     this.autoHideUI = true,
@@ -179,7 +198,12 @@ class AppSettings {
         (e) => e.name == json['scrollMode'],
         orElse: () => ScrollMode.auto,
       ),
-      wpm: json['wpm'] as int? ?? 150,
+      wpm: (json['wpm'] as num?)?.toInt() ?? 150,
+      autoScrollMode: AutoScrollMode.values.firstWhere(
+        (e) => e.name == json['autoScrollMode'],
+        orElse: () => AutoScrollMode.line,
+      ),
+      pixelsPerSecond: (json['pixelsPerSecond'] as num?)?.toDouble() ?? 20,
       mirrorMode: json['mirrorMode'] as bool? ?? false,
       fullScreenMode: json['fullScreenMode'] as bool? ?? true,
       autoHideUI: json['autoHideUI'] as bool? ?? true,
@@ -235,6 +259,8 @@ class AppSettings {
       'lineHeight': lineHeight,
       'scrollMode': scrollMode.name,
       'wpm': wpm,
+      'autoScrollMode': autoScrollMode.name,
+      'pixelsPerSecond': pixelsPerSecond,
       'mirrorMode': mirrorMode,
       'fullScreenMode': fullScreenMode,
       'autoHideUI': autoHideUI,
@@ -280,6 +306,8 @@ class AppSettings {
     double? lineHeight,
     ScrollMode? scrollMode,
     int? wpm,
+    AutoScrollMode? autoScrollMode,
+    double? pixelsPerSecond,
     bool? mirrorMode,
     bool? fullScreenMode,
     bool? autoHideUI,
@@ -322,6 +350,8 @@ class AppSettings {
       lineHeight: lineHeight ?? this.lineHeight,
       scrollMode: scrollMode ?? this.scrollMode,
       wpm: wpm ?? this.wpm,
+      autoScrollMode: autoScrollMode ?? this.autoScrollMode,
+      pixelsPerSecond: pixelsPerSecond ?? this.pixelsPerSecond,
       mirrorMode: mirrorMode ?? this.mirrorMode,
       fullScreenMode: fullScreenMode ?? this.fullScreenMode,
       autoHideUI: autoHideUI ?? this.autoHideUI,
@@ -383,6 +413,12 @@ class AppSettings {
             )
           : scrollMode,
       wpm: (overrides['wpm'] as num?)?.toInt() ?? wpm,
+      autoScrollMode: AutoScrollMode.values.firstWhere(
+        (e) => e.name == overrides['autoScrollMode'],
+        orElse: () => autoScrollMode,
+      ),
+      pixelsPerSecond:
+          (overrides['pixelsPerSecond'] as num?)?.toDouble() ?? pixelsPerSecond,
       mirrorMode: overrides['mirrorMode'] as bool? ?? mirrorMode,
       fullScreenMode: overrides['fullScreenMode'] as bool? ?? fullScreenMode,
       autoHideUI: overrides['autoHideUI'] as bool? ?? autoHideUI,
@@ -446,6 +482,8 @@ class AppSettings {
       'lineHeight': lineHeight,
       'scrollMode': scrollMode.name,
       'wpm': wpm,
+      'autoScrollMode': autoScrollMode.name,
+      'pixelsPerSecond': pixelsPerSecond,
       'mirrorMode': mirrorMode,
       'paddingX': paddingX,
       'readingLineOffset': readingLineOffset,

@@ -208,6 +208,7 @@ mixin HomeLogic on State<HomePage>, HomeQuickMode {
     teleprompterProvider.applyRemoteSync(
       currentIndex: (message.data['currentIndex'] as num?)?.toInt() ?? -1,
       isPlaying: message.data['isPlaying'] as bool? ?? false,
+      scrollProgress: (message.data['scrollProgress'] as num?)?.toDouble(),
       settings: settingsProvider.mergedSettings,
     );
 
@@ -273,6 +274,7 @@ mixin HomeLogic on State<HomePage>, HomeQuickMode {
     teleprompterProvider.applyRemoteSync(
       currentIndex: (message.data['currentIndex'] as num?)?.toInt() ?? -1,
       isPlaying: message.data['isPlaying'] as bool? ?? false,
+      scrollProgress: (message.data['scrollProgress'] as num?)?.toDouble(),
       settings: context.read<SettingsProvider>().mergedSettings,
     );
   }

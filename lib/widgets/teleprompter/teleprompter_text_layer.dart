@@ -5,6 +5,8 @@ import 'package:flutter/rendering.dart';
 import '../../models/script_character.dart';
 import '../../theme/app_colors.dart';
 import '../../utils/constants.dart';
+import 'continuous_scroll_driver.dart';
+import 'measured_line_delegate.dart';
 
 /// 提词器文本渲染层（懒加载 + 实际行高定位）。
 ///
@@ -22,6 +24,13 @@ class TeleprompterTextLayer extends StatefulWidget {
   final double paddingX;
   final double readingLineOffset;
   final bool autoFollow;
+  final bool continuous;
+  final bool isPlaying;
+  final double pixelsPerSecond;
+  final double? remoteProgress;
+  final int seekRevision;
+  final double seekProgress;
+  final void Function(bool atStart)? onScrollBoundary;
   final ScrollPhysics? physics;
   final void Function(int rawIndex)? onCharTap;
   final void Function(int rawIndex)? onReadingLineChanged;
@@ -43,6 +52,13 @@ class TeleprompterTextLayer extends StatefulWidget {
     required this.lineHeight,
     required this.mirrorMode,
     this.autoFollow = false,
+    this.continuous = false,
+    this.isPlaying = false,
+    this.pixelsPerSecond = 0,
+    this.remoteProgress,
+    this.seekRevision = 0,
+    this.seekProgress = 0,
+    this.onScrollBoundary,
     this.paddingX = 5.0,
     this.readingLineOffset = 0.5,
     this.physics,
@@ -61,7 +77,53 @@ class TeleprompterTextLayer extends StatefulWidget {
   State<TeleprompterTextLayer> createState() => TeleprompterTextLayerState();
 }
 
-class TeleprompterTextLayerState extends State<TeleprompterTextLayer> {
+/// 管理正文测量、按行定位和独立的匀速视口驱动。
+class TeleprompterTextLayerState extends State<TeleprompterTextLayer>
+    with SingleTickerProviderStateMixin {
+  late final ContinuousScrollDriver _continuousDriver;
+
+  @override
+  void initState() {
+    super.initState();
+    _continuousDriver = ContinuousScrollDriver(
+      vsync: this,
+      controller: widget.scrollController,
+      onBoundary: (atStart) => widget.onScrollBoundary?.call(atStart),
+    );
+    _updateContinuousDriver();
+    _syncRemoteViewport();
+  }
+
+  /// 首帧和重连时均应用远程位置，布局完成后才读取滚动范围。
+  void _syncRemoteViewport() {
+    if (!widget.continuous || widget.remoteProgress == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && widget.scrollController.hasClients) {
+        _jumpToOffset(
+          widget.remoteProgress! *
+              widget.scrollController.position.maxScrollExtent,
+        );
+      }
+    });
+  }
+
+  /// 远程端由服务端同步视口，不独立积分以免逐渐漂移。
+  void _updateContinuousDriver() {
+    _continuousDriver.update(
+      playing:
+          widget.continuous &&
+          widget.isPlaying &&
+          widget.remoteProgress == null,
+      speed: widget.pixelsPerSecond,
+    );
+  }
+
+  @override
+  void dispose() {
+    _continuousDriver.dispose();
+    super.dispose();
+  }
+
   static const double _lineVerticalPadding = 2.0;
 
   int _lastScrolledToIndex = -2;
@@ -79,6 +141,29 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer> {
   @override
   void didUpdateWidget(TeleprompterTextLayer oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (widget.continuous && widget.seekRevision != oldWidget.seekRevision) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && widget.scrollController.hasClients) {
+          _jumpToOffset(
+            widget.seekProgress *
+                widget.scrollController.position.maxScrollExtent,
+          );
+        }
+      });
+    }
+    _updateContinuousDriver();
+    if (widget.remoteProgress != oldWidget.remoteProgress ||
+        widget.continuous != oldWidget.continuous) {
+      _syncRemoteViewport();
+    }
+    if (widget.continuous &&
+        !oldWidget.continuous &&
+        widget.remoteProgress == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && widget.scrollController.hasClients)
+          _jumpToOffset(widget.scrollController.offset);
+      });
+    }
 
     final metricsChanged =
         widget.lines != oldWidget.lines ||
@@ -99,7 +184,11 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer> {
     final offsetChanged =
         widget.readingLineOffset != oldWidget.readingLineOffset;
 
-    if (indexChanged || offsetChanged || metricsChanged) {
+    if (!widget.continuous &&
+        (indexChanged ||
+            offsetChanged ||
+            metricsChanged ||
+            oldWidget.continuous)) {
       if (widget.currentIndex != _lastScrolledToIndex ||
           offsetChanged ||
           metricsChanged) {
@@ -263,7 +352,7 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer> {
     TextDirection textDirection,
   ) {
     if (line.characters.isEmpty) {
-      return widget.fontSize * widget.lineHeight;
+      return widget.fontSize * widget.lineHeight + _lineVerticalPadding * 2;
     }
 
     final painter = _layoutLinePainter(line, textWidth, textDirection);
@@ -323,6 +412,21 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer> {
         .clamp(0, line.characters.length - 1)
         .toInt();
     return line.characters[charOffset].rawIndex;
+  }
+
+  /// 把匀速模式当前视口中心映射为按行模式的恢复锚点。
+  int? rawIndexAtViewport() {
+    if (!widget.scrollController.hasClients) return null;
+    final position = widget.scrollController.position;
+    final width = context.size?.width ?? MediaQuery.sizeOf(context).width;
+    return _rawIndexForContentOffset(
+      position.pixels +
+          _readingLineY(position.viewportDimension, width) -
+          _topPad(position.viewportDimension),
+      _textWidthForViewport(width),
+      Directionality.of(context),
+      0,
+    );
   }
 
   int? rawIndexForVisualLineMove(int direction) {
@@ -428,6 +532,7 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer> {
   }
 
   void _scrollToCurrentChar({bool animate = true}) {
+    if (widget.continuous) return;
     if (!widget.scrollController.hasClients) return;
 
     final pos = widget.scrollController.position;
@@ -483,7 +588,9 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer> {
   }
 
   bool _handleScrollNotification(ScrollNotification notification) {
-    if (_isProgrammaticScroll || widget.onReadingLineChanged == null) {
+    if (widget.continuous ||
+        _isProgrammaticScroll ||
+        widget.onReadingLineChanged == null) {
       return false;
     }
     if (notification.metrics.axis != Axis.vertical) return false;
@@ -592,11 +699,15 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer> {
                               ),
                             ),
                           )
-                        : SliverList.builder(
-                            itemCount: widget.lines.length,
-                            itemBuilder: (context, index) {
-                              return _buildLine(widget.lines[index], textWidth);
-                            },
+                        : SliverVariedExtentList(
+                            itemExtentBuilder: (index, dimensions) =>
+                                _lineHeights[index],
+                            delegate: MeasuredLineDelegate(
+                              (context, index) =>
+                                  _buildLine(widget.lines[index], textWidth),
+                              count: widget.lines.length,
+                              contentHeight: _contentHeight,
+                            ),
                           ),
                   ),
                   SliverToBoxAdapter(
@@ -622,8 +733,14 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer> {
     final boldWeight = widget.defaultBold ? FontWeight.w900 : FontWeight.w700;
 
     return line.characters.map((char) {
-      final isRead = !forMeasurement && char.rawIndex <= widget.currentIndex;
-      final isCurrent = !forMeasurement && char.rawIndex == widget.currentIndex;
+      final isRead =
+          !widget.continuous &&
+          !forMeasurement &&
+          char.rawIndex <= widget.currentIndex;
+      final isCurrent =
+          !widget.continuous &&
+          !forMeasurement &&
+          char.rawIndex == widget.currentIndex;
       final doHighlight = isCurrent && widget.highlightCurrentChar;
       final effectiveFontSize =
           char.fontSizePx ?? widget.fontSize * (char.fontSizeRatio ?? 1.0);

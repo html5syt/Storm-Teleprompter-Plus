@@ -11,6 +11,8 @@ void main() {
     'lineHeight',
     'scrollMode',
     'wpm',
+    'autoScrollMode',
+    'pixelsPerSecond',
     'mirrorMode',
     'paddingX',
     'readingLineOffset',

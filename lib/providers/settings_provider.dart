@@ -95,6 +95,13 @@ class SettingsProvider with ChangeNotifier {
         }
       }
     }
+    for (final key in ['autoScrollMode', 'pixelsPerSecond']) {
+      if (settings.containsKey(key) &&
+          _articleOverrides[key] != settings[key]) {
+        _articleOverrides[key] = settings[key];
+        changed = true;
+      }
+    }
     if (changed) notifyListeners();
   }
 
@@ -211,7 +218,25 @@ class SettingsProvider with ChangeNotifier {
 
   /// 更新 WPM
   Future<void> setWpm(int wpm) async {
-    await _setAndSave(overrideData: {'wpm': wpm < 0 ? 0 : wpm});
+    await _setAndSave(overrideData: {'wpm': wpm});
+  }
+
+  /// 再次点击自动标签时切换运动方式，各模式保留自己的速度。
+  Future<void> toggleAutoScrollMode() async {
+    final next = mergedSettings.autoScrollMode == AutoScrollMode.line
+        ? AutoScrollMode.continuous
+        : AutoScrollMode.line;
+    await _setAndSave(overrideData: {'autoScrollMode': next.name});
+  }
+
+  /// 更新当前自动模式速度，不把反向速度截断为零。
+  Future<void> setAutoSpeed(double speed) async {
+    if (!speed.isFinite) return;
+    if (mergedSettings.isContinuousScroll) {
+      await _setAndSave(overrideData: {'pixelsPerSecond': speed});
+    } else {
+      await setWpm(speed.round());
+    }
   }
 
   /// 切换镜像模式

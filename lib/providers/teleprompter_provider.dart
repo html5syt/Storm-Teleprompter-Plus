@@ -42,6 +42,8 @@ class TeleprompterProvider with ChangeNotifier {
   DateTime? _lastElapsedNotifyAt;
   int? _activeAutoWpm;
   ScrollMode? _activeAutoMode;
+  AutoScrollMode? _activeAutoScrollMode;
+  double? _activePixelSpeed;
 
   // ─── 播放时间跟踪 ──────────────────────────────────────
   DateTime? _playStartTime;
@@ -91,6 +93,9 @@ class TeleprompterProvider with ChangeNotifier {
 
   /// 当前阅读进度 (0.0 ~ 1.0)
   double get progress {
+    if (_activeAutoMode == ScrollMode.auto &&
+        _activeAutoScrollMode == AutoScrollMode.continuous)
+      return _viewportProgress;
     // currentIndex 是原稿 rawIndex；进度使用可见字符序号换算。
     final ordinal = _ordinalForRawIndex(_currentIndex);
     if (ordinal >= 0 && _totalChars > 0) {
@@ -101,12 +106,17 @@ class TeleprompterProvider with ChangeNotifier {
 
   // ─── 视口滚动进度跟踪 ─────────────────────────────────
   double _viewportProgress = 0.0;
+  int _viewportSeekRevision = 0;
+
+  /// 显式跳转编号，让匀速模式区分回到开头与普通进度更新。
+  int get viewportSeekRevision => _viewportSeekRevision;
 
   /// 设置视口滚动进度，用于当前字尚未映射时的进度回退。
   void setViewportProgress(double value) {
     final next = value.clamp(0.0, 1.0).toDouble();
     if ((_viewportProgress - next).abs() < 0.0005) return;
     _viewportProgress = next;
+    if (_activeAutoScrollMode == AutoScrollMode.continuous) _syncToBackend();
     notifyListeners();
   }
 
@@ -149,6 +159,7 @@ class TeleprompterProvider with ChangeNotifier {
     required int currentIndex,
     required bool isPlaying,
     required AppSettings settings,
+    double? scrollProgress,
   }) {
     if (_state == TeleprompterState.idle || _totalChars == 0) return;
 
@@ -156,6 +167,9 @@ class TeleprompterProvider with ChangeNotifier {
         ? -1
         : _normalizeRawIndex(currentIndex);
     _currentIndex = normalizedIndex;
+    _rememberAutoScrollSettings(settings);
+    if (scrollProgress != null)
+      _viewportProgress = scrollProgress.clamp(0.0, 1.0);
 
     if (isPlaying) {
       if (_state != TeleprompterState.playing) {
@@ -213,6 +227,7 @@ class TeleprompterProvider with ChangeNotifier {
   Map<String, dynamic> _currentSyncData() {
     return {
       'currentIndex': _currentIndex,
+      'scrollProgress': _viewportProgress,
       'isPlaying': isPlaying,
       'articleId': _articleId,
     };
@@ -303,6 +318,7 @@ class TeleprompterProvider with ChangeNotifier {
     _rebuildRawIndexMap();
 
     _currentIndex = -1;
+    _viewportProgress = 0;
     _asrTranscript = '';
     _asrStatus = 'idle';
     _asrError = null;
@@ -316,7 +332,7 @@ class TeleprompterProvider with ChangeNotifier {
   /// 开始/恢复播放
   void play(AppSettings settings) {
     if (_state == TeleprompterState.idle ||
-        _state == TeleprompterState.completed ||
+        (_state == TeleprompterState.completed && settings.autoSpeed >= 0) ||
         _totalChars == 0) {
       return;
     }
@@ -348,7 +364,7 @@ class TeleprompterProvider with ChangeNotifier {
   /// 切换播放/暂停
   void togglePlayPause(AppSettings settings) {
     if (_state == TeleprompterState.completed) {
-      reset();
+      if (settings.autoSpeed >= 0) reset();
       play(settings);
       return;
     }
@@ -368,9 +384,11 @@ class TeleprompterProvider with ChangeNotifier {
 
   /// 重置到开头
   void reset() {
+    _viewportSeekRevision++;
     _stopAutoScroll();
     _stopAsr();
     _currentIndex = -1;
+    _viewportProgress = 0;
     _state = _lines.isEmpty ? TeleprompterState.idle : TeleprompterState.paused;
     _controlsVisible = true;
     _playStartTime = null;
@@ -412,6 +430,8 @@ class TeleprompterProvider with ChangeNotifier {
 
   /// 重置到开头（长按后退按钮触发）
   void resetToStart() {
+    _viewportSeekRevision++;
+    _viewportProgress = 0;
     _currentIndex = -1;
     _syncToBackend();
     notifyListeners();
@@ -420,6 +440,8 @@ class TeleprompterProvider with ChangeNotifier {
   /// 重置到结尾（长按前进按钮触发）
   void resetToEnd() {
     if (_totalChars > 0) {
+      _viewportSeekRevision++;
+      _viewportProgress = 1;
       _currentIndex = _charRawIndices.last;
       _syncToBackend();
       notifyListeners();
@@ -456,9 +478,17 @@ class TeleprompterProvider with ChangeNotifier {
   }
 
   void refreshAutoScrollSettings(AppSettings settings) {
+    if (_connection?.isRemote == true ||
+        _connection?.canRetryRemoteConnection == true) {
+      _stopAutoScroll();
+      _rememberAutoScrollSettings(settings);
+      return;
+    }
     final previousMode = _activeAutoMode;
     final changed =
         _activeAutoWpm != settings.wpm ||
+        _activeAutoScrollMode != settings.autoScrollMode ||
+        _activePixelSpeed != settings.pixelsPerSecond ||
         _activeAutoMode != settings.scrollMode;
 
     if (_state != TeleprompterState.playing) {
@@ -516,9 +546,9 @@ class TeleprompterProvider with ChangeNotifier {
       var shouldSync = false;
 
       // 每字符间隔 = 60000ms / WPM
-      if (settings.wpm > 0) {
+      if (!settings.isContinuousScroll && settings.wpm != 0) {
         final deltaTime = now.difference(lastTick).inMicroseconds / 1000.0;
-        final msPerChar = 60000.0 / settings.wpm;
+        final msPerChar = 60000.0 / settings.wpm.abs();
         _accumulator += deltaTime;
 
         if (_accumulator >= msPerChar) {
@@ -527,16 +557,22 @@ class TeleprompterProvider with ChangeNotifier {
 
           final currentOrdinal = _ordinalForRawIndex(_currentIndex);
           final nextOrdinal =
-              ((currentOrdinal < 0 ? -1 : currentOrdinal) + charsToAdvance)
+              ((currentOrdinal < 0 ? -1 : currentOrdinal) +
+                      charsToAdvance * settings.wpm.sign)
                   .clamp(0, _totalChars - 1)
                   .toInt();
 
-          if (nextOrdinal >= _totalChars - 1) {
-            _currentIndex = _rawIndexAtOrdinal(_totalChars - 1);
+          if ((settings.wpm > 0 && nextOrdinal >= _totalChars - 1) ||
+              (settings.wpm < 0 && nextOrdinal <= 0)) {
+            _currentIndex = _rawIndexAtOrdinal(nextOrdinal);
             if (_playStartTime != null) {
               _elapsedBeforePause += now.difference(_playStartTime!);
             }
-            _state = TeleprompterState.completed;
+            _state = settings.wpm < 0
+                ? TeleprompterState.paused
+                : TeleprompterState.completed;
+            _controlsVisible = true;
+            _cancelHideControls();
             _stopAutoScroll();
             _playStartTime = null;
             notifyListeners();
@@ -577,6 +613,8 @@ class TeleprompterProvider with ChangeNotifier {
 
   void _rememberAutoScrollSettings(AppSettings settings) {
     _activeAutoWpm = settings.wpm;
+    _activeAutoScrollMode = settings.autoScrollMode;
+    _activePixelSpeed = settings.pixelsPerSecond;
     _activeAutoMode = settings.scrollMode;
   }
 
@@ -595,15 +633,27 @@ class TeleprompterProvider with ChangeNotifier {
     // 每次滚轮事件调整 WPM：小步 ±5，大步 ±15
     final step = (delta.abs() > 0.5 ? 15 : 5) * stepMultiplier;
     final direction = delta > 0 ? 1 : -1;
-    final newWpm = (merged.wpm + step * direction).clamp(0, 1 << 30).toInt();
+    final speed = merged.autoSpeed + step * direction;
 
-    if (newWpm != merged.wpm) {
-      final runtimeSettings = merged.copyWith(wpm: newWpm);
-      settingsProvider.setWpm(newWpm);
-      // 重启自动滚动计时器，使新 WPM 立即生效。
-      _stopAutoScroll();
-      _startAutoScrollIfNeeded(runtimeSettings);
+    if (speed != merged.autoSpeed) {
+      unawaited(settingsProvider.setAutoSpeed(speed));
+      refreshAutoScrollSettings(settingsProvider.mergedSettings);
     }
+  }
+
+  /// 匀速视口到达边界时停止播放，反向到开头后允许直接正向恢复。
+  void finishContinuousScroll({required bool atStart}) {
+    if (!isPlaying) return;
+    if (_playStartTime != null)
+      _elapsedBeforePause += DateTime.now().difference(_playStartTime!);
+    _playStartTime = null;
+    _viewportProgress = atStart ? 0 : 1;
+    _state = atStart ? TeleprompterState.paused : TeleprompterState.completed;
+    _stopAutoScroll();
+    _cancelHideControls();
+    _controlsVisible = true;
+    _syncToBackend(reliable: true);
+    notifyListeners();
   }
 
   // ─── ASR 逻辑 ──────────────────────────────────────────

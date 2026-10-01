@@ -18,6 +18,7 @@ import '../theme/app_theme.dart';
 import '../services/asr_service.dart';
 import '../utils/constants.dart';
 import '../widgets/teleprompter/teleprompter_text_layer.dart';
+import '../widgets/teleprompter/auto_speed_picker.dart';
 import '../widgets/teleprompter/teleprompter_settings_panel.dart';
 import 'settings_page.dart';
 
@@ -114,9 +115,10 @@ class _TeleprompterPageState extends State<TeleprompterPage>
         });
 
         final shouldAutoFollow =
+            !settings.isContinuousScroll &&
             settings.scrollMode == ScrollMode.auto &&
             teleprompter.isPlaying &&
-            settings.wpm > 0;
+            settings.autoSpeed != 0;
         if (shouldAutoFollow &&
             teleprompter.currentIndex != _lastAutoFollowIndex) {
           _lastAutoFollowIndex = teleprompter.currentIndex;
@@ -179,7 +181,8 @@ class _TeleprompterPageState extends State<TeleprompterPage>
                           _buildTextLayer(context, teleprompter, settings),
 
                           // ── 2. 阅读线指示器 ──
-                          _buildReadingLine(context, settings),
+                          if (!settings.isContinuousScroll)
+                            _buildReadingLine(context, settings),
 
                           // ── 3. 顶部进度条（全幅 + 右侧信息） ──
                           if (teleprompter.isPlaying ||
@@ -428,7 +431,7 @@ class _TeleprompterPageState extends State<TeleprompterPage>
       if (settings.scrollMode != ScrollMode.asr &&
           settings.progressShowSpeed) ...[
         Text(
-          '${settings.wpm}字/分',
+          '${autoSpeedText(settings)}${autoSpeedUnit(settings)}',
           style: TextStyle(
             color: AppColors.textSecondary,
             fontSize: clampedFontSize,
@@ -825,7 +828,7 @@ class _TeleprompterPageState extends State<TeleprompterPage>
         Tooltip(
           message: '后退一个字；长按回到开头',
           child: GestureDetector(
-            onTap: () => teleprompter.rewind(settings),
+            onTap: () => _stepPlayback(teleprompter, settings, -1),
             onLongPress: () => _jumpToStart(teleprompter),
             child: Container(
               padding: const EdgeInsets.all(8),
@@ -869,9 +872,9 @@ class _TeleprompterPageState extends State<TeleprompterPage>
         const SizedBox(width: 8),
         // 前进一个字（长按：重置到结尾）
         Tooltip(
-          message: '前进一个字；长按到结尾',
+          message: settings.isContinuousScroll ? '前进一行；长按到结尾' : '前进一个字；长按到结尾',
           child: GestureDetector(
-            onTap: () => teleprompter.forward(settings),
+            onTap: () => _stepPlayback(teleprompter, settings, 1),
             onLongPress: () => _jumpToEnd(teleprompter),
             child: Container(
               padding: const EdgeInsets.all(8),
@@ -884,6 +887,29 @@ class _TeleprompterPageState extends State<TeleprompterPage>
           ),
         ),
       ],
+    );
+  }
+
+  /// 匀速模式按可见行高度移动，按行模式保留原有逐字前后跳转。
+  void _stepPlayback(
+    TeleprompterProvider teleprompter,
+    AppSettings settings,
+    int direction,
+  ) {
+    if (!settings.isContinuousScroll) {
+      if (direction < 0) {
+        teleprompter.rewind(settings);
+      } else {
+        teleprompter.forward(settings);
+      }
+      return;
+    }
+    if (!scrollController.hasClients) return;
+    scrollController.jumpTo(
+      (scrollController.offset +
+              direction * settings.fontSize * settings.lineHeight)
+          .clamp(0.0, scrollController.position.maxScrollExtent)
+          .toDouble(),
     );
   }
 
@@ -920,7 +946,7 @@ class _TeleprompterPageState extends State<TeleprompterPage>
     return GestureDetector(
       onTap: readOnly
           ? null
-          : () => _showSpeedPresets(settingsProvider, settings.wpm),
+          : () => showAutoSpeedPicker(context, settingsProvider),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
@@ -932,7 +958,7 @@ class _TeleprompterPageState extends State<TeleprompterPage>
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              '${settings.wpm}',
+              autoSpeedText(settings),
               style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w700,
@@ -940,101 +966,15 @@ class _TeleprompterPageState extends State<TeleprompterPage>
               ),
             ),
             const SizedBox(width: 4),
-            const Text(
-              '字/分',
-              style: TextStyle(fontSize: 11, color: AppColors.textMuted),
+            Text(
+              autoSpeedUnit(settings),
+              style: const TextStyle(fontSize: 11, color: AppColors.textMuted),
             ),
           ],
         ),
       ),
     );
   }
-
-  /// 显示速度预设菜单
-  void _showSpeedPresets(SettingsProvider settingsProvider, int currentWpm) {
-    final controller = TextEditingController(text: '$currentWpm');
-    showModalBottomSheet(
-      context: context,
-      builder: (ctx) {
-        const presets = TeleprompterConstants.speedPresets;
-        return SafeArea(
-          child: ConstrainedBox(
-            constraints: BoxConstraints(
-              maxHeight: MediaQuery.sizeOf(ctx).height * 0.85,
-            ),
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Padding(
-                    padding: EdgeInsets.all(16),
-                    child: Text(
-                      '选择速度',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                  const Divider(height: 1),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            controller: controller,
-                            keyboardType: TextInputType.number,
-                            decoration: const InputDecoration(
-                              labelText: '自定义速度',
-                              suffixText: '字/分',
-                              isDense: true,
-                            ),
-                            onSubmitted: (value) {
-                              final wpm = int.tryParse(value.trim());
-                              if (wpm != null) {
-                                settingsProvider.setWpm(wpm < 0 ? 0 : wpm);
-                                Navigator.pop(ctx);
-                              }
-                            },
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        FilledButton(
-                          onPressed: () {
-                            final wpm = int.tryParse(controller.text.trim());
-                            if (wpm != null) {
-                              settingsProvider.setWpm(wpm < 0 ? 0 : wpm);
-                              Navigator.pop(ctx);
-                            }
-                          },
-                          child: const Text('应用'),
-                        ),
-                      ],
-                    ),
-                  ),
-                  ...presets.map(
-                    (wpm) => ListTile(
-                      title: Text('$wpm 字/分'),
-                      trailing: wpm == currentWpm
-                          ? const Icon(Icons.check)
-                          : null,
-                      onTap: () {
-                        settingsProvider.setWpm(wpm);
-                        Navigator.pop(ctx);
-                      },
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  // ─── 模式选择器 ──────────────────────────────────────
 
   Widget _buildModeSelector(
     AppSettings settings,
@@ -1050,7 +990,9 @@ class _TeleprompterPageState extends State<TeleprompterPage>
         children: [
           _buildModeChip(
             icon: Icons.menu_book,
-            label: '自动',
+            label: settings.scrollMode != ScrollMode.auto
+                ? '自动'
+                : (settings.isContinuousScroll ? '自动-匀速' : '自动-按行'),
             mode: ScrollMode.auto,
             settings: settings,
             settingsProvider: settingsProvider,
@@ -1079,6 +1021,14 @@ class _TeleprompterPageState extends State<TeleprompterPage>
       onTap: () {
         if (!isSelected) {
           unawaited(_selectScrollMode(mode, settingsProvider));
+        } else if (mode == ScrollMode.auto) {
+          // 返回按行模式前把当前位置映射到字符，避免跳回匀速前的旧游标。
+          if (settings.isContinuousScroll) {
+            final index = textLayerKey.currentState?.rawIndexAtViewport();
+            if (index != null)
+              context.read<TeleprompterProvider>().setCurrentIndex(index);
+          }
+          unawaited(settingsProvider.toggleAutoScrollMode());
         }
       },
       child: AnimatedContainer(
@@ -1127,6 +1077,12 @@ class _TeleprompterPageState extends State<TeleprompterPage>
     SettingsProvider settingsProvider,
   ) async {
     if (mode == ScrollMode.asr && !await _ensureAsrModelSelected()) return;
+    if (!mounted) return;
+    if (settingsProvider.mergedSettings.isContinuousScroll) {
+      final index = textLayerKey.currentState?.rawIndexAtViewport();
+      if (index != null)
+        context.read<TeleprompterProvider>().setCurrentIndex(index);
+    }
     await settingsProvider.setScrollMode(mode);
   }
 
@@ -1187,12 +1143,22 @@ class _TeleprompterPageState extends State<TeleprompterPage>
     // 自动滚动播放中：上键减速/下键加速
     if (settings.scrollMode == ScrollMode.auto &&
         teleprompter.isPlaying &&
-        settings.wpm > 0) {
+        (settings.autoSpeed != 0 || _speedModifierPressed())) {
       final baseStep = 10 * _speedStepMultiplier();
       final step = direction > 0 ? baseStep : -baseStep;
-      final newWpm = (settings.wpm + step).clamp(0, 1 << 30).toInt();
-      context.read<SettingsProvider>().setWpm(newWpm);
-      teleprompter.refreshAutoScrollSettings(settings.copyWith(wpm: newWpm));
+      final provider = context.read<SettingsProvider>();
+      unawaited(provider.setAutoSpeed(settings.autoSpeed + step));
+      teleprompter.refreshAutoScrollSettings(provider.mergedSettings);
+      return;
+    }
+
+    if (settings.isContinuousScroll && scrollController.hasClients) {
+      final target =
+          (scrollController.offset +
+                  direction * settings.fontSize * settings.lineHeight)
+              .clamp(0.0, scrollController.position.maxScrollExtent)
+              .toDouble();
+      scrollController.jumpTo(target);
       return;
     }
 
@@ -1340,8 +1306,8 @@ class _TeleprompterPageState extends State<TeleprompterPage>
     final bool blockScroll =
         settings.scrollMode == ScrollMode.auto &&
         teleprompter.isPlaying &&
-        settings.wpm > 0;
-    final ScrollPhysics physics = blockScroll
+        settings.autoSpeed != 0;
+    final ScrollPhysics physics = blockScroll || isRemoteClient
         ? const NeverScrollableScrollPhysics()
         : const ClampingScrollPhysics();
 
@@ -1354,7 +1320,17 @@ class _TeleprompterPageState extends State<TeleprompterPage>
         fontSize: settings.fontSize,
         lineHeight: settings.lineHeight,
         mirrorMode: settings.mirrorMode,
-        autoFollow: blockScroll,
+        autoFollow: blockScroll && !settings.isContinuousScroll,
+        continuous: settings.isContinuousScroll,
+        seekRevision: teleprompter.viewportSeekRevision,
+        seekProgress: teleprompter.progress,
+        isPlaying: teleprompter.isPlaying,
+        pixelsPerSecond: settings.pixelsPerSecond,
+        remoteProgress: isRemoteClient && settings.isContinuousScroll
+            ? teleprompter.progress
+            : null,
+        onScrollBoundary: (atStart) =>
+            teleprompter.finishContinuousScroll(atStart: atStart),
         paddingX: settings.paddingX,
         readingLineOffset: settings.readingLineOffset,
         physics: physics,
