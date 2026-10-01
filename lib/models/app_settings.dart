@@ -115,7 +115,19 @@ class AppSettings {
   /// 应用亮暗模式（不影响提词器播放页和编辑器页）
   final AppBrightnessMode appBrightnessMode;
 
+  /// 启动时直接进入临时稿件编辑器。
+  final bool quickModeEnabled;
+
+  /// 快速模式是否自动保存稿件。
+  final bool quickModeAutoSave;
+
+  /// 快速模式自动保存目录，空字符串表示根目录。
+  final String quickModeFolderId;
+
   const AppSettings({
+    this.quickModeEnabled = false,
+    this.quickModeAutoSave = false,
+    this.quickModeFolderId = '',
     this.fontSize = 64,
     this.lineHeight = 1.5,
     this.scrollMode = ScrollMode.auto,
@@ -158,6 +170,9 @@ class AppSettings {
   /// 从 JSON 反序列化
   factory AppSettings.fromJson(Map<String, dynamic> json) {
     return AppSettings(
+      quickModeEnabled: json['quickModeEnabled'] as bool? ?? false,
+      quickModeAutoSave: json['quickModeAutoSave'] as bool? ?? false,
+      quickModeFolderId: json['quickModeFolderId'] as String? ?? '',
       fontSize: (json['fontSize'] as num?)?.toDouble() ?? 64,
       lineHeight: (json['lineHeight'] as num?)?.toDouble() ?? 1.5,
       scrollMode: ScrollMode.values.firstWhere(
@@ -213,6 +228,9 @@ class AppSettings {
   /// 序列化为 JSON
   Map<String, dynamic> toJson() {
     return {
+      'quickModeEnabled': quickModeEnabled,
+      'quickModeAutoSave': quickModeAutoSave,
+      'quickModeFolderId': quickModeFolderId,
       'fontSize': fontSize,
       'lineHeight': lineHeight,
       'scrollMode': scrollMode.name,
@@ -255,6 +273,9 @@ class AppSettings {
 
   /// 创建副本并修改部分字段
   AppSettings copyWith({
+    bool? quickModeEnabled,
+    bool? quickModeAutoSave,
+    String? quickModeFolderId,
     double? fontSize,
     double? lineHeight,
     ScrollMode? scrollMode,
@@ -294,6 +315,9 @@ class AppSettings {
     AppBrightnessMode? appBrightnessMode,
   }) {
     return AppSettings(
+      quickModeEnabled: quickModeEnabled ?? this.quickModeEnabled,
+      quickModeAutoSave: quickModeAutoSave ?? this.quickModeAutoSave,
+      quickModeFolderId: quickModeFolderId ?? this.quickModeFolderId,
       fontSize: fontSize ?? this.fontSize,
       lineHeight: lineHeight ?? this.lineHeight,
       scrollMode: scrollMode ?? this.scrollMode,
@@ -347,6 +371,9 @@ class AppSettings {
   AppSettings mergeOverrides(Map<String, dynamic> overrides) {
     if (overrides.isEmpty) return this;
     return AppSettings(
+      quickModeEnabled: quickModeEnabled,
+      quickModeAutoSave: quickModeAutoSave,
+      quickModeFolderId: quickModeFolderId,
       fontSize: (overrides['fontSize'] as num?)?.toDouble() ?? fontSize,
       lineHeight: (overrides['lineHeight'] as num?)?.toDouble() ?? lineHeight,
       scrollMode: overrides.containsKey('scrollMode')

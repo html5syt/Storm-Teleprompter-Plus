@@ -1,5 +1,6 @@
 part of '../editor_page.dart';
 
+/// 编辑内容转换、自动保存队列和提词启动逻辑。
 mixin EditorLogic on State<EditorPage> {
   late final TextEditingController titleController;
   late final TextEditingController contentController;
@@ -11,6 +12,11 @@ mixin EditorLogic on State<EditorPage> {
   late ArticleProvider _articleProvider;
 
   Article? _savedArticle;
+  String? _saveFolderId;
+  bool _discardOnDispose = false;
+
+  /// 普通模式始终自动保存，快速模式由启动时策略决定。
+  bool get autoSaveEnabled => !widget.quickMode || widget.autoSave;
   Timer? _autosaveTimer;
   Future<Article?>? _saveOperation;
   _EditorDraft? _queuedDraft;
@@ -32,6 +38,7 @@ mixin EditorLogic on State<EditorPage> {
 
   String get saveStatusText {
     if (isSaving) return '保存中';
+    if (!autoSaveEnabled && (isDirty || _savedArticle == null)) return '未保存';
     if (isDirty) return '等待自动保存';
     return _savedArticle == null ? '尚未保存' : '已保存';
   }
@@ -40,6 +47,7 @@ mixin EditorLogic on State<EditorPage> {
   void initState() {
     super.initState();
     _savedArticle = widget.article;
+    _saveFolderId = widget.initialFolderId;
     titleController = TextEditingController(text: widget.article?.title ?? '');
     contentController = TextEditingController(
       text: widget.article?.content ?? '',
@@ -81,7 +89,7 @@ mixin EditorLogic on State<EditorPage> {
     _autosaveTimer?.cancel();
     titleController.removeListener(_markChanged);
     quillController.removeListener(_onQuillContentChanged);
-    if (isDirty) unawaited(save());
+    if (autoSaveEnabled && isDirty && !_discardOnDispose) unawaited(save());
     titleController.dispose();
     contentController.dispose();
     findController.dispose();
@@ -117,6 +125,7 @@ mixin EditorLogic on State<EditorPage> {
 
   void _markChanged() {
     if (!mounted) return;
+    _discardOnDispose = false;
     _editRevision++;
     setState(() => isDirty = true);
     _scheduleAutosave();
@@ -124,6 +133,7 @@ mixin EditorLogic on State<EditorPage> {
 
   void _scheduleAutosave() {
     _autosaveTimer?.cancel();
+    if (!autoSaveEnabled) return;
     _autosaveTimer = Timer(
       const Duration(milliseconds: 700),
       () => unawaited(save()),
@@ -132,7 +142,7 @@ mixin EditorLogic on State<EditorPage> {
 
   void flushAutosave() {
     _autosaveTimer?.cancel();
-    if (isDirty) unawaited(save());
+    if (autoSaveEnabled && isDirty && !_discardOnDispose) unawaited(save());
   }
 
   Future<Article?> save({bool force = false}) async {
@@ -160,7 +170,10 @@ mixin EditorLogic on State<EditorPage> {
       var draft = initialDraft;
       while (true) {
         _queuedDraft = null;
-        if (draft.visibleCharacterCount == 0 && draft.title.trim().isEmpty) {
+        if (_savedArticle == null &&
+            draft.visibleCharacterCount == 0 &&
+            draft.title.trim().isEmpty) {
+          if (mounted) setState(() => isDirty = false);
           return _savedArticle;
         }
 
@@ -171,7 +184,7 @@ mixin EditorLogic on State<EditorPage> {
           savedArticle = await _articleProvider.createArticle(
             title: title,
             content: draft.content,
-            folderId: widget.initialFolderId,
+            folderId: _saveFolderId,
           );
         } else {
           savedArticle = await _articleProvider.updateArticle(
@@ -229,7 +242,19 @@ mixin EditorLogic on State<EditorPage> {
       ).showSnackBar(const SnackBar(content: Text('请输入可见的稿件正文')));
       return;
     }
-    final article = await save(force: true);
+    // 手动保存模式下直接使用内存快照，不因提词启动而落盘。
+    final now = DateTime.now();
+    final draft = _captureDraft();
+    final article = autoSaveEnabled
+        ? await save(force: true)
+        : Article(
+            id: _savedArticle?.id ?? 'quick-${identityHashCode(this)}',
+            title: _effectiveTitle(draft),
+            content: draft.content,
+            createdAt: now,
+            updatedAt: now,
+            teleprompterSettings: _savedArticle?.teleprompterSettings,
+          );
     if (!mounted) return;
 
     if (article == null || article.content.trim().isEmpty) {
@@ -267,7 +292,10 @@ mixin EditorLogic on State<EditorPage> {
             ChangeNotifierProvider.value(value: settingsProvider),
             ChangeNotifierProvider.value(value: _articleProvider),
           ],
-          child: TeleprompterPage(article: article),
+          child: TeleprompterPage(
+            article: article,
+            persistArticleSettings: autoSaveEnabled || _savedArticle != null,
+          ),
         ),
       ),
     );

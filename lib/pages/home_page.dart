@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' show AppExitResponse;
 
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_selector/file_selector.dart';
@@ -27,6 +28,7 @@ import 'editor_page.dart';
 import 'settings_page.dart';
 
 part 'home/home_logic.dart';
+part 'home/home_quick_mode.dart';
 part 'home/home_breadcrumb_bar.dart';
 part 'home/home_move_dialog.dart';
 part 'home/home_auxiliary_widgets.dart';
@@ -46,8 +48,10 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
+class _HomePageState extends State<HomePage>
+    with HomeQuickMode, HomeLogic, WindowListener {
   bool _isClosingWindow = false;
+  AppLifecycleListener? _exitRequestListener;
 
   bool get _isDesktopPlatform =>
       !kIsWeb &&
@@ -71,19 +75,33 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
   @override
   void initState() {
     super.initState();
+    _exitRequestListener = AppLifecycleListener(
+      onExitRequested: _onExitRequested,
+    );
     if (_isDesktopPlatform) {
       unawaited(_initWindowCloseGuard());
     }
   }
 
+  /// 处理系统菜单退出等未经过窗口关闭按钮的退出请求。
+  Future<AppExitResponse> _onExitRequested() async {
+    if (_isClosingWindow) return AppExitResponse.exit;
+    final confirmed = await _confirmLocalBackendShutdown(
+      context,
+      actionLabel: '退出服务端',
+    );
+    return confirmed ? AppExitResponse.exit : AppExitResponse.cancel;
+  }
+
   Future<void> _initWindowCloseGuard() async {
     await windowManager.ensureInitialized();
     await windowManager.setPreventClose(true);
-    windowManager.addListener(this);
+    if (mounted) windowManager.addListener(this);
   }
 
   @override
   void dispose() {
+    _exitRequestListener?.dispose();
     if (_isDesktopPlatform) {
       windowManager.removeListener(this);
     }
@@ -161,7 +179,11 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      _buildQuickWorkspace(_buildLibrary(context));
+
+  /// 稿件管理视图与快速编辑器共享原有导航和退出保护。
+  Widget _buildLibrary(BuildContext context) {
     return Consumer<ConnectionProvider>(
       builder: (context, connection, _) {
         return CallbackShortcuts(
@@ -176,9 +198,13 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
             autofocus: true,
             onKeyEvent: _handleKeyEvent,
             child: PopScope(
-              canPop: false,
+              canPop: _showQuickEditor,
               onPopInvokedWithResult: (didPop, result) async {
-                if (didPop) return;
+                if (didPop || _showQuickEditor) return;
+                if (_quickModeActive) {
+                  setState(() => _showQuickEditor = true);
+                  return;
+                }
                 if (_selectedItems.isNotEmpty) {
                   setState(() => _selectedItems.clear());
                 } else if (_currentFolderId != null) {
@@ -1258,11 +1284,26 @@ class _HomePageState extends State<HomePage> with HomeLogic, WindowListener {
 
   // ─── FAB 菜单 ────────────────────────────────────────
   Widget _buildFabMenu(BuildContext context, ConnectionProvider connection) {
-    return FloatingActionButton(
-      onPressed: () => _showFabMenu(context, connection),
-      backgroundColor: AppColors.primary,
-      foregroundColor: Colors.white,
-      child: const Icon(Icons.add),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (_quickModeActive) ...[
+          FloatingActionButton(
+            heroTag: 'return-quick-editor',
+            tooltip: '回到编辑器',
+            onPressed: () => setState(() => _showQuickEditor = true),
+            child: const Icon(Icons.edit_note),
+          ),
+          const SizedBox(height: 12),
+        ],
+        FloatingActionButton(
+          heroTag: 'new-article',
+          onPressed: () => _showFabMenu(context, connection),
+          backgroundColor: AppColors.primary,
+          foregroundColor: Colors.white,
+          child: const Icon(Icons.add),
+        ),
+      ],
     );
   }
 

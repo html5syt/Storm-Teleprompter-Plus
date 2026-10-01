@@ -110,11 +110,11 @@ class SettingsProvider with ChangeNotifier {
     return true;
   }
 
-  void clearArticleOverrides() {
+  void clearArticleOverrides({bool notify = true}) {
     if (!_articleOverridesActive && _articleOverrides.isEmpty) return;
     _articleOverridesActive = false;
     _articleOverrides = {};
-    notifyListeners();
+    if (notify) notifyListeners();
   }
 
   /// 内部辅助：在当前稿件覆盖激活时写入覆盖层，否则写入全局设置
@@ -176,7 +176,7 @@ class SettingsProvider with ChangeNotifier {
   Future<void> _saveSettings() async {
     try {
       if (_connection != null && _connection!.isConnected) {
-        _connection!.request(
+        await _connection!.request(
           WsMessageType.settingsSave,
           data: {'settings': _settings.toJson()},
         );
@@ -406,6 +406,21 @@ class SettingsProvider with ChangeNotifier {
         'progressShowCurrentTime': !mergedSettings.progressShowCurrentTime,
       },
     );
+  }
+
+  /// 更新全局快速模式设置，不写入当前稿件覆盖层。
+  Future<void> setQuickMode({
+    bool? enabled,
+    bool? autoSave,
+    String? folderId,
+  }) async {
+    _settings = _settings.copyWith(
+      quickModeEnabled: enabled,
+      quickModeAutoSave: autoSave,
+      quickModeFolderId: folderId,
+    );
+    notifyListeners();
+    await _saveSettings();
   }
 
   Future<void> setAppBrightnessMode(AppBrightnessMode mode) async {

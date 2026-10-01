@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:storm_teleprompter_plus/pages/settings_page.dart';
 import 'package:storm_teleprompter_plus/providers/connection_provider.dart';
 import 'package:storm_teleprompter_plus/providers/settings_provider.dart';
+import 'package:storm_teleprompter_plus/providers/folder_provider.dart';
 
 void main() {
   testWidgets('ASR advanced dialog owns controllers through route disposal', (
@@ -21,6 +22,7 @@ void main() {
     await tester.pumpWidget(
       MultiProvider(
         providers: [
+          ChangeNotifierProvider(create: (_) => FolderProvider()),
           ChangeNotifierProvider.value(value: settings),
           ChangeNotifierProvider.value(value: connection),
         ],
@@ -30,7 +32,7 @@ void main() {
     await tester.pumpAndSettle();
 
     final advancedTile = find.text('下载与高级设置');
-    await tester.ensureVisible(advancedTile);
+    await tester.scrollUntilVisible(advancedTile, 250);
     await tester.tap(advancedTile);
     await tester.pumpAndSettle();
     expect(find.text('使用系统代理下载'), findsOneWidget);

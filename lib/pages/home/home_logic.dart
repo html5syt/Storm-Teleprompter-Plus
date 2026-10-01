@@ -31,7 +31,7 @@ class _ContentItem {
 enum _ClipboardOp { cut, copy }
 
 /// 首页逻辑 mixin
-mixin HomeLogic on State<HomePage> {
+mixin HomeLogic on State<HomePage>, HomeQuickMode {
   void _showFabMenu(BuildContext context, ConnectionProvider connection);
   Future<void> _shutdownAndExitApplication();
 
@@ -93,11 +93,15 @@ mixin HomeLogic on State<HomePage> {
     super.initState();
     _history.add(null); // 根目录
     _historyIndex = 0;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<ArticleProvider>().init();
-      context.read<FolderProvider>().init();
-      context.read<SettingsProvider>().init();
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
       _bindTeleprompterSession();
+      await Future.wait([
+        context.read<ArticleProvider>().init(),
+        context.read<FolderProvider>().init(),
+        context.read<SettingsProvider>().init(),
+      ]);
+      _initializeQuickMode();
     });
   }
 
@@ -1035,7 +1039,8 @@ mixin HomeLogic on State<HomePage> {
   }
 
   // ─── 文章操作 ────────────────────────────────────────
-  void _createArticle(BuildContext context) {
+  Future<void> _createArticle(BuildContext context) async {
+    if (!await _finishQuickMode() || !context.mounted) return;
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => MultiProvider(
@@ -1050,7 +1055,8 @@ mixin HomeLogic on State<HomePage> {
     );
   }
 
-  void _openTeleprompter(BuildContext context, Article article) {
+  Future<void> _openTeleprompter(BuildContext context, Article article) async {
+    if (!await _finishQuickMode() || !context.mounted) return;
     final teleprompterProvider = context.read<TeleprompterProvider>();
     final settingsProvider = context.read<SettingsProvider>();
     final connection = context.read<ConnectionProvider>();
@@ -1086,7 +1092,8 @@ mixin HomeLogic on State<HomePage> {
     );
   }
 
-  void _editArticle(BuildContext context, Article article) {
+  Future<void> _editArticle(BuildContext context, Article article) async {
+    if (!await _finishQuickMode() || !context.mounted) return;
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => MultiProvider(
@@ -1638,7 +1645,8 @@ mixin HomeLogic on State<HomePage> {
     BuildContext context, {
     required String actionLabel,
   }) async {
-    if (!mounted) return false;
+    if (!mounted || !await _confirmQuickDraft() || !context.mounted)
+      return false;
     final connection = context.read<ConnectionProvider>();
     if (!connection.isLocal || !connection.isConnected) return true;
 

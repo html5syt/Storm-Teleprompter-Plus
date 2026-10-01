@@ -80,7 +80,7 @@ mixin TeleprompterPageLogic<T extends StatefulWidget>
     unawaited(_saveArticleOverrides());
     _sendRemoteSessionEndIfMaster();
     // 清除稿件覆盖
-    _settingsProvider?.clearArticleOverrides();
+    _settingsProvider?.clearArticleOverrides(notify: false);
     scrollController.dispose();
     // 退出时停止提词器（不触发 notifyListeners，避免 defunct 异常）
     _teleprompterProvider?.stopAll();
@@ -101,6 +101,7 @@ mixin TeleprompterPageLogic<T extends StatefulWidget>
   }
 
   Future<void> _saveArticleOverrides() async {
+    if (!(widget as TeleprompterPage).persistArticleSettings) return;
     final connection = _connectionProvider;
     if (connection == null) return;
     if (connection.isRemote || connection.canRetryRemoteConnection) return;

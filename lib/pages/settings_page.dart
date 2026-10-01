@@ -20,6 +20,7 @@ import '../services/selected_file_cleanup.dart';
 import '../theme/app_colors.dart';
 import '../widgets/common/app_color_picker_dialog.dart';
 import '../widgets/settings/about_settings_section.dart';
+import '../widgets/settings/quick_mode_settings_section.dart';
 
 part 'settings/settings_asr_advanced_dialog.dart';
 part 'settings/settings_backup_section.dart';
@@ -54,6 +55,11 @@ class SettingsPage extends StatelessWidget {
               return ListView(
                 padding: const EdgeInsets.all(20),
                 children: [
+                  if (!connection.isRemote) ...[
+                    _buildSectionHeader(context, '快速启动'),
+                    const QuickModeSettingsSection(),
+                    const SizedBox(height: 24),
+                  ],
                   // ── 应用主题 ──
                   _buildSectionHeader(context, '应用主题'),
                   const SizedBox(height: 12),

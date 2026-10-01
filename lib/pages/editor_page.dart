@@ -14,6 +14,7 @@ import 'package:provider/provider.dart';
 import '../backend/ws_protocol.dart';
 import '../models/article.dart';
 import '../providers/article_provider.dart';
+import '../widgets/common/folder_picker_dialog.dart';
 import '../providers/connection_provider.dart';
 import '../providers/settings_provider.dart';
 import '../providers/teleprompter_provider.dart';
@@ -25,31 +26,78 @@ import '../widgets/common/app_color_picker_dialog.dart';
 import 'teleprompter_page.dart';
 
 part 'editor/editor_logic.dart';
+part 'editor/editor_quick_mode.dart';
 
+/// 富文本稿件编辑器，快速模式允许仅在内存中保留草稿。
 class EditorPage extends StatefulWidget {
   final Article? article;
   final String? initialFolderId;
 
-  const EditorPage({super.key, this.article, this.initialFolderId});
+  final bool quickMode;
+  final bool autoSave;
+  final bool isActive;
+  final VoidCallback? onOpenLibrary;
+  final Future<void> Function()? onExit;
+
+  const EditorPage({
+    super.key,
+    this.article,
+    this.initialFolderId,
+    this.quickMode = false,
+    this.autoSave = true,
+    this.isActive = true,
+    this.onOpenLibrary,
+    this.onExit,
+  });
 
   @override
-  State<EditorPage> createState() => _EditorPageState();
+  State<EditorPage> createState() => EditorPageState();
 }
 
-class _EditorPageState extends State<EditorPage> with EditorLogic {
+/// 暴露离开确认供稿件管理和系统退出入口复用。
+class EditorPageState extends State<EditorPage>
+    with EditorLogic, EditorQuickMode {
   @override
   Widget build(BuildContext context) {
     final isEditing = currentArticle != null;
 
     return PopScope(
-      canPop: true,
-      onPopInvokedWithResult: (_, _) => flushAutosave(),
+      canPop: !widget.quickMode || !widget.isActive,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!widget.isActive) return;
+        if (didPop) {
+          flushAutosave();
+          return;
+        }
+        unawaited(requestExit());
+      },
       child: Scaffold(
         resizeToAvoidBottomInset: false,
+        floatingActionButton: widget.onOpenLibrary == null
+            ? null
+            : FloatingActionButton(
+                heroTag: 'quick-library',
+                tooltip: '稿件管理',
+                onPressed: widget.onOpenLibrary,
+                child: const Icon(Icons.folder_open),
+              ),
         backgroundColor: AppColors.backgroundFor(context),
         appBar: AppBar(
           title: Text(isEditing ? '编辑稿件' : '新建稿件'),
+          leading: widget.quickMode
+              ? IconButton(
+                  tooltip: '退出编辑器',
+                  icon: const Icon(Icons.arrow_back),
+                  onPressed: requestExit,
+                )
+              : null,
           actions: [
+            if (!autoSaveEnabled)
+              IconButton(
+                tooltip: '保存',
+                onPressed: isSaving ? null : manualSave,
+                icon: const Icon(Icons.save_outlined),
+              ),
             Center(
               child: Padding(
                 padding: const EdgeInsets.only(right: 12),
@@ -71,8 +119,12 @@ class _EditorPageState extends State<EditorPage> with EditorLogic {
                     color: isSaving
                         ? AppColors.warning
                         : isDirty
-                        ? AppColors.textMutedFor(context)
-                        : AppColors.success,
+                        ? (autoSaveEnabled
+                              ? AppColors.textMutedFor(context)
+                              : AppColors.error)
+                        : (!autoSaveEnabled && currentArticle == null
+                              ? AppColors.error
+                              : AppColors.success),
                     fontSize: 12,
                   ),
                 ),
@@ -95,12 +147,18 @@ class _EditorPageState extends State<EditorPage> with EditorLogic {
         ),
         body: CallbackShortcuts(
           bindings: {
+            const SingleActivator(LogicalKeyboardKey.keyS, control: true): () {
+              if (autoSaveEnabled) {
+                flushAutosave();
+              } else {
+                unawaited(manualSave());
+              }
+            },
             const SingleActivator(LogicalKeyboardKey.escape): () {
               if (isFindReplaceVisible) {
                 closeFindReplaceBar();
               } else {
-                flushAutosave();
-                unawaited(Navigator.maybePop(context));
+                unawaited(requestExit());
               }
             },
             const SingleActivator(

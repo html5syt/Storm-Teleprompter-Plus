@@ -36,7 +36,14 @@ part 'teleprompter/teleprompter_logic.dart';
 class TeleprompterPage extends StatefulWidget {
   final Article article;
 
-  const TeleprompterPage({super.key, required this.article});
+  /// 临时稿件仅用于当前会话，不尝试更新稿件数据库。
+  final bool persistArticleSettings;
+
+  const TeleprompterPage({
+    super.key,
+    required this.article,
+    this.persistArticleSettings = true,
+  });
 
   @override
   State<TeleprompterPage> createState() => _TeleprompterPageState();
