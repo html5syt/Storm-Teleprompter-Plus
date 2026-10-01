@@ -17,7 +17,7 @@ class EditorToolbar extends StatelessWidget {
   Widget build(BuildContext context) => Container(
     height: 48,
     width: double.infinity,
-    color: AppColors.surface,
+    color: AppColors.surfaceFor(context),
     child: SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
@@ -25,11 +25,14 @@ class EditorToolbar extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           ...tools,
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 8),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
             child: SizedBox(
               height: 24,
-              child: VerticalDivider(width: 1, color: AppColors.border),
+              child: VerticalDivider(
+                width: 1,
+                color: AppColors.borderFor(context),
+              ),
             ),
           ),
           _buildFormatToolbar(context),

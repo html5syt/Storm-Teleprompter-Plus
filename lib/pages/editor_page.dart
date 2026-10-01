@@ -21,7 +21,8 @@ import '../providers/teleprompter_provider.dart';
 import '../services/inline_style_parser.dart';
 import '../services/text_parser.dart';
 import '../theme/app_colors.dart';
-import '../theme/app_theme.dart';
+import '../utils/constants.dart';
+import '../widgets/editor/quick_mode_action_button.dart';
 import '../widgets/common/app_color_picker_dialog.dart';
 import '../widgets/editor/editor_toolbar.dart';
 import '../widgets/editor/editor_toolbar_style.dart';
@@ -29,6 +30,7 @@ import 'teleprompter_page.dart';
 
 part 'editor/editor_logic.dart';
 part 'editor/editor_quick_mode.dart';
+part 'editor/editor_chrome.dart';
 
 /// 富文本稿件编辑器，快速模式允许仅在内存中保留草稿。
 class EditorPage extends StatefulWidget {
@@ -58,11 +60,9 @@ class EditorPage extends StatefulWidget {
 
 /// 暴露离开确认供稿件管理和系统退出入口复用。
 class EditorPageState extends State<EditorPage>
-    with EditorLogic, EditorQuickMode {
+    with EditorLogic, EditorQuickMode, EditorChrome {
   @override
   Widget build(BuildContext context) {
-    final isEditing = currentArticle != null;
-
     return PopScope(
       canPop: !widget.quickMode || !widget.isActive,
       onPopInvokedWithResult: (didPop, _) {
@@ -77,70 +77,14 @@ class EditorPageState extends State<EditorPage>
         resizeToAvoidBottomInset: false,
         floatingActionButton: widget.onOpenLibrary == null
             ? null
-            : FloatingActionButton(
+            : QuickModeActionButton(
                 heroTag: 'quick-library',
                 tooltip: '稿件管理',
-                onPressed: widget.onOpenLibrary,
-                child: const Icon(Icons.folder_open),
+                onPressed: widget.onOpenLibrary!,
+                icon: Icons.folder_open,
               ),
         backgroundColor: AppColors.backgroundFor(context),
-        appBar: AppBar(
-          title: Text(isEditing ? '编辑稿件' : '新建稿件'),
-          automaticallyImplyLeading: !widget.quickMode,
-          actions: [
-            if (!autoSaveEnabled)
-              IconButton(
-                tooltip: '保存',
-                onPressed: isSaving ? null : manualSave,
-                icon: const Icon(Icons.save_outlined),
-              ),
-            Center(
-              child: Padding(
-                padding: const EdgeInsets.only(right: 12),
-                child: Text(
-                  '$plainTextLength 字',
-                  style: TextStyle(
-                    color: AppColors.textMutedFor(context),
-                    fontSize: 13,
-                  ),
-                ),
-              ),
-            ),
-            Center(
-              child: Padding(
-                padding: const EdgeInsets.only(right: 12),
-                child: Text(
-                  saveStatusText,
-                  style: TextStyle(
-                    color: isSaving
-                        ? AppColors.warning
-                        : isDirty
-                        ? (autoSaveEnabled
-                              ? AppColors.textMutedFor(context)
-                              : AppColors.error)
-                        : (!autoSaveEnabled && currentArticle == null
-                              ? AppColors.error
-                              : AppColors.success),
-                    fontSize: 12,
-                  ),
-                ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: Tooltip(
-                message: '开始提词 (Ctrl+Alt+S)',
-                child: FilledButton.icon(
-                  onPressed: canStartTeleprompter
-                      ? quickStartTeleprompter
-                      : null,
-                  icon: const Icon(Icons.play_arrow),
-                  label: const Text('开始提词'),
-                ),
-              ),
-            ),
-          ],
-        ),
+        appBar: buildEditorAppBar(context),
         body: CallbackShortcuts(
           bindings: {
             const SingleActivator(LogicalKeyboardKey.keyS, control: true): () {
@@ -260,10 +204,9 @@ class EditorPageState extends State<EditorPage>
 
   Widget _buildQuillEditor() {
     final settings = context.watch<SettingsProvider>().mergedSettings;
-    final editorBackground = Color(settings.teleprompterBgColor);
-    final editorTextColor = settings.textColor != 0
-        ? Color(settings.textColor)
-        : const Color(0xFFFFFFFF);
+    // 编辑器遵循应用主题；播放页的背景、默认文字色只用于提词显示。
+    final editorBackground = AppColors.surfaceFor(context);
+    final editorTextColor = AppColors.textPrimaryFor(context);
     final editorTextStyle = TextStyle(
       color: editorTextColor,
       fontSize: 18,
@@ -284,30 +227,24 @@ class EditorPageState extends State<EditorPage>
       decoration: BoxDecoration(
         color: editorBackground,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppColors.border, width: 0.5),
+        border: Border.all(color: AppColors.borderFor(context), width: 0.5),
       ),
       child: Column(
         children: [
-          Theme(
-            data: AppTheme.fromColorAndFont(
-              AppColors.primaryFromSettings(settings.uiPrimaryColor),
-              fontFamily: settings.appFontFamily,
-            ),
-            child: EditorToolbar(
-              controller: quillController,
-              tools: [
-                _buildFormatTools(),
-                const SizedBox(width: EditorToolbarStyle.spacing),
-                _buildFontSizeInput(),
-                const SizedBox(width: EditorToolbarStyle.spacing),
-                _buildEditorColorTools(editorTextColor, editorBackground),
-                const SizedBox(width: EditorToolbarStyle.spacing),
-                _buildFindButton(),
-                _buildReplaceButton(),
-              ],
-            ),
+          EditorToolbar(
+            controller: quillController,
+            tools: [
+              _buildFormatTools(),
+              const SizedBox(width: EditorToolbarStyle.spacing),
+              _buildFontSizeInput(),
+              const SizedBox(width: EditorToolbarStyle.spacing),
+              _buildEditorColorTools(editorTextColor, editorBackground),
+              const SizedBox(width: EditorToolbarStyle.spacing),
+              _buildFindButton(),
+              _buildReplaceButton(),
+            ],
           ),
-          const Divider(height: 1, color: AppColors.borderLight),
+          Divider(height: 1, color: AppColors.borderLightFor(context)),
           Expanded(
             child: quill.QuillEditor.basic(
               controller: quillController,
@@ -338,21 +275,21 @@ class EditorPageState extends State<EditorPage>
     );
   }
 
-  /// 字号输入与所有工具按钮等高，颜色由工具栏主题统一提供。
+  /// 字号输入与工具按钮等宽等高，像素单位放在提示中避免挤占输入空间。
   Widget _buildFontSizeInput() {
     return Builder(
       builder: (context) => Tooltip(
         message: '选中文字字号，输入任意 px 数值后回车',
         child: SizedBox(
-          width: 86,
+          width: EditorToolbarStyle.buttonSize,
           height: EditorToolbarStyle.buttonSize,
           child: TextField(
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             textAlign: TextAlign.center,
             textAlignVertical: TextAlignVertical.center,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 12,
-              color: AppColors.textSecondary,
+              color: AppColors.textSecondaryFor(context),
             ),
             decoration: EditorToolbarStyle.fontSizeDecoration(context),
             onSubmitted: applyFontSize,
@@ -412,7 +349,10 @@ class EditorPageState extends State<EditorPage>
                 height: 3,
                 decoration: BoxDecoration(
                   color: color,
-                  border: Border.all(color: AppColors.border, width: 0.5),
+                  border: Border.all(
+                    color: AppColors.borderFor(context),
+                    width: 0.5,
+                  ),
                 ),
               ),
             ),

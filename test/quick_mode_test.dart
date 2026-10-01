@@ -1,141 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_quill/flutter_quill.dart' as quill;
 import 'package:flutter_test/flutter_test.dart';
-import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:storm_teleprompter_plus/backend/ws_protocol.dart';
 import 'package:storm_teleprompter_plus/models/app_settings.dart';
 import 'package:storm_teleprompter_plus/models/article.dart';
-import 'package:storm_teleprompter_plus/models/folder.dart';
 import 'package:storm_teleprompter_plus/pages/editor_page.dart';
 import 'package:storm_teleprompter_plus/pages/home_page.dart';
 import 'package:storm_teleprompter_plus/pages/teleprompter_page.dart';
-import 'package:storm_teleprompter_plus/providers/article_provider.dart';
-import 'package:storm_teleprompter_plus/providers/connection_provider.dart';
-import 'package:storm_teleprompter_plus/providers/folder_provider.dart';
-import 'package:storm_teleprompter_plus/providers/settings_provider.dart';
-import 'package:storm_teleprompter_plus/providers/teleprompter_provider.dart';
 import 'package:storm_teleprompter_plus/widgets/settings/quick_mode_settings_section.dart';
-
-/// 内存稿件仓库记录落盘行为，也可模拟写入失败。
-class _Articles extends ArticleProvider {
-  int writes = 0;
-  bool fail = false;
-  @override
-  Future<void> init() async {}
-  @override
-  Future<Article?> createArticle({
-    required String title,
-    String content = '',
-    String? folderId,
-  }) async {
-    writes++;
-    if (fail) return null;
-    final article = Article(
-      id: 'saved-$writes',
-      title: title,
-      content: content,
-      folderId: folderId,
-      createdAt: DateTime(2026),
-      updatedAt: DateTime(2026),
-    );
-    upsertArticle(article);
-    return article;
-  }
-
-  @override
-  Future<Article?> updateArticle(
-    String id, {
-    String? title,
-    String? content,
-  }) async {
-    writes++;
-    if (fail) return null;
-    final article = articles
-        .firstWhere((a) => a.id == id)
-        .copyWith(title: title, content: content);
-    upsertArticle(article);
-    return article;
-  }
-
-  @override
-  Future<bool> moveArticleToFolder(String id, String? folderId) async {
-    upsertArticle(
-      articles
-          .firstWhere((a) => a.id == id)
-          .copyWith(folderId: folderId, clearFolderId: folderId == null),
-    );
-    return true;
-  }
-}
-
-/// 提供嵌套目录，验证保存位置而非仅验证对话框存在。
-class _Folders extends FolderProvider {
-  @override
-  List<Folder> get folders => [
-    Folder(id: 'folder', name: '测试目录', createdAt: DateTime(2026)),
-  ];
-  @override
-  Folder? getFolderById(String id) => id == 'folder' ? folders.first : null;
-  @override
-  Future<void> init() async {}
-}
-
-/// 本地连接替身允许导航和临时提词，无须真实端口和录音设备。
-class _Connection extends ConnectionProvider {
-  @override
-  bool get isConnected => true;
-  @override
-  bool get isLocal => true;
-  @override
-  Future<WsMessage> request(
-    WsMessageType type, {
-    Map<String, dynamic> data = const {},
-    Duration timeout = const Duration(seconds: 10),
-  }) async => WsMessage(type: type, data: data);
-  @override
-  void send(WsMessage message) {}
-}
-
-/// 保留测试指定的启动设置，不从服务端重新加载。
-class _Settings extends SettingsProvider {
-  @override
-  Future<void> init() async {}
-}
-
-/// 装配与应用一致的 Provider 和编辑器本地化依赖。
-Future<void> _mount(
-  WidgetTester tester,
-  Widget home,
-  _Articles articles,
-  _Settings settings,
-) async {
-  SharedPreferences.setMockInitialValues({});
-  await tester.pumpWidget(
-    MultiProvider(
-      providers: [
-        ChangeNotifierProvider<ArticleProvider>.value(value: articles),
-        ChangeNotifierProvider<SettingsProvider>.value(value: settings),
-        ChangeNotifierProvider<FolderProvider>(create: (_) => _Folders()),
-        ChangeNotifierProvider<ConnectionProvider>(
-          create: (_) => _Connection(),
-        ),
-        ChangeNotifierProvider(create: (_) => TeleprompterProvider()),
-      ],
-      child: MaterialApp(
-        localizationsDelegates:
-            quill.FlutterQuillLocalizations.localizationsDelegates,
-        supportedLocales: quill.FlutterQuillLocalizations.supportedLocales,
-        home: home,
-      ),
-    ),
-  );
-  await tester.pumpAndSettle();
-}
-
-/// 获取编辑状态以验证保存修订和富文本内容。
-EditorPageState _editor(WidgetTester tester) =>
-    tester.state<EditorPageState>(find.byType(EditorPage));
+import 'support/quick_workspace_test_host.dart';
 
 void main() {
   test('快速模式默认关闭并完整序列化，不混入稿件覆盖', () {
@@ -161,9 +32,9 @@ void main() {
   });
 
   testWidgets('手动保存选择位置；失败和取消保留草稿；销毁不偷存', (tester) async {
-    final articles = _Articles();
-    final settings = _Settings();
-    await _mount(
+    final articles = QuickTestArticles();
+    final settings = QuickTestSettings();
+    await mountQuickWorkspace(
       tester,
       const EditorPage(quickMode: true, autoSave: false),
       articles,
@@ -173,7 +44,7 @@ void main() {
     await tester.pump(const Duration(seconds: 2));
     expect(articles.writes, 0);
     expect(find.text('未保存'), findsOneWidget);
-    final state = _editor(tester);
+    final state = quickEditor(tester);
     final canceled = state.confirmLeave();
     await tester.pumpAndSettle();
     await tester.tap(find.text('取消'));
@@ -200,9 +71,9 @@ void main() {
   });
 
   testWidgets('自动保存采用默认目录，只有一份稿件', (tester) async {
-    final articles = _Articles();
-    final settings = _Settings();
-    await _mount(
+    final articles = QuickTestArticles();
+    final settings = QuickTestSettings();
+    await mountQuickWorkspace(
       tester,
       const EditorPage(quickMode: true, initialFolderId: 'folder'),
       articles,
@@ -219,7 +90,7 @@ void main() {
   });
 
   testWidgets('启动进入空编辑器，列表返回保留草稿，选择其他稿件结束快速会话', (tester) async {
-    final articles = _Articles();
+    final articles = QuickTestArticles();
     articles.upsertArticle(
       Article(
         id: 'other',
@@ -229,12 +100,12 @@ void main() {
         updatedAt: DateTime(2026),
       ),
     );
-    final settings = _Settings();
+    final settings = QuickTestSettings();
     await settings.setQuickMode(enabled: true);
     await settings.toggleFullScreenMode();
-    await _mount(tester, const HomePage(), articles, settings);
+    await mountQuickWorkspace(tester, const HomePage(), articles, settings);
     expect(find.byType(EditorPage), findsOneWidget);
-    final state = _editor(tester);
+    final state = quickEditor(tester);
     expect(state.plainTextLength, 0);
     await tester.enterText(find.byType(TextField).first, '临时稿件');
     await tester.tap(find.byTooltip('稿件管理'));
@@ -243,15 +114,15 @@ void main() {
     // 系统返回只回到编辑器，不触发退出确认。
     await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
-    expect(_editor(tester), same(state));
-    expect(find.text('保存稿件？'), findsNothing);
+    expect(quickEditor(tester), same(state));
+    expect(find.text('保存临时稿件？'), findsNothing);
     await tester.tap(find.byTooltip('稿件管理'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('已有稿件').first);
     await tester.pump(const Duration(milliseconds: 50));
     await tester.tap(find.text('已有稿件').first);
     await tester.pumpAndSettle();
-    expect(find.text('保存稿件？'), findsOneWidget);
+    expect(find.text('保存临时稿件？'), findsOneWidget);
     await tester.tap(find.text('不保存'));
     await tester.pumpAndSettle();
     expect(find.byType(TeleprompterPage), findsOneWidget);
@@ -264,16 +135,16 @@ void main() {
   });
 
   testWidgets('快速开始提词使用内存正文且不强制保存', (tester) async {
-    final articles = _Articles();
-    final settings = _Settings();
+    final articles = QuickTestArticles();
+    final settings = QuickTestSettings();
     await settings.toggleFullScreenMode();
-    await _mount(
+    await mountQuickWorkspace(
       tester,
       const EditorPage(quickMode: true, autoSave: false),
       articles,
       settings,
     );
-    final state = _editor(tester);
+    final state = quickEditor(tester);
     state.quillController.replaceText(
       0,
       0,
@@ -294,11 +165,11 @@ void main() {
   });
 
   testWidgets('自动保存关闭时默认位置不可设置', (tester) async {
-    final settings = _Settings();
-    await _mount(
+    final settings = QuickTestSettings();
+    await mountQuickWorkspace(
       tester,
       const Scaffold(body: QuickModeSettingsSection()),
-      _Articles(),
+      QuickTestArticles(),
       settings,
     );
     expect(
@@ -315,35 +186,40 @@ void main() {
     );
   });
   testWidgets('窗口关闭和系统退出都会保护稿件管理页背后的草稿', (tester) async {
-    final articles = _Articles();
-    final settings = _Settings();
+    final articles = QuickTestArticles();
+    final settings = QuickTestSettings();
     await settings.setQuickMode(enabled: true);
-    await _mount(tester, const HomePage(), articles, settings);
+    await mountQuickWorkspace(tester, const HomePage(), articles, settings);
     await tester.enterText(find.byType(TextField).first, '退出保护');
     await tester.tap(find.byTooltip('稿件管理'));
     await tester.pumpAndSettle();
     final dynamic homeState = tester.state(find.byType(HomePage));
     homeState.onWindowClose();
     await tester.pumpAndSettle();
-    expect(find.text('保存稿件？'), findsOneWidget);
+    expect(find.text('保存临时稿件？'), findsOneWidget);
     await tester.tap(find.text('取消'));
     await tester.pumpAndSettle();
     expect(articles.writes, 0);
     final exit = tester.binding.handleRequestAppExit();
     await tester.pumpAndSettle();
-    expect(find.text('保存稿件？'), findsOneWidget);
+    expect(find.text('保存临时稿件？'), findsOneWidget);
     await tester.tap(find.text('取消'));
     await tester.pumpAndSettle();
     expect((await exit).name, 'cancel');
     await tester.tap(find.byTooltip('回到编辑器'));
     await tester.pumpAndSettle();
-    expect(_editor(tester).titleController.text, '退出保护');
+    expect(quickEditor(tester).titleController.text, '退出保护');
     await tester.pumpWidget(const SizedBox());
   });
 
   testWidgets('默认普通启动不创建临时编辑器', (tester) async {
-    final articles = _Articles();
-    await _mount(tester, const HomePage(), articles, _Settings());
+    final articles = QuickTestArticles();
+    await mountQuickWorkspace(
+      tester,
+      const HomePage(),
+      articles,
+      QuickTestSettings(),
+    );
     expect(find.byType(EditorPage), findsNothing);
     expect(find.byTooltip('回到编辑器'), findsNothing);
     expect(articles.writes, 0);
@@ -355,11 +231,11 @@ void main() {
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
-    await _mount(
+    await mountQuickWorkspace(
       tester,
       const EditorPage(quickMode: true, autoSave: false),
-      _Articles(),
-      _Settings(),
+      QuickTestArticles(),
+      QuickTestSettings(),
     );
     expect(find.byTooltip('保存'), findsOneWidget);
     expect(find.byType(BackButton), findsNothing);

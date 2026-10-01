@@ -22,17 +22,19 @@ abstract final class EditorToolbarStyle {
       iconSize: iconSize,
       visualDensity: VisualDensity.standard,
       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-      foregroundColor: selected ? primary : AppColors.textSecondary,
+      foregroundColor: selected ? primary : AppColors.textSecondaryFor(context),
       backgroundColor: selected
           ? primary.withValues(alpha: 0.16)
-          : AppColors.surfaceElevated,
-      disabledForegroundColor: AppColors.textDisabled,
-      disabledBackgroundColor: AppColors.surfaceElevated,
+          : AppColors.surfaceElevatedFor(context),
+      disabledForegroundColor: AppColors.textDisabledFor(context),
+      disabledBackgroundColor: AppColors.surfaceElevatedFor(context),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(radius),
       ),
       side: BorderSide(
-        color: selected ? primary.withValues(alpha: 0.65) : AppColors.border,
+        color: selected
+            ? primary.withValues(alpha: 0.65)
+            : AppColors.borderFor(context),
       ),
     );
   }
@@ -41,16 +43,24 @@ abstract final class EditorToolbarStyle {
   static InputDecoration fontSizeDecoration(BuildContext context) {
     final border = OutlineInputBorder(
       borderRadius: BorderRadius.circular(radius),
-      borderSide: const BorderSide(color: AppColors.border),
+      borderSide: BorderSide(color: AppColors.borderFor(context)),
     );
     return InputDecoration(
-      constraints: const BoxConstraints.tightFor(height: buttonSize),
+      constraints: const BoxConstraints.tightFor(
+        width: buttonSize,
+        height: buttonSize,
+      ),
       hintText: '字号',
-      suffixText: 'px',
+      // 方形输入框中的双字提示不继承主题字距，避免中文字体被省略。
+      hintStyle: TextStyle(
+        fontSize: 11,
+        letterSpacing: 0,
+        color: AppColors.textMutedFor(context),
+      ),
       isDense: true,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 2, vertical: 8),
       filled: true,
-      fillColor: AppColors.surfaceElevated,
+      fillColor: AppColors.surfaceElevatedFor(context),
       border: border,
       enabledBorder: border,
       focusedBorder: border.copyWith(

@@ -52,12 +52,15 @@ mixin EditorQuickMode on State<EditorPage>, EditorLogic {
     if (autoSaveEnabled && (isDirty || isSaving)) await save(force: true);
     if (!mounted) return false;
     if (!isDirty) return true;
+    final draftTitle = _effectiveTitle(_captureDraft());
+    final draftKind = widget.quickMode ? '临时稿件' : '稿件';
     final choice = await showDialog<String>(
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
-        title: const Text('保存稿件？'),
-        content: const Text('当前稿件尚未保存。'),
+        scrollable: true,
+        title: Text('保存$draftKind？'),
+        content: Text('$draftKind“$draftTitle”尚未保存。'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, 'cancel'),

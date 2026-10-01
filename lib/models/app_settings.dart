@@ -129,7 +129,7 @@ class AppSettings {
   /// 进度条显示 - 当前时间
   final bool progressShowCurrentTime;
 
-  /// 应用亮暗模式（不影响提词器播放页和编辑器页）
+  /// 应用亮暗模式（不影响提词器播放页）
   final AppBrightnessMode appBrightnessMode;
 
   /// 启动时直接进入临时稿件编辑器。

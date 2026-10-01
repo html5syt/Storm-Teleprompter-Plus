@@ -62,7 +62,10 @@ void main() {
         of: toolbar,
         matching: find.byType(TextField),
       );
-      expect(tester.getSize(input).height, EditorToolbarStyle.buttonSize);
+      expect(
+        tester.getSize(input),
+        const Size.square(EditorToolbarStyle.buttonSize),
+      );
       expect(tester.getTopLeft(input).dy, top);
       expect(
         tester
