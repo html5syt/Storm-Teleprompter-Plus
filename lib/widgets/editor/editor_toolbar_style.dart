@@ -44,6 +44,7 @@ abstract final class EditorToolbarStyle {
       borderSide: const BorderSide(color: AppColors.border),
     );
     return InputDecoration(
+      constraints: const BoxConstraints.tightFor(height: buttonSize),
       hintText: '字号',
       suffixText: 'px',
       isDense: true,

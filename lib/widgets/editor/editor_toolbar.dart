@@ -16,6 +16,7 @@ class EditorToolbar extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Container(
     height: 48,
+    width: double.infinity,
     color: AppColors.surface,
     child: SingleChildScrollView(
       scrollDirection: Axis.horizontal,
@@ -48,6 +49,7 @@ class EditorToolbar extends StatelessWidget {
       buttonOptions: quill.QuillSimpleToolbarButtonOptions(
         base: quill.QuillToolbarBaseButtonOptions(
           iconSize: EditorToolbarStyle.iconSize,
+          iconButtonFactor: 1,
           iconTheme: quill.QuillIconTheme(
             iconButtonUnselectedData: quill.IconButtonData(
               style: EditorToolbarStyle.buttonStyle(context),

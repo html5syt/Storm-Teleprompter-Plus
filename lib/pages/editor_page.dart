@@ -349,6 +349,7 @@ class EditorPageState extends State<EditorPage>
           child: TextField(
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             textAlign: TextAlign.center,
+            textAlignVertical: TextAlignVertical.center,
             style: const TextStyle(
               fontSize: 12,
               color: AppColors.textSecondary,

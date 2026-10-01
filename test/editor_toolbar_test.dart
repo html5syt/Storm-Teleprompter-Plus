@@ -37,6 +37,11 @@ void main() {
         matching: find.byType(IconButton),
       );
       expect(buttons, findsNWidgets(15));
+      expect(tester.getSize(toolbar).width, width - 25);
+      expect(
+        tester.getTopLeft(buttons.first).dx,
+        tester.getTopLeft(toolbar).dx + 8,
+      );
       final top = tester.getTopLeft(buttons.first).dy;
       for (final element in buttons.evaluate()) {
         final button = find.byElementPredicate(
@@ -47,6 +52,11 @@ void main() {
           const Size.square(EditorToolbarStyle.buttonSize),
         );
         expect(tester.getTopLeft(button).dy, top);
+        final icon = find.descendant(of: button, matching: find.byType(Icon));
+        expect(
+          tester.getSize(icon),
+          const Size.square(EditorToolbarStyle.iconSize),
+        );
       }
       final input = find.descendant(
         of: toolbar,
@@ -54,6 +64,14 @@ void main() {
       );
       expect(tester.getSize(input).height, EditorToolbarStyle.buttonSize);
       expect(tester.getTopLeft(input).dy, top);
+      expect(
+        tester
+            .getSize(
+              find.descendant(of: input, matching: find.byType(InputDecorator)),
+            )
+            .height,
+        EditorToolbarStyle.buttonSize,
+      );
       final editor = tester.state<EditorPageState>(find.byType(EditorPage));
       editor.quillController.replaceText(
         0,
