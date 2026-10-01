@@ -60,8 +60,11 @@ abstract final class EditorToolbarStyle {
         letterSpacing: 0,
         color: AppColors.textMutedFor(context),
       ),
-      isDense: true,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+      // InputDecorator 会按内容高度而非外层最小高度绘制边框。
+      // 非紧凑布局以最小交互高度撑满受约束的 36px，禁用桌面密度缩减。
+      isDense: false,
+      visualDensity: VisualDensity.standard,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 8),
       filled: true,
       fillColor: AppColors.surfaceElevatedFor(context),
       border: border,

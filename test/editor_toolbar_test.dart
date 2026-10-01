@@ -78,6 +78,13 @@ void main() {
             .height,
         EditorToolbarStyle.buttonSize,
       );
+      final editable = find.descendant(
+        of: input,
+        matching: find.byType(EditableText),
+      );
+      final border = InputDecorator.containerOf(tester.element(editable))!;
+      expect(border.size.height, EditorToolbarStyle.buttonSize);
+      expect(border.localToGlobal(Offset.zero).dy, top);
       final editor = tester.state<EditorPageState>(find.byType(EditorPage));
       editor.quillController.replaceText(
         0,
