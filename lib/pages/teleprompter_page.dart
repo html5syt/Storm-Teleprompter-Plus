@@ -19,6 +19,7 @@ import '../services/asr_service.dart';
 import '../utils/constants.dart';
 import '../widgets/teleprompter/teleprompter_text_layer.dart';
 import '../widgets/teleprompter/auto_speed_picker.dart';
+import '../widgets/teleprompter/prompt_entrance.dart';
 import '../widgets/teleprompter/teleprompter_settings_panel.dart';
 import 'settings_page.dart';
 
@@ -1312,43 +1313,45 @@ class _TeleprompterPageState extends State<TeleprompterPage>
         : const ClampingScrollPhysics();
 
     return Positioned.fill(
-      child: TeleprompterTextLayer(
-        key: textLayerKey,
-        scrollController: scrollController,
-        lines: teleprompter.lines,
-        currentIndex: teleprompter.currentIndex,
-        fontSize: settings.fontSize,
-        lineHeight: settings.lineHeight,
-        mirrorMode: settings.mirrorMode,
-        autoFollow: blockScroll && !settings.isContinuousScroll,
-        continuous: settings.isContinuousScroll,
-        seekRevision: teleprompter.viewportSeekRevision,
-        seekProgress: teleprompter.progress,
-        isPlaying: teleprompter.isPlaying,
-        pixelsPerSecond: settings.pixelsPerSecond,
-        remoteProgress: isRemoteClient && settings.isContinuousScroll
-            ? teleprompter.progress
-            : null,
-        onScrollBoundary: (atStart) =>
-            teleprompter.finishContinuousScroll(atStart: atStart),
-        paddingX: settings.paddingX,
-        readingLineOffset: settings.readingLineOffset,
-        physics: physics,
-        onCharTap: (rawIndex) {
-          if (isRemoteClient) return;
-          teleprompter.setCurrentIndex(rawIndex);
-        },
-        onReadingLineChanged: (rawIndex) {
-          if (blockScroll || isRemoteClient) return;
-          teleprompter.setCurrentIndex(rawIndex);
-        },
-        teleprompterFontFamily: settings.teleprompterFontFamily,
-        grayReadChars: settings.grayReadChars,
-        textColor: settings.textColor,
-        letterSpacing: settings.letterSpacing,
-        highlightCurrentChar: settings.highlightCurrentChar,
-        defaultBold: settings.defaultBold,
-        underlineCurrentChar: settings.underlineCurrentChar,
+      child: PromptEntrance(
+        child: TeleprompterTextLayer(
+          key: textLayerKey,
+          scrollController: scrollController,
+          lines: teleprompter.lines,
+          currentIndex: teleprompter.currentIndex,
+          fontSize: settings.fontSize,
+          lineHeight: settings.lineHeight,
+          mirrorMode: settings.mirrorMode,
+          autoFollow: blockScroll && !settings.isContinuousScroll,
+          continuous: settings.isContinuousScroll,
+          seekRevision: teleprompter.viewportSeekRevision,
+          seekProgress: teleprompter.progress,
+          isPlaying: teleprompter.isPlaying,
+          pixelsPerSecond: settings.pixelsPerSecond,
+          remoteProgress: isRemoteClient && settings.isContinuousScroll
+              ? teleprompter.progress
+              : null,
+          onScrollBoundary: (atStart) =>
+              teleprompter.finishContinuousScroll(atStart: atStart),
+          paddingX: settings.paddingX,
+          readingLineOffset: settings.readingLineOffset,
+          physics: physics,
+          onCharTap: (rawIndex) {
+            if (isRemoteClient) return;
+            teleprompter.setCurrentIndex(rawIndex);
+          },
+          onReadingLineChanged: (rawIndex) {
+            if (blockScroll || isRemoteClient) return;
+            teleprompter.setCurrentIndex(rawIndex);
+          },
+          teleprompterFontFamily: settings.teleprompterFontFamily,
+          grayReadChars: settings.grayReadChars,
+          textColor: settings.textColor,
+          letterSpacing: settings.letterSpacing,
+          highlightCurrentChar: settings.highlightCurrentChar,
+          defaultBold: settings.defaultBold,
+          underlineCurrentChar: settings.underlineCurrentChar,
+        ),
       ),
     );
   }
