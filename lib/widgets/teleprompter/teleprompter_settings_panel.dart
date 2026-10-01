@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../models/app_settings.dart';
-import '../../providers/connection_provider.dart';
 import '../../providers/settings_provider.dart';
 import '../../providers/teleprompter_provider.dart';
 import '../../services/font_service.dart';
@@ -11,7 +10,7 @@ import '../common/app_color_picker_dialog.dart';
 /// 提词器设置面板（抽屉形式）
 ///
 /// 从右侧滑入，覆盖在提词器界面之上。
-/// 按播放与进度、正文外观、排版、阅读区域分组。
+/// 按播放进度条、正文外观、排版、阅读区域分组。
 class TeleprompterSettingsPanel extends StatefulWidget {
   final VoidCallback onClose;
 
@@ -23,25 +22,19 @@ class TeleprompterSettingsPanel extends StatefulWidget {
 }
 
 class _TeleprompterSettingsPanelState extends State<TeleprompterSettingsPanel> {
-  late final TextEditingController _scrollSpeedController;
   late final TextEditingController _bodyFontSizeController;
-  late final FocusNode _scrollSpeedFocusNode;
   late final FocusNode _bodyFontSizeFocusNode;
 
   @override
   void initState() {
     super.initState();
-    _scrollSpeedController = TextEditingController();
     _bodyFontSizeController = TextEditingController();
-    _scrollSpeedFocusNode = FocusNode();
     _bodyFontSizeFocusNode = FocusNode();
   }
 
   @override
   void dispose() {
-    _scrollSpeedController.dispose();
     _bodyFontSizeController.dispose();
-    _scrollSpeedFocusNode.dispose();
     _bodyFontSizeFocusNode.dispose();
     super.dispose();
   }
@@ -61,9 +54,6 @@ class _TeleprompterSettingsPanelState extends State<TeleprompterSettingsPanel> {
           child: Consumer<SettingsProvider>(
             builder: (context, provider, _) {
               final settings = provider.mergedSettings;
-              final isRemoteClient = context
-                  .watch<ConnectionProvider>()
-                  .isRemote;
               final isPlaying = context.watch<TeleprompterProvider>().isPlaying;
               return Column(
                 children: [
@@ -72,11 +62,9 @@ class _TeleprompterSettingsPanelState extends State<TeleprompterSettingsPanel> {
                     child: ListView(
                       padding: const EdgeInsets.all(16),
                       children: [
-                        // ── 1. 播放与进度 ──
-                        _buildSectionTitle(context, '播放与进度'),
+                        // ── 1. 播放进度条 ──
+                        _buildSectionTitle(context, '播放进度条'),
                         const SizedBox(height: 8),
-                        if (!isRemoteClient)
-                          _buildScrollSpeedInput(context, provider, settings),
                         _buildProgressDisplayItems(context, provider, settings),
                         _buildProgressFontSizeSlider(
                           context,
@@ -208,7 +196,7 @@ class _TeleprompterSettingsPanelState extends State<TeleprompterSettingsPanel> {
     );
   }
 
-  // ─── 播放与进度 ────────────────────────────────────────
+  // ─── 播放进度条 ────────────────────────────────────────
 
   /// 字号（占正文比例）
   Widget _buildProgressFontSizeSlider(
@@ -227,61 +215,6 @@ class _TeleprompterSettingsPanelState extends State<TeleprompterSettingsPanel> {
       displayFormatter: (v) => '${(v * 100).round()}%',
       onChanged: (v) => provider.setProgressInfoSizeRatio(v),
       onReset: () => provider.setProgressInfoSizeRatio(0.6),
-    );
-  }
-
-  Widget _buildScrollSpeedInput(
-    BuildContext context,
-    SettingsProvider provider,
-    AppSettings settings,
-  ) {
-    _syncTextController(
-      _scrollSpeedController,
-      _scrollSpeedFocusNode,
-      '${settings.wpm}',
-    );
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        children: [
-          const Icon(Icons.speed, size: 18, color: AppColors.textSecondary),
-          const SizedBox(width: 8),
-          const SizedBox(
-            width: 72,
-            child: Text(
-              '滚动速度',
-              style: TextStyle(fontSize: 13, color: AppColors.textPrimary),
-            ),
-          ),
-          Expanded(
-            child: TextField(
-              controller: _scrollSpeedController,
-              focusNode: _scrollSpeedFocusNode,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                suffixText: '字/分',
-                isDense: true,
-                contentPadding: EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 8,
-                ),
-              ),
-              onSubmitted: (value) {
-                final parsed = int.tryParse(value.trim());
-                if (parsed != null) provider.setWpm(parsed < 0 ? 0 : parsed);
-              },
-            ),
-          ),
-          IconButton(
-            tooltip: '应用速度',
-            icon: const Icon(Icons.check, size: 18),
-            onPressed: () {
-              final parsed = int.tryParse(_scrollSpeedController.text.trim());
-              if (parsed != null) provider.setWpm(parsed < 0 ? 0 : parsed);
-            },
-          ),
-        ],
-      ),
     );
   }
 
