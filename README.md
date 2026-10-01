@@ -36,7 +36,7 @@
 - 正文字号、字体、颜色、背景、边距、阅读框位置和进度条显示设置。
 - 镜像翻转正文、阅读框和进度条，适配分光镜。
 - 服务端/客户端模式，可在同一局域网内同步稿件、播放状态和当前位置。
-- Windows、Android、Linux、macOS、iOS 和 Web 构建工作流。
+- Windows、Android、Linux、macOS 和 iOS 原生构建工作流。
 
 ## 平台说明
 
@@ -46,7 +46,6 @@
 | Android | 主要测试平台 | 支持本地服务端、麦克风权限、ASR 和横屏提词 |
 | Linux / macOS | CI 构建 | 主要功能已接入，仍需更多设备验证 |
 | iOS | CI 无签名构建 | 实际安装需要 Apple Developer 签名和 provisioning profile |
-<!-- | Web | 未正式支持 | 出于技术限制和性能、开发成本考虑，不提供内置本地后端、原生 ASR、系统字体扫描等原生能力，未经过专门适配。如有需要请使用原版。 | -->
 
 ## 获取应用
 
@@ -260,7 +259,7 @@ Android Release 签名配置和 GitHub Secrets 说明见 [Android 发布签名�
 
 ## 自动发布
 
-GitHub Actions 可以构建 Android、Windows、Linux、Web、macOS 和未签名 iOS 产物。
+GitHub Actions 可以构建 Android、Windows、Linux、macOS 和未签名 iOS 产物，不提供 Web 构建。
 
 - Commit message 包含以下元数据时，使用第一行作为 Release 标题：
 

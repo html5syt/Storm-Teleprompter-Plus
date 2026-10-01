@@ -16,13 +16,6 @@ flutter_launcher_icons:
   remove_alpha_ios: true
   background_color_ios: "#000000"
 
-  # Browser favicon and installable PWA icons.
-  web:
-    generate: true
-    image_path: lib/favicon.png
-    background_color: "#000000"
-    theme_color: "#DB9D16"
-
   # Windows executable, taskbar, Start menu, and title-bar icon.
   windows:
     generate: true

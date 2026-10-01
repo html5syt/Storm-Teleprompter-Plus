@@ -11,7 +11,7 @@ if (-not (Test-Path -LiteralPath $iconPath -PathType Leaf)) {
 Push-Location $projectRoot
 try {
   dart run flutter_launcher_icons -f $configPath
-  Write-Host 'Application icons generated for Android, iOS, Web, Windows, and macOS.'
+  Write-Host 'Application icons generated for Android, iOS, Windows, and macOS.'
 } finally {
   Pop-Location
 }
